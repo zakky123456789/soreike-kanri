@@ -334,7 +334,7 @@
           <div id="dp-edit-sale-list" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px"></div>
         </div>
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>前払い額（税込）</label><input id="dp-edit-amount" type="number" oninput="updateDpEditPreview()"></div>
+          <div class="form-group"><label>支払額</label><input id="dp-edit-amount" type="number" oninput="updateDpEditPreview()"></div>
           <div class="form-group" style="align-self:flex-end">
             <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--accent);width:100%" onclick="calcDpEditFromSales()">選択分の報酬合計を自動入力</button>
           </div>
@@ -342,9 +342,9 @@
         <div class="form-group" style="margin-bottom:14px"><label>備考</label><input id="dp-edit-note" placeholder="例：前払い"></div>
         <div id="dp-edit-preview" style="display:none;margin-bottom:14px" class="sim-box">
           <div style="font-size:12px;color:var(--muted);margin-bottom:8px">プレビュー</div>
-          <div class="sim-row"><div class="sim-label">前払い額（税込）</div><div id="dp-edit-p-amount" style="font-family:var(--mono)"></div></div>
+          <div class="sim-row"><div class="sim-label">支払額</div><div id="dp-edit-p-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
           <div class="sim-row"><div class="sim-label">源泉税（税抜×10.21%）</div><div id="dp-edit-p-src" style="font-family:var(--mono);color:var(--yellow)"></div></div>
-          <div class="sim-row"><div class="sim-label">実手渡し額</div><div id="dp-edit-p-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
+          <div class="sim-row"><div class="sim-label">税込報酬額</div><div id="dp-edit-p-amount" style="font-family:var(--mono);color:var(--muted)"></div></div>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="closeDpEditModal()">キャンセル</button>
@@ -706,7 +706,7 @@
           <!-- Step3: 金額 -->
           <div class="form-grid form-grid-4" style="margin-bottom:14px">
             <div class="form-group">
-              <label>前払い額（税込）</label>
+              <label>支払額</label>
               <input id="dp-amount" type="number" placeholder="例：20000">
             </div>
             <div class="form-group" style="align-self:flex-end">
@@ -717,9 +717,9 @@
           <div id="dp-preview" style="display:none;margin-bottom:12px" class="sim-box">
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px">前払いプレビュー</div>
             <div class="sim-row"><div class="sim-label">対象配信</div><div id="dpp-sales-label" style="font-size:12px;color:var(--accent)"></div></div>
-            <div class="sim-row"><div class="sim-label">前払い額（税込）</div><div id="dpp-amount" style="font-family:var(--mono)"></div></div>
+            <div class="sim-row"><div class="sim-label">支払額</div><div id="dpp-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
             <div class="sim-row"><div class="sim-label">源泉税（税抜×10.21%）</div><div id="dpp-src" style="font-family:var(--mono);color:var(--yellow)"></div></div>
-            <div class="sim-row"><div class="sim-label">実手渡し額</div><div id="dpp-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
+            <div class="sim-row"><div class="sim-label">税込報酬額</div><div id="dpp-amount" style="font-family:var(--mono);color:var(--muted)"></div></div>
           </div>
           <button class="btn btn-primary" onclick="addDailyPay()">＋ 前払いを追加</button>
         </div>
@@ -735,7 +735,7 @@
       <!-- 前払い明細 -->
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">前払い明細</div></div>
-        <table><thead><tr><th>支払日</th><th>対象月</th><th>配信者</th><th>対象配信</th><th class="num">前払い額</th><th class="num">源泉税</th><th class="num">実手渡し額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
+        <table><thead><tr><th>支払日</th><th>対象月</th><th>配信者</th><th>対象配信</th><th class="num">前払い額</th><th class="num">源泉税</th><th class="num">支払額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
         <tbody id="daily-pay-table"></tbody></table>
       </div>
 
@@ -2439,12 +2439,14 @@ function onDpSaleCheck(cb) {
 
 function calcDpFromSales() {
   if (dpSelectedSaleIds.size === 0) { alert('配信を選択してください'); return; }
-  const total = [...dpSelectedSaleIds].reduce((s, id) => {
+  const totalReward = [...dpSelectedSaleIds].reduce((s, id) => {
     const sale = state.sales.find(x => x.id === id);
     const c = sale ? getCaster(sale.casterId) : null;
     return s + (c ? calcReward(coinToYen(sale.coins), c.rate) : 0);
   }, 0);
-  document.getElementById('dp-amount').value = total;
+  // 支払額 = 税込報酬 - 源泉税
+  const autoPayment = totalReward - calcSrcTax(totalReward);
+  document.getElementById('dp-amount').value = autoPayment;
   updateDpPreview();
 }
 
@@ -2459,14 +2461,19 @@ function getSelectedSaleLabel() {
 }
 
 function updateDpPreview() {
-  const amt = parseFloat(document.getElementById('dp-amount').value);
-  if (isNaN(amt) || amt <= 0) { document.getElementById('dp-preview').style.display = 'none'; return; }
-  const src = calcSrcTax(amt);
+  const payment = parseFloat(document.getElementById('dp-amount').value);
+  if (isNaN(payment) || payment <= 0) { document.getElementById('dp-preview').style.display = 'none'; return; }
+  // 支払額から税込報酬を逆算: 支払額 = 税込報酬 - calcSrcTax(税込報酬)
+  // 近似: 税込報酬 ≈ 支払額 × 1.1 / (1.1 - 0.1021)、整数で探索
+  let gross = Math.round(payment * 1.1 / (1.1 - 0.1021));
+  while (gross - calcSrcTax(gross) > payment) gross--;
+  while (gross - calcSrcTax(gross) < payment) gross++;
+  const src = calcSrcTax(gross);
   const salesLabel = getSelectedSaleLabel();
   document.getElementById('dpp-sales-label').textContent = salesLabel || '（配信未選択）';
-  document.getElementById('dpp-amount').textContent = yen(amt);
+  document.getElementById('dpp-hand').textContent = yen(payment);
   document.getElementById('dpp-src').textContent = yen(src);
-  document.getElementById('dpp-hand').textContent = yen(amt - src);
+  document.getElementById('dpp-amount').textContent = yen(gross);
   document.getElementById('dp-preview').style.display = 'block';
 }
 
@@ -2479,12 +2486,17 @@ function addDailyPay() {
   if (!casterId || isNaN(amount) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number); // 支払日ベース（源泉納付期限用）
   const [targetY, targetM] = targetMonth ? targetMonth.split('-').map(Number) : [y, m];
-  const srcTax = calcSrcTax(amount);
+  // 支払額から税込報酬を逆算
+  let gross = Math.round(amount * 1.1 / (1.1 - 0.1021));
+  while (gross - calcSrcTax(gross) > amount) gross--;
+  while (gross - calcSrcTax(gross) < amount) gross++;
+  const srcTax = calcSrcTax(gross);
+  const savedAmount = gross; // DBにはamount=税込報酬で保存（既存の計算ロジックと互換）
   const saleIds = [...dpSelectedSaleIds];
   const salesLabel = getSelectedSaleLabel();
-  state.dailyPays.push({ id: state.nextId++, casterId, amount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel });
+  state.dailyPays.push({ id: state.nextId++, casterId, amount: savedAmount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel });
   const newDp = state.dailyPays[state.dailyPays.length - 1];
-  dbSave('daily_pays', { id: newDp.id, caster_id: newDp.casterId, amount: newDp.amount, src_tax: newDp.srcTax, date: newDp.date, note: newDp.note||'', y: newDp.y, m: newDp.m, target_y: newDp.targetY, target_m: newDp.targetM, sale_ids: JSON.stringify(newDp.saleIds||[]), sales_label: newDp.salesLabel||'' });
+  dbSave('daily_pays', { id: newDp.id, caster_id: newDp.casterId, amount: savedAmount, src_tax: newDp.srcTax, date: newDp.date, note: newDp.note||'', y: newDp.y, m: newDp.m, target_y: newDp.targetY, target_m: newDp.targetM, sale_ids: JSON.stringify(newDp.saleIds||[]), sales_label: newDp.salesLabel||'' });
   document.getElementById('dp-amount').value = '';
   document.getElementById('dp-note').value = '';
   document.getElementById('dp-preview').style.display = 'none';
@@ -2502,7 +2514,7 @@ function openDpEditModal(id) {
   if (!d) return;
   document.getElementById('dp-edit-id').value = id;
   document.getElementById('dp-edit-date').value = d.date;
-  document.getElementById('dp-edit-amount').value = d.amount;
+  document.getElementById('dp-edit-amount').value = d.amount - calcSrcTax(d.amount); // 保存済み税込報酬→支払額に変換
   document.getElementById('dp-edit-note').value = d.note || '';
 
   // 配信者セレクト
@@ -2551,17 +2563,21 @@ function calcDpEditFromSales() {
     const c = sale ? getCaster(sale.casterId) : null;
     return s + (c ? calcReward(coinToYen(sale.coins), c.rate) : 0);
   }, 0);
-  document.getElementById('dp-edit-amount').value = total;
+  const autoPayment = total - calcSrcTax(total);
+  document.getElementById('dp-edit-amount').value = autoPayment;
   updateDpEditPreview();
 }
 
 function updateDpEditPreview() {
-  const amt = parseFloat(document.getElementById('dp-edit-amount').value);
-  if (isNaN(amt) || amt <= 0) { document.getElementById('dp-edit-preview').style.display = 'none'; return; }
-  const src = calcSrcTax(amt);
-  document.getElementById('dp-edit-p-amount').textContent = yen(amt);
+  const payment = parseFloat(document.getElementById('dp-edit-amount').value);
+  if (isNaN(payment) || payment <= 0) { document.getElementById('dp-edit-preview').style.display = 'none'; return; }
+  let gross = Math.round(payment * 1.1 / (1.1 - 0.1021));
+  while (gross - calcSrcTax(gross) > payment) gross--;
+  while (gross - calcSrcTax(gross) < payment) gross++;
+  const src = calcSrcTax(gross);
+  document.getElementById('dp-edit-p-hand').textContent = yen(payment);
   document.getElementById('dp-edit-p-src').textContent = yen(src);
-  document.getElementById('dp-edit-p-hand').textContent = yen(amt - src);
+  document.getElementById('dp-edit-p-amount').textContent = yen(gross);
   document.getElementById('dp-edit-preview').style.display = 'block';
 }
 
@@ -2573,13 +2589,17 @@ function saveDpEdit() {
   const note = document.getElementById('dp-edit-note').value;
   if (!casterId || isNaN(amount) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const srcTax = calcSrcTax(amount);
+  let gross = Math.round(amount * 1.1 / (1.1 - 0.1021));
+  while (gross - calcSrcTax(gross) > amount) gross--;
+  while (gross - calcSrcTax(gross) < amount) gross++;
+  const srcTax = calcSrcTax(gross);
+  const savedAmount = gross;
   const saleIds = [...dpEditSelectedSaleIds];
   // salesLabel を再生成
   const dates = saleIds.map(sid => { const s = state.sales.find(x => x.id === sid); return s ? s.date : ''; }).filter(Boolean).sort();
   const salesLabel = dates.length === 0 ? '' : dates.length === 1 ? `${dates[0]} 配信分` : `${dates.join('・')} 配信分`;
   const idx = state.dailyPays.findIndex(x => x.id === id);
-  if (idx !== -1) state.dailyPays[idx] = { ...state.dailyPays[idx], casterId, amount, srcTax, date, note, y, m, saleIds, salesLabel };
+  if (idx !== -1) state.dailyPays[idx] = { ...state.dailyPays[idx], casterId, amount: savedAmount, srcTax, date, note, y, m, saleIds, salesLabel };
   closeDpEditModal();
   renderAll();
   updateDailySelect();
