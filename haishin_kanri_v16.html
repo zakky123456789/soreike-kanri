@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>それいけ合同会社｜配信事務所管理システム v16</title>
+<title>それいけ合同会社｜配信事務所管理システム</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
@@ -13,6 +13,19 @@
     --yellow: #fbbf24; --text: #e2e8f0; --muted: #64748b;
     --font: 'Noto Sans JP', sans-serif; --mono: 'DM Mono', monospace;
   }
+  body.light {
+    --bg: #f0f2f5; --surface: #ffffff; --surface2: #e8ecf0; --border: #d0d7e0;
+    --accent: #2563eb; --accent2: #7c3aed; --green: #059669; --red: #dc2626;
+    --yellow: #d97706; --text: #1e293b; --muted: #64748b;
+  }
+  @media (prefers-color-scheme: light) {
+    body:not(.dark) {
+      --bg: #f0f2f5; --surface: #ffffff; --surface2: #e8ecf0; --border: #d0d7e0;
+      --accent: #2563eb; --accent2: #7c3aed; --green: #059669; --red: #dc2626;
+      --yellow: #d97706; --text: #1e293b; --muted: #64748b;
+    }
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; min-height: 100vh; }
   .app { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
@@ -118,8 +131,11 @@
   <nav class="sidebar">
     <div class="logo">
       <div class="logo-title">それいけ合同会社</div>
-      <div class="logo-sub" id="role-badge-text">配信事務所管理システム v15</div>
+      <div class="logo-sub" id="role-badge-text">配信事務所管理システム</div>
       <div id="sync-status" style="font-size:11px;margin-top:6px;color:var(--muted)">🔄 接続中...</div>
+      <div onclick="toggleTheme()" id="theme-toggle-btn" style="display:inline-flex;align-items:center;gap:5px;margin-top:8px;cursor:pointer;font-size:11px;color:var(--muted);padding:3px 8px;border-radius:6px;border:1px solid var(--border);transition:all 0.15s;background:var(--surface2)" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+        <span id="theme-icon">🌙</span><span id="theme-label">ダークモード</span>
+      </div>
     </div>
     <div class="nav-item active" onclick="dashSecretClick()"><span>📊</span>ダッシュボード</div>
     <div class="nav-item" onclick="showPage('casters')"><span>👤</span>配信者管理</div>
@@ -1415,6 +1431,48 @@ function updateLabels() {
     if (el) el.textContent = lbl;
   });
 }
+
+// ===== テーマ切り替え =====
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+  if (saved === 'light' || (!saved && prefersLight)) {
+    document.body.classList.add('light');
+    document.body.classList.remove('dark');
+  } else {
+    document.body.classList.add('dark');
+    document.body.classList.remove('light');
+  }
+  updateThemeLabel();
+}
+function toggleTheme() {
+  const isLight = document.body.classList.contains('light');
+  if (isLight) {
+    document.body.classList.remove('light');
+    document.body.classList.add('dark');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    document.body.classList.remove('dark');
+    document.body.classList.add('light');
+    localStorage.setItem('theme', 'light');
+  }
+  updateThemeLabel();
+}
+function updateThemeLabel() {
+  const isLight = document.body.classList.contains('light');
+  const icon = document.getElementById('theme-icon');
+  const label = document.getElementById('theme-label');
+  if (icon) icon.textContent = isLight ? '☀️' : '🌙';
+  if (label) label.textContent = isLight ? 'ライトモード' : 'ダークモード';
+}
+// OS設定変更を検知して自動追従（手動設定がない場合のみ）
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+  if (!localStorage.getItem('theme')) {
+    if (e.matches) { document.body.classList.add('light'); document.body.classList.remove('dark'); }
+    else { document.body.classList.add('dark'); document.body.classList.remove('light'); }
+    updateThemeLabel();
+  }
+});
 
 // ===== 紹介者フォーム 請求書摘要トグル =====
 function toggleRefEditInvDesc(prefix) {
@@ -4167,6 +4225,7 @@ document.getElementById('s-date').addEventListener('change', function() {
 });
 document.getElementById('s-rate').addEventListener('input', updateSalePreview);
 updateLabels();
+initTheme();
 // Supabase DBからデータロード（ロード完了後にrenderAll）
 loadFromDB();
 </script>
