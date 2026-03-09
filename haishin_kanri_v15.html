@@ -1469,7 +1469,10 @@ async function readReceiptFile(file) {
 
   const resp = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5dGh2anVmcW5tdnd3bGVjeWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDA2NzYsImV4cCI6MjA4ODU3NjY3Nn0.LuuchGYqhqWfAcFxP0ZjIckQVeBhOwR7MItaFaUFjBo',
+    },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
