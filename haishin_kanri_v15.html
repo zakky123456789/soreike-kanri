@@ -142,89 +142,135 @@
     <div class="page" id="page-casters">
       <div class="page-header"><div class="page-title">配信者管理</div></div>
       <div class="table-wrap" style="margin-bottom:24px">
-        <div class="table-header"><div class="table-title">新規配信者登録</div></div>
-        <div style="padding:16px">
-          <div class="form-grid form-grid-4">
-            <div class="form-group"><label>配信者名</label><input id="c-name" placeholder="例：はなこ"></div>
-            <div class="form-group"><label>報酬率（%）</label><input id="c-rate" type="number" placeholder="例：70" step="0.1"></div>
-            <div class="form-group"><label>紹介者</label><select id="c-ref"><option value="">なし</option></select></div>
-            <div class="form-group"><label>インボイス登録</label>
-              <select id="c-invoice" onchange="toggleInvoiceInput('c-invoicenum', this.value)">
-                <option value="no">未登録</option><option value="yes">登録済み</option>
-              </select>
+        <div class="table-header" style="cursor:pointer" onclick="toggleForm('caster-form', this)">
+          <div class="table-title">＋ 新規配信者登録</div>
+          <span id="caster-form-icon" style="color:var(--muted);font-size:12px">▼ 開く</span>
+        </div>
+        <div id="caster-form" style="display:none;padding:20px">
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">① 基本情報</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="c-name" placeholder="例：はなこ"></div>
+              <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="c-rate" type="number" placeholder="例：70" step="0.1"></div>
+              <div class="form-group"><label>紹介者</label><select id="c-ref"><option value="">なし</option></select></div>
             </div>
           </div>
-          <div class="form-grid form-grid-4" id="c-invoicenum" style="display:none">
-            <div class="form-group" style="grid-column:1/3"><label>インボイス番号（T+13桁）</label><input id="c-invoiceno" placeholder="例：T1234567890123"></div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">② 個人情報</div>
+            <div class="form-grid form-grid-4" style="margin-bottom:10px">
+              <div class="form-group"><label>本名</label><input id="c-realname" placeholder="例：山田花子"></div>
+              <div class="form-group"><label>生年月日</label><input id="c-birthdate" type="date" oninput="updateCasterAge('c-birthdate','c-age')"></div>
+              <div class="form-group"><label>年齢（自動計算）</label><input id="c-age" readonly placeholder="生年月日を入力" style="color:var(--accent);cursor:default"></div>
+              <div class="form-group"><label>電話番号</label><input id="c-tel" placeholder="例：090-1234-5678"></div>
+            </div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>郵便番号</label><input id="c-zip" placeholder="数字7桁（例：1690074）" maxlength="7" inputmode="numeric" oninput="fetchAddress('c-zip','c-address')"></div>
+              <div class="form-group" style="grid-column:span 3"><label>住所 <span style="font-size:10px;color:var(--muted);font-weight:400">（7桁入力で自動補完）</span></label><input id="c-address" placeholder="例：東京都板橋区〇〇1-2-3"></div>
+            </div>
           </div>
-          <div class="form-grid form-grid-4" style="margin-top:14px">
-            <div class="form-group"><label>本名</label><input id="c-realname" placeholder="例：山田花子"></div>
-            <div class="form-group"><label>郵便番号</label><input id="c-zip" placeholder="例：169-0074"></div>
-            <div class="form-group"><label>電話番号</label><input id="c-tel" placeholder="例：090-1234-5678"></div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">③ インボイス</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>インボイス登録</label>
+                <select id="c-invoice" onchange="toggleInvoiceInput('c-invoicenum', this.value)">
+                  <option value="no">未登録</option><option value="yes">登録済み</option>
+                </select>
+              </div>
+              <div class="form-group" style="grid-column:span 2" id="c-invoicenum"><label>インボイス番号（T+13桁）</label><input id="c-invoiceno" placeholder="例：T1234567890123"></div>
+            </div>
           </div>
-          <div class="form-grid form-grid-4" style="margin-top:8px">
-            <div class="form-group" style="grid-column:1/3"><label>住所</label><input id="c-address" placeholder="例：東京都板橋区〇〇"></div>
-            <div class="form-group"><label>銀行名</label><input id="c-bank" placeholder="例：三菱UFJ銀行"></div>
-            <div class="form-group"><label>支店名</label><input id="c-branch" placeholder="例：新宿支店"></div>
-            <div class="form-group"><label>口座種別</label><select id="c-actype"><option value="普通">普通</option><option value="当座">当座</option><option value="貯蓄">貯蓄</option></select></div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">④ 振込先口座</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>銀行名</label><input id="c-bank" placeholder="例：三菱UFJ銀行"></div>
+              <div class="form-group"><label>支店名</label><input id="c-branch" placeholder="例：新宿支店"></div>
+              <div class="form-group"><label>口座種別</label><select id="c-actype"><option value="普通">普通</option><option value="当座">当座</option><option value="貯蓄">貯蓄</option></select></div>
+              <div class="form-group"><label>口座番号</label><input id="c-acnum" placeholder="例：1234567"></div>
+            </div>
+            <div class="form-grid form-grid-4" style="margin-top:10px">
+              <div class="form-group"><label>口座名義</label><input id="c-holder" placeholder="例：ヤマダ ハナコ"></div>
+            </div>
           </div>
-          <div class="form-grid form-grid-4" style="margin-top:8px">
-            <div class="form-group"><label>口座番号</label><input id="c-acnum" placeholder="例：1234567"></div>
-            <div class="form-group"><label>口座名義</label><input id="c-holder" placeholder="例：ヤマダ ハナコ"></div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
+            <div class="form-group"><label>メモ（自由記入）</label><input id="c-memo" placeholder="例：週3配信、猫好き"></div>
           </div>
-          <button class="btn btn-primary" style="margin-top:14px" onclick="addCaster()">＋ 登録する</button>
+          <button class="btn btn-primary" onclick="addCaster()">＋ 登録する</button>
           <div id="caster-error" style="display:none;margin-top:10px;font-size:12px;color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:8px 12px"></div>
         </div>
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">登録配信者一覧</div></div>
-        <table><thead><tr><th>配信者名</th><th class="num">報酬率</th><th>紹介者</th><th>インボイス</th><th>インボイス番号</th><th></th></tr></thead>
+        <table><thead><tr><th>配信者名</th><th class="num">報酬率</th><th>紹介者</th><th>インボイス</th><th>インボイス番号</th><th>メモ</th><th></th></tr></thead>
         <tbody id="casters-table"></tbody></table>
       </div>
     </div>
 
     <!-- 編集モーダル -->
-    <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:520px;max-width:95vw">
-        <div style="font-size:16px;font-weight:700;margin-bottom:20px">配信者を編集</div>
+    <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 0">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:640px;max-width:95vw;margin:auto">
+        <div style="font-size:16px;font-weight:700;margin-bottom:24px">✏️ 配信者を編集</div>
         <input type="hidden" id="edit-id">
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>配信者名</label><input id="edit-name"></div>
-          <div class="form-group"><label>報酬率（%）</label><input id="edit-rate" type="number" step="0.1"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>紹介者</label><select id="edit-ref"><option value="">なし</option></select></div>
-          <div class="form-group"><label>インボイス登録</label>
-            <select id="edit-invoice" onchange="toggleInvoiceInput('edit-invoicenum', this.value)">
-              <option value="no">未登録</option><option value="yes">登録済み</option>
-            </select>
+
+        <!-- ① 基本情報 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">① 基本情報</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="edit-name"></div>
+            <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="edit-rate" type="number" step="0.1"></div>
+            <div class="form-group"><label>紹介者</label><select id="edit-ref"><option value="">なし</option></select></div>
           </div>
         </div>
-        <div id="edit-invoicenum" style="display:none;margin-bottom:14px">
-          <div class="form-group"><label>インボイス番号（T+13桁）</label><input id="edit-invoiceno" placeholder="例：T1234567890123"></div>
+
+        <!-- ② 個人情報 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">② 個人情報</div>
+          <div class="form-grid form-grid-4" style="margin-bottom:10px">
+            <div class="form-group"><label>本名</label><input id="edit-realname" placeholder="例：山田花子"></div>
+            <div class="form-group"><label>生年月日</label><input id="edit-birthdate" type="date" oninput="updateCasterAge('edit-birthdate','edit-age')"></div>
+            <div class="form-group"><label>年齢（自動計算）</label><input id="edit-age" readonly placeholder="自動計算" style="color:var(--accent);cursor:default"></div>
+            <div class="form-group"><label>電話番号</label><input id="edit-tel" placeholder="例：090-1234-5678"></div>
+          </div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>郵便番号</label><input id="edit-zip" placeholder="数字7桁（例：1690074）" maxlength="7" inputmode="numeric" oninput="fetchAddress('edit-zip','edit-address')"></div>
+            <div class="form-group" style="grid-column:span 3"><label>住所 <span style="font-size:10px;color:var(--muted);font-weight:400">（7桁入力で自動補完）</span></label><input id="edit-address" placeholder="例：東京都板橋区〇〇1-2-3"></div>
+          </div>
         </div>
-        <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px;font-size:12px;color:var(--muted);font-weight:600">個人情報</div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>本名</label><input id="edit-realname" placeholder="例：山田花子"></div>
-          <div class="form-group"><label>電話番号</label><input id="edit-tel" placeholder="例：090-1234-5678"></div>
+
+        <!-- ③ インボイス -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">③ インボイス</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>インボイス登録</label>
+              <select id="edit-invoice" onchange="toggleInvoiceInput('edit-invoicenum', this.value)">
+                <option value="no">未登録</option><option value="yes">登録済み</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:span 2" id="edit-invoicenum"><label>インボイス番号（T+13桁）</label><input id="edit-invoiceno" placeholder="例：T1234567890123"></div>
+          </div>
         </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>郵便番号</label><input id="edit-zip" placeholder="例：169-0074"></div>
-          <div class="form-group"><label>住所</label><input id="edit-address" placeholder="例：東京都〇〇区..."></div>
+
+        <!-- ④ 振込先口座 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">④ 振込先口座</div>
+          <div class="form-grid form-grid-4" style="margin-bottom:10px">
+            <div class="form-group"><label>銀行名</label><input id="edit-bank" placeholder="例：三菱UFJ銀行"></div>
+            <div class="form-group"><label>支店名</label><input id="edit-branch" placeholder="例：新宿支店"></div>
+            <div class="form-group"><label>口座種別</label><select id="edit-actype"><option value="普通">普通</option><option value="当座">当座</option><option value="貯蓄">貯蓄</option></select></div>
+            <div class="form-group"><label>口座番号</label><input id="edit-acnum" placeholder="例：1234567"></div>
+          </div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>口座名義</label><input id="edit-holder" placeholder="例：ヤマダ ハナコ"></div>
+          </div>
         </div>
-        <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px;font-size:12px;color:var(--muted);font-weight:600">振込先口座情報</div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>口座名義</label><input id="edit-holder" placeholder="例：ヤマダ ハナコ"></div>
+
+        <!-- ⑤ メモ -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
+          <div class="form-group"><label>メモ（自由記入）</label><input id="edit-memo" placeholder="例：週3配信、猫好き"></div>
         </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>銀行名</label><input id="edit-bank" placeholder="例：三菱UFJ銀行"></div>
-          <div class="form-group"><label>支店名</label><input id="edit-branch" placeholder="例：新宿支店"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>口座種別</label><select id="edit-actype"><option value="普通">普通</option><option value="当座">当座</option><option value="貯蓄">貯蓄</option></select></div>
-          <div class="form-group"><label>口座番号</label><input id="edit-acnum" placeholder="例：1234567"></div>
-        </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+
+        <div style="display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="closeEditModal()">キャンセル</button>
           <button class="btn btn-primary" onclick="saveEdit()">保存する</button>
         </div>
@@ -352,63 +398,86 @@
       </div>
     </div>
 
-    <div id="ref-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:520px;max-width:95vw">
-        <div style="font-size:16px;font-weight:700;margin-bottom:20px">紹介者を編集</div>
+    <div id="ref-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:24px 0">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:640px;max-width:95vw;margin:auto">
+        <div style="font-size:16px;font-weight:700;margin-bottom:24px">✏️ 紹介者を編集</div>
         <input type="hidden" id="ref-edit-id">
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>紹介者名</label><input id="ref-edit-name"></div>
-          <div class="form-group"><label>会社名（任意）</label><input id="ref-edit-company" placeholder="例：エレメント" oninput="document.getElementById('ref-edit-honorific').value=this.value.trim()?'御中':'様'"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>敬称</label><select id="ref-edit-honorific"><option value="様">様</option><option value="御中">御中</option><option value="さん">さん</option><option value="なし">なし</option></select></div>
-          <div class="form-group"><label>メモ</label><input id="ref-edit-note"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>インボイス番号（T+13桁）</label><input id="ref-edit-invoiceno" placeholder="例：T1234567890123"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>計算パターン</label>
-            <select id="ref-edit-type" onchange="toggleRefEditPattern(this.value)">
-              <option value="A">パターンA：①コイン×7×率　②税込報酬×率</option>
-              <option value="B">パターンB：税込報酬×率（一本化）</option>
-            </select>
+
+        <!-- ① 基本情報 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">① 基本情報</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>紹介者名 <span style="color:var(--red)">*</span></label><input id="ref-edit-name"></div>
+            <div class="form-group"><label>会社名（任意）</label><input id="ref-edit-company" placeholder="例：エレメント" oninput="document.getElementById('ref-edit-honorific').value=this.value.trim()?'御中':'様'"></div>
+            <div class="form-group"><label>敬称</label><select id="ref-edit-honorific"><option value="様">様</option><option value="御中">御中</option><option value="さん">さん</option><option value="なし">なし</option></select></div>
           </div>
         </div>
-        <div id="ref-edit-pattern-A" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
-          <div class="form-group"><label>①率（%）　コイン×7×①率</label><input id="ref-edit-r1" type="number" step="0.01"></div>
-          <div class="form-group"><label>②のA（%）　コイン×7×A×B</label><input id="ref-edit-r2a" type="number" step="0.01"></div>
-          <div class="form-group"><label>②のB（%）　コイン×7×A×B</label><input id="ref-edit-r2b" type="number" step="0.01"></div>
+
+        <!-- ② 報酬計算設定 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">② 報酬計算設定</div>
+          <div class="form-grid form-grid-2" style="margin-bottom:12px">
+            <div class="form-group"><label>計算パターン</label>
+              <select id="ref-edit-type" onchange="toggleRefEditPattern(this.value)">
+                <option value="A">パターンA：①コイン×7×率　②税込報酬×率</option>
+                <option value="B">パターンB：税込報酬×率（一本化）</option>
+              </select>
+            </div>
+          </div>
+          <div id="ref-edit-pattern-A" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+            <div class="form-group"><label>①率（%）</label><input id="ref-edit-r1" type="number" step="0.01"></div>
+            <div class="form-group"><label>②のA（%）</label><input id="ref-edit-r2a" type="number" step="0.01"></div>
+            <div class="form-group"><label>②のB（%）</label><input id="ref-edit-r2b" type="number" step="0.01"></div>
+          </div>
+          <div id="ref-edit-pattern-B" style="display:none">
+            <div class="form-group"><label>報酬率（%）</label><input id="ref-edit-r1b" type="number" step="0.01"></div>
+          </div>
         </div>
-        <div id="ref-edit-pattern-B" style="display:none;margin-bottom:14px">
-          <div class="form-group"><label>報酬率（%）　税込報酬×率</label><input id="ref-edit-r1b" type="number" step="0.01"></div>
+
+        <!-- ③ インボイス・請求書 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">③ インボイス・請求書</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group" style="grid-column:span 2"><label>インボイス番号（T+13桁）</label><input id="ref-edit-invoiceno" placeholder="例：T1234567890123"></div>
+            <div class="form-group"><label>請求書作成</label>
+              <select id="ref-edit-createInvoice">
+                <option value="false">しない（相手から届く）</option>
+                <option value="true">する（こちらで作成）</option>
+              </select>
+            </div>
+          </div>
         </div>
-        <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px;font-size:12px;color:var(--muted);font-weight:600">請求書・振込先情報</div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>郵便番号</label><input id="ref-edit-zip" placeholder="例：123-4567"></div>
-          <div class="form-group"><label>電話番号</label><input id="ref-edit-tel" placeholder="例：090-1234-5678"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>住所</label><input id="ref-edit-address" placeholder="例：東京都〇〇区..."></div>
-          <div class="form-group"><label>口座名義</label><input id="ref-edit-holder" placeholder="例：ヤマダ タロウ"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:10px">
-          <div class="form-group"><label>銀行名</label><input id="ref-edit-bank" placeholder="例：三菱UFJ銀行"></div>
-          <div class="form-group"><label>支店名</label><input id="ref-edit-branch" placeholder="例：新宿支店"></div>
-        </div>
-        <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>口座種別</label>
+
+        <!-- ④ 連絡先・振込先口座 -->
+        <div style="margin-bottom:22px">
+          <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">④ 連絡先・振込先口座</div>
+          <div class="form-grid form-grid-4" style="margin-bottom:10px">
+            <div class="form-group"><label>郵便番号</label><input id="ref-edit-zip" placeholder="数字7桁（例：1234567）" maxlength="7" inputmode="numeric" oninput="fetchAddress('ref-edit-zip','ref-edit-address')"></div>
+            <div class="form-group" style="grid-column:span 3"><label>住所 <span style="font-size:10px;color:var(--muted);font-weight:400">（7桁入力で自動補完）</span></label><input id="ref-edit-address" placeholder="例：東京都〇〇区..."></div>
+          </div>
+          <div class="form-grid form-grid-4" style="margin-bottom:10px">
+            <div class="form-group"><label>電話番号</label><input id="ref-edit-tel" placeholder="例：090-1234-5678"></div>
+          </div>
+          <div class="form-grid form-grid-4" style="margin-bottom:10px">
+            <div class="form-group"><label>銀行名</label><input id="ref-edit-bank" placeholder="例：三菱UFJ銀行"></div>
+            <div class="form-group"><label>支店名</label><input id="ref-edit-branch" placeholder="例：新宿支店"></div>
+            <div class="form-group"><label>口座種別</label>
               <select id="ref-edit-accountType"><option value="普通" selected>普通</option><option value="当座">当座</option></select>
             </div>
             <div class="form-group"><label>口座番号</label><input id="ref-edit-accountNo" placeholder="例：1234567"></div>
-          <div class="form-group"><label>請求書作成</label>
-            <select id="ref-edit-createInvoice">
-              <option value="false">しない（相手から届く）</option>
-              <option value="true">する（こちらで作成）</option>
-            </select>
+          </div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>口座名義</label><input id="ref-edit-holder" placeholder="例：ヤマダ タロウ"></div>
           </div>
         </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+
+        <!-- ⑤ メモ -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
+          <div class="form-group"><label>メモ（自由記入）</label><input id="ref-edit-note"></div>
+        </div>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="closeRefEditModal()">キャンセル</button>
           <button class="btn btn-primary" onclick="saveRefEdit()">保存する</button>
         </div>
@@ -422,58 +491,82 @@
         💡 紹介報酬の計算式：①コイン×7×[①率]　②コイン×7×[②率]　合計＝①＋②（デフォルト：①=72%×8%=5.76%、②=2%）
       </div>
       <div class="table-wrap" style="margin-bottom:24px">
-        <div class="table-header"><div class="table-title">新規紹介者登録</div></div>
-        <div style="padding:16px">
-          <div class="form-grid form-grid-4" style="margin-bottom:14px">
-            <div class="form-group"><label>紹介者名</label><input id="r-name" placeholder="例：タカくん"></div>
-            <div class="form-group"><label>会社名（任意）</label><input id="r-company" placeholder="例：エレメント" oninput="document.getElementById('r-honorific').value=this.value.trim()?'御中':'様'"></div>
-            <div class="form-group"><label>敬称</label><select id="r-honorific"><option value="様">様</option><option value="御中">御中</option><option value="さん">さん</option><option value="なし">なし</option></select></div>
-            <div class="form-group"><label>メモ</label><input id="r-note" placeholder="例：SNS経由"></div>
-          </div>
-          <div class="form-grid form-grid-2" style="margin-bottom:14px">
-            <div class="form-group"><label>計算パターン</label>
-              <select id="r-type" onchange="toggleRefPattern(this.value)">
-                <option value="A">パターンA：①コイン×7×率　②税込報酬×率</option>
-                <option value="B">パターンB：税込報酬×率（一本化）</option>
-              </select>
+        <div class="table-header" style="cursor:pointer" onclick="toggleForm('referrer-form', this)">
+          <div class="table-title">＋ 新規紹介者登録</div>
+          <span id="referrer-form-icon" style="color:var(--muted);font-size:12px">▼ 開く</span>
+        </div>
+        <div id="referrer-form" style="display:none;padding:20px">
+          <!-- ① 基本情報 -->
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">① 基本情報</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>紹介者名 <span style="color:var(--red)">*</span></label><input id="r-name" placeholder="例：タカくん"></div>
+              <div class="form-group"><label>会社名（任意）</label><input id="r-company" placeholder="例：エレメント" oninput="document.getElementById('r-honorific').value=this.value.trim()?'御中':'様'"></div>
+              <div class="form-group"><label>敬称</label><select id="r-honorific"><option value="様">様</option><option value="御中">御中</option><option value="さん">さん</option><option value="なし">なし</option></select></div>
             </div>
           </div>
-          <div id="r-pattern-A" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
-            <div class="form-group"><label>①率（%）　コイン×7×①率</label><input id="r-r1" type="number" step="0.01" placeholder="例：2" value="2"></div>
-            <div class="form-group"><label>②のA（%）　コイン×7×A×B</label><input id="r-r2a" type="number" step="0.01" placeholder="例：72" value="72"></div>
-            <div class="form-group"><label>②のB（%）　コイン×7×A×B</label><input id="r-r2b" type="number" step="0.01" placeholder="例：8" value="8"></div>
-          </div>
-          <div id="r-pattern-B" class="form-grid form-grid-2" style="display:none;margin-bottom:14px">
-            <div class="form-group"><label>報酬率（%）　税込報酬×率</label><input id="r-r1b" type="number" step="0.01" placeholder="例：5" value="5"></div>
-          </div>
-          <div class="form-grid form-grid-4" style="margin-bottom:14px">
-            <div class="form-group"><label>インボイス番号（T+13桁）</label><input id="r-invoiceno" placeholder="例：T1234567890123"></div>
-            <div class="form-group"><label>請求書作成</label>
-              <select id="r-createInvoice">
-                <option value="false">しない（相手から届く）</option>
-                <option value="true">する（こちらで作成）</option>
-              </select>
+          <!-- ② 報酬計算設定 -->
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--accent2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">② 報酬計算設定</div>
+            <div class="form-grid form-grid-2" style="margin-bottom:12px">
+              <div class="form-group"><label>計算パターン</label>
+                <select id="r-type" onchange="toggleRefPattern(this.value)">
+                  <option value="A">パターンA：①コイン×7×率　②税込報酬×率</option>
+                  <option value="B">パターンB：税込報酬×率（一本化）</option>
+                </select>
+              </div>
+            </div>
+            <div id="r-pattern-A" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+              <div class="form-group"><label>①率（%）</label><input id="r-r1" type="number" step="0.01" placeholder="例：2" value="2"></div>
+              <div class="form-group"><label>②のA（%）</label><input id="r-r2a" type="number" step="0.01" placeholder="例：72" value="72"></div>
+              <div class="form-group"><label>②のB（%）</label><input id="r-r2b" type="number" step="0.01" placeholder="例：8" value="8"></div>
+            </div>
+            <div id="r-pattern-B" class="form-grid form-grid-2" style="display:none">
+              <div class="form-group"><label>報酬率（%）</label><input id="r-r1b" type="number" step="0.01" placeholder="例：5" value="5"></div>
             </div>
           </div>
-          <div style="border-top:1px solid var(--border);margin:14px 0;padding-top:14px;font-size:12px;color:var(--muted);font-weight:600">住所・振込先口座</div>
-          <div class="form-grid form-grid-4" style="margin-bottom:10px">
-            <div class="form-group"><label>郵便番号</label><input id="r-zip" placeholder="例：123-4567"></div>
-            <div class="form-group"><label>住所</label><input id="r-address" placeholder="例：東京都〇〇区..."></div>
-            <div class="form-group"><label>電話番号</label><input id="r-tel" placeholder="例：090-1234-5678"></div>
-            <div class="form-group"><label>口座名義</label><input id="r-holder" placeholder="例：ヤマダ タロウ"></div>
-          </div>
-          <div class="form-grid form-grid-4" style="margin-bottom:10px">
-            <div class="form-group"><label>銀行名</label><input id="r-bank" placeholder="例：三菱UFJ銀行"></div>
-            <div class="form-group"><label>支店名</label><input id="r-branch" placeholder="例：新宿支店"></div>
-          </div>
-          <div class="form-grid form-grid-4" style="margin-bottom:14px">
-            <div class="form-group"><label>口座種別</label>
-              <select id="r-accountType">
-                <option value="普通" selected>普通</option>
-                <option value="当座">当座</option>
-              </select>
+          <!-- ③ インボイス -->
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">③ インボイス・請求書</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group" style="grid-column:span 2"><label>インボイス番号（T+13桁）</label><input id="r-invoiceno" placeholder="例：T1234567890123"></div>
+              <div class="form-group"><label>請求書作成</label>
+                <select id="r-createInvoice">
+                  <option value="false">しない（相手から届く）</option>
+                  <option value="true">する（こちらで作成）</option>
+                </select>
+              </div>
             </div>
-            <div class="form-group"><label>口座番号</label><input id="r-accountNo" placeholder="例：1234567"></div>
+          </div>
+          <!-- ④ 連絡先・振込先 -->
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">④ 連絡先・振込先口座</div>
+            <div class="form-grid form-grid-4" style="margin-bottom:10px">
+              <div class="form-group"><label>郵便番号</label><input id="r-zip" placeholder="数字7桁（例：1234567）" maxlength="7" inputmode="numeric" oninput="fetchAddress('r-zip','r-address')"></div>
+              <div class="form-group" style="grid-column:span 3"><label>住所 <span style="font-size:10px;color:var(--muted);font-weight:400">（7桁入力で自動補完）</span></label><input id="r-address" placeholder="例：東京都〇〇区..."></div>
+            </div>
+            <div class="form-grid form-grid-4" style="margin-bottom:10px">
+              <div class="form-group"><label>電話番号</label><input id="r-tel" placeholder="例：090-1234-5678"></div>
+            </div>
+            <div class="form-grid form-grid-4" style="margin-bottom:10px">
+              <div class="form-group"><label>銀行名</label><input id="r-bank" placeholder="例：三菱UFJ銀行"></div>
+              <div class="form-group"><label>支店名</label><input id="r-branch" placeholder="例：新宿支店"></div>
+              <div class="form-group"><label>口座種別</label>
+                <select id="r-accountType">
+                  <option value="普通" selected>普通</option>
+                  <option value="当座">当座</option>
+                </select>
+              </div>
+              <div class="form-group"><label>口座番号</label><input id="r-accountNo" placeholder="例：1234567"></div>
+            </div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>口座名義</label><input id="r-holder" placeholder="例：ヤマダ タロウ"></div>
+            </div>
+          </div>
+          <!-- ⑤ メモ -->
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
+            <div class="form-group"><label>メモ（自由記入）</label><input id="r-note" placeholder="例：SNS経由で紹介"></div>
           </div>
           <button class="btn btn-primary" onclick="addReferrer()">＋ 登録する</button>
         </div>
@@ -949,7 +1042,7 @@ async function loadFromDB() {
         id: r.id, name: r.name, rate: Number(r.rate), refId: r.ref_id,
         invoice: r.invoice, invoiceNo: r.invoice_no,
         address: r.address, bank: r.bank, branch: r.branch, account: r.account, holder: r.holder,
-        realname: r.realname, zip: r.zip, tel: r.tel
+        realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||''
       }));
     }
     if (referrersR.data?.length > 0) {
@@ -1104,6 +1197,66 @@ let state = {
   fxRecords: [], // 両替記録
   nextId: 300,
 };
+
+
+// ===== 年齢自動計算 =====
+function calcAge(birthdate) {
+  if (!birthdate) return '';
+  const today = new Date();
+  const birth = new Date(birthdate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age + '歳';
+}
+function updateCasterAge(birthdateId, ageId) {
+  const bd = document.getElementById(birthdateId)?.value;
+  const el = document.getElementById(ageId);
+  if (el) el.value = calcAge(bd);
+}
+
+// ===== フォーム折りたたみ =====
+function toggleForm(id, headerEl) {
+  const el = document.getElementById(id);
+  const icon = headerEl.querySelector('span');
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.textContent = isOpen ? '▼ 開く' : '▲ 閉じる';
+}
+
+// ===== 郵便番号→住所自動入力 =====
+async function fetchAddress(zipInputId, addressInputId) {
+  const inputEl = document.getElementById(zipInputId);
+  if (!inputEl) return;
+  // 数字以外を除去して上書き
+  const raw = inputEl.value.replace(/[^0-9]/g, '');
+  inputEl.value = raw;
+  if (raw.length !== 7) {
+    inputEl.style.borderColor = '';
+    return;
+  }
+  inputEl.style.borderColor = 'var(--yellow)';
+  try {
+    const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${raw}`);
+    const data = await res.json();
+    if (data.results && data.results[0]) {
+      const r = data.results[0];
+      const addr = r.address1 + r.address2 + r.address3;
+      const el = document.getElementById(addressInputId);
+      if (el) {
+        el.value = addr;
+        el.focus();
+        el.setSelectionRange(addr.length, addr.length);
+      }
+      inputEl.style.borderColor = 'var(--green)';
+    } else {
+      inputEl.style.borderColor = 'var(--red)';
+    }
+  } catch(e) {
+    inputEl.style.borderColor = 'var(--red)';
+  }
+}
 
 // ===== SALES SORT =====
 let salesSort = { key: 'date', dir: 1 }; // dir: 1=昇順, -1=降順
@@ -1275,22 +1428,26 @@ function addCaster() {
   const invoiceNo = invoice === 'yes' ? document.getElementById('c-invoiceno').value.trim() : '';
   if (!name || isNaN(rate)) { showCasterError('配信者名と報酬率を入力してください'); return; }
   if (state.casters.some(c => c.name === name)) { showCasterError(`「${name}」はすでに登録されています`); return; }
-  const realname = document.getElementById('c-realname').value.trim();
-  const zip     = document.getElementById('c-zip').value.trim();
-  const tel     = document.getElementById('c-tel').value.trim();
-  const address = document.getElementById('c-address').value.trim();
-  const bank    = document.getElementById('c-bank').value.trim();
-  const branch  = document.getElementById('c-branch').value.trim();
-  const actype = document.getElementById('c-actype').value;
-  const acnum  = document.getElementById('c-acnum').value.trim();
-  const account = actype + ' ' + acnum;
-  const holder  = document.getElementById('c-holder').value.trim();
-  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, zip, tel, address, bank, branch, account, holder };
+  const realname  = document.getElementById('c-realname').value.trim();
+  const birthdate = document.getElementById('c-birthdate').value.trim();
+  const zip       = document.getElementById('c-zip').value.trim();
+  const tel       = document.getElementById('c-tel').value.trim();
+  const address   = document.getElementById('c-address').value.trim();
+  const bank      = document.getElementById('c-bank').value.trim();
+  const branch    = document.getElementById('c-branch').value.trim();
+  const actype    = document.getElementById('c-actype').value;
+  const acnum     = document.getElementById('c-acnum').value.trim();
+  const account   = actype + ' ' + acnum;
+  const holder    = document.getElementById('c-holder').value.trim();
+  const memo      = document.getElementById('c-memo').value.trim();
+  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo };
   state.casters.push(newCaster);
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
   document.getElementById('c-invoiceno').value = '';
   document.getElementById('c-realname').value = '';
+  document.getElementById('c-birthdate').value = '';
+  document.getElementById('c-age').value = '';
   document.getElementById('c-zip').value = '';
   document.getElementById('c-tel').value = '';
   document.getElementById('c-address').value = '';
@@ -1299,10 +1456,11 @@ function addCaster() {
   document.getElementById('c-actype').value = '普通';
   document.getElementById('c-acnum').value = '';
   document.getElementById('c-holder').value = '';
+  document.getElementById('c-memo').value = '';
   document.getElementById('c-invoice').value = 'no';
   toggleInvoiceInput('c-invoicenum', 'no');
   const errEl = document.getElementById('caster-error'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
-  dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, zip, tel, address, bank, branch, account, holder });
+  dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'' });
   renderAll();
 }
 
@@ -1327,12 +1485,16 @@ function renderCasters() {
     const invNo = c.invoice === 'yes' && c.invoiceNo
       ? `<span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.invoiceNo}</span>`
       : '<span style="color:var(--muted)">-</span>';
+    const memoCell = c.memo
+      ? `<td style="max-width:160px"><span style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:4px;padding:2px 8px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.memo}">📝 ${c.memo}</span></td>`
+      : `<td style="color:var(--muted)">-</td>`;
     return `<tr>
       <td><strong>${c.name}</strong></td>
       <td class="num"><span class="badge badge-blue">${c.rate}%</span></td>
       <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
       <td>${invBadge}</td>
       <td>${invNo}</td>
+      ${memoCell}
       <td style="display:flex;gap:6px">
         <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openEditModal(${c.id})">編集</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCaster(${c.id})">削除</button>
@@ -1351,6 +1513,8 @@ function openEditModal(id) {
   document.getElementById('edit-invoice').value = c.invoice;
   document.getElementById('edit-invoiceno').value = c.invoiceNo || '';
   document.getElementById('edit-realname').value = c.realname || '';
+  document.getElementById('edit-birthdate').value = c.birthdate || '';
+  document.getElementById('edit-age').value = calcAge(c.birthdate);
   document.getElementById('edit-zip').value = c.zip || '';
   document.getElementById('edit-tel').value = c.tel || '';
   document.getElementById('edit-address').value = c.address || '';
@@ -1360,6 +1524,7 @@ function openEditModal(id) {
   document.getElementById('edit-actype').value = _acParts[0]||'普通';
   document.getElementById('edit-acnum').value = _acParts.slice(1).join(' ')||'';
   document.getElementById('edit-holder').value  = c.holder  || '';
+  document.getElementById('edit-memo').value = c.memo || '';
   toggleInvoiceInput('edit-invoicenum', c.invoice);
   const modal = document.getElementById('edit-modal');
   modal.style.display = 'flex';
@@ -1379,17 +1544,19 @@ function saveEdit() {
   if (!name || isNaN(rate)) { alert('配信者名と報酬率を入力してください'); return; }
   const idx = state.casters.findIndex(c => c.id === id);
   if (idx !== -1) {
-    const realname = document.getElementById('edit-realname').value.trim();
-    const zip     = document.getElementById('edit-zip').value.trim();
-    const tel     = document.getElementById('edit-tel').value.trim();
-    const address = document.getElementById('edit-address').value.trim();
-    const bank    = document.getElementById('edit-bank').value.trim();
-    const branch  = document.getElementById('edit-branch').value.trim();
+    const realname  = document.getElementById('edit-realname').value.trim();
+    const birthdate = document.getElementById('edit-birthdate').value.trim();
+    const zip       = document.getElementById('edit-zip').value.trim();
+    const tel       = document.getElementById('edit-tel').value.trim();
+    const address   = document.getElementById('edit-address').value.trim();
+    const bank      = document.getElementById('edit-bank').value.trim();
+    const branch    = document.getElementById('edit-branch').value.trim();
     const _et = document.getElementById('edit-actype').value;
     const _en = document.getElementById('edit-acnum').value.trim();
     const account = _et + ' ' + _en;
     const holder  = document.getElementById('edit-holder').value.trim();
-    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, zip, tel, address, bank, branch, account, holder };
+    const memo    = document.getElementById('edit-memo').value.trim();
+    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo };
   }
   closeEditModal();
   renderAll();
