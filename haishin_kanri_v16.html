@@ -2057,8 +2057,8 @@ function saveRefEdit() {
   const invDesc = document.getElementById('ref-edit-inv-desc').value.trim();
   const invoiceNo = document.getElementById('ref-edit-invoiceno').value.trim();
   const refType = document.getElementById('ref-edit-type').value;
+  const createInvoice = document.getElementById('ref-edit-createInvoice').value === 'true';
   if (!name) { alert('紹介者名を入力してください'); return; }
-
   if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('ref-edit-inv-desc').focus(); return; }
   let r1pct, r2pct;
   let r2a = 0, r2b = 0;
@@ -2082,7 +2082,6 @@ function saveRefEdit() {
   const accountType = document.getElementById('ref-edit-accountType').value;
   const accountNo   = document.getElementById('ref-edit-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
-  const createInvoice = document.getElementById('ref-edit-createInvoice').value === 'true';
   const idx = state.referrers.findIndex(r => r.id === id);
   if (idx !== -1) {
     state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
