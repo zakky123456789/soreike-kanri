@@ -31,7 +31,19 @@
   .month-nav { display: flex; align-items: center; gap: 12px; }
   .month-nav button { background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
   .month-nav button:hover { background: var(--border); }
-  .month-label { font-size: 15px; font-weight: 600; font-family: var(--mono); color: var(--accent); min-width: 100px; text-align: center; }
+  .month-label { font-size: 15px; font-weight: 600; font-family: var(--mono); color: var(--accent); min-width: 100px; text-align: center; cursor: pointer; border-radius: 6px; padding: 4px 10px; transition: background 0.15s; }
+  .month-label:hover { background: rgba(79,156,249,0.12); }
+  #month-picker-overlay { display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.5); align-items:center; justify-content:center; }
+  #month-picker-overlay.open { display:flex; }
+  #month-picker-box { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; min-width:300px; box-shadow:0 8px 32px rgba(0,0,0,0.4); }
+  .mp-year-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .mp-year-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); width:32px; height:32px; border-radius:6px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; }
+  .mp-year-btn:hover { background:var(--border); }
+  .mp-year-label { font-size:16px; font-weight:700; font-family:var(--mono); color:var(--accent); }
+  .mp-months { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .mp-month-btn { background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:8px 4px; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600; text-align:center; transition:all 0.15s; }
+  .mp-month-btn:hover { background:var(--border); }
+  .mp-month-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
   .card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
@@ -88,6 +100,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
 <body>
+<!-- 年月ピッカーモーダル -->
+<div id="month-picker-overlay" onclick="if(event.target===this)closeMonthPicker()">
+  <div id="month-picker-box">
+    <div class="mp-year-nav">
+      <button class="mp-year-btn" onclick="mpChangeYear(-1)">◀</button>
+      <span class="mp-year-label" id="mp-year-label"></span>
+      <button class="mp-year-btn" onclick="mpChangeYear(1)">▶</button>
+    </div>
+    <div class="mp-months" id="mp-months"></div>
+    <div style="margin-top:14px;text-align:right">
+      <button onclick="closeMonthPicker()" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px">キャンセル</button>
+    </div>
+  </div>
+</div>
 <div class="app">
   <nav class="sidebar">
     <div class="logo">
@@ -119,7 +145,7 @@
         <div class="page-title">ダッシュボード</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-dash"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-dash"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -585,7 +611,7 @@
         <div class="page-title">売上入力</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-sales"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-sales"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -699,7 +725,7 @@
         <div class="page-title">経費入力</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-exp"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-exp"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -824,7 +850,7 @@
         <div class="page-title">月次損益計算書</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-pl"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-pl"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -838,7 +864,7 @@
         <div class="page-title">両替入力（確定売上）</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-fx"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-fx"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -889,7 +915,7 @@
         <div class="page-title">消費税還付シミュレーション</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-ref"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-ref"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -956,7 +982,7 @@
         <div class="page-title">管理人</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-manager"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-manager"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -1017,7 +1043,7 @@
         <div class="page-title">紹介者報告書</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-refReport"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-refReport"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -1041,7 +1067,7 @@
         <div class="page-title">配信者レポート</div>
         <div class="month-nav">
           <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" id="ml-report"></div>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-report"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
@@ -1378,10 +1404,39 @@ function changeMonth(d) {
 
 function updateLabels() {
   const lbl = `${state.y}年${state.m}月`;
-  ['dash','sales','exp','pl','ref','report','refReport'].forEach(id => {
+  ['dash','sales','exp','pl','ref','report','refReport','fx','tax','manager'].forEach(id => {
     const el = document.getElementById('ml-' + id);
     if (el) el.textContent = lbl;
   });
+}
+
+// ===== 年月ピッカー =====
+let mpYear = 0;
+function openMonthPicker() {
+  mpYear = state.y;
+  renderMonthPicker();
+  document.getElementById('month-picker-overlay').classList.add('open');
+}
+function closeMonthPicker() {
+  document.getElementById('month-picker-overlay').classList.remove('open');
+}
+function mpChangeYear(d) {
+  mpYear += d;
+  renderMonthPicker();
+}
+function renderMonthPicker() {
+  document.getElementById('mp-year-label').textContent = mpYear + '年';
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  document.getElementById('mp-months').innerHTML = months.map((lbl, i) => {
+    const m = i + 1;
+    const isActive = mpYear === state.y && m === state.m;
+    return `<button class="mp-month-btn${isActive?' active':''}" onclick="selectMonth(${mpYear},${m})">${lbl}</button>`;
+  }).join('');
+}
+function selectMonth(y, m) {
+  state.y = y; state.m = m;
+  updateLabels(); renderAll();
+  closeMonthPicker();
 }
 
 
