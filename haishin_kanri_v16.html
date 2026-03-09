@@ -1381,7 +1381,7 @@ const yen = n => '¥' + fmt(n);
 const coins = n => fmt(n) + 'C';
 const coinToYen = c => c * COIN_RATE;
 const calcReward = (yen, rate) => Math.floor(yen * rate / 100); // 税込報酬（切り捨て）
-const calcSrcTax = rewardIncTax => Math.floor((rewardIncTax / 1.1) * 0.1021); // 税抜ベースで源泉計算（切り捨て）
+const calcSrcTax = rewardIncTax => Math.floor(Math.floor(rewardIncTax / 1.1) * 0.1021); // 税抜確定→源泉計算（各ステップ切り捨て）
 // 紹介料計算（2パターン対応）
 // type='A': ①コイン×7×r1pct  ②コイン×7×r2a×r2b
 // type='B': 税込報酬×r1pct（一本化）
