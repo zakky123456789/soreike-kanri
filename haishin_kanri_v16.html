@@ -1979,7 +1979,7 @@ function addReferrer() {
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
   const newRef = { id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
   state.referrers.push(newRef);
-  dbSave('referrers', { id: newRef.id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+  dbSave('referrers', { id: newRef.id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   document.getElementById('r-invoiceno').value = '';
   document.getElementById('r-createInvoice').value = 'false';
   document.getElementById('r-name').value = '';
@@ -2085,7 +2085,7 @@ function saveRefEdit() {
   const idx = state.referrers.findIndex(r => r.id === id);
   if (idx !== -1) {
     state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
-    dbSave('referrers', { id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+    dbSave('referrers', { id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   }
   closeRefEditModal();
   renderAll();
