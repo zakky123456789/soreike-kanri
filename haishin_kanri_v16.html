@@ -304,10 +304,10 @@
       </div>
     </div>
 
-    <!-- 日払い編集モーダル -->
+    <!-- 前払い編集モーダル -->
     <div id="dp-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:560px;max-width:95vw">
-        <div style="font-size:16px;font-weight:700;margin-bottom:20px">日払いを編集</div>
+        <div style="font-size:16px;font-weight:700;margin-bottom:20px">前払いを編集</div>
         <input type="hidden" id="dp-edit-id">
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
           <div class="form-group"><label>配信者</label><select id="dp-edit-caster"></select></div>
@@ -318,7 +318,7 @@
           <div id="dp-edit-sale-list" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px"></div>
         </div>
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>日払い額（税込）</label><input id="dp-edit-amount" type="number" oninput="updateDpEditPreview()"></div>
+          <div class="form-group"><label>前払い額（税込）</label><input id="dp-edit-amount" type="number" oninput="updateDpEditPreview()"></div>
           <div class="form-group" style="align-self:flex-end">
             <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--accent);width:100%" onclick="calcDpEditFromSales()">選択分の報酬合計を自動入力</button>
           </div>
@@ -326,7 +326,7 @@
         <div class="form-group" style="margin-bottom:14px"><label>備考</label><input id="dp-edit-note" placeholder="例：前払い"></div>
         <div id="dp-edit-preview" style="display:none;margin-bottom:14px" class="sim-box">
           <div style="font-size:12px;color:var(--muted);margin-bottom:8px">プレビュー</div>
-          <div class="sim-row"><div class="sim-label">日払い額（税込）</div><div id="dp-edit-p-amount" style="font-family:var(--mono)"></div></div>
+          <div class="sim-row"><div class="sim-label">前払い額（税込）</div><div id="dp-edit-p-amount" style="font-family:var(--mono)"></div></div>
           <div class="sim-row"><div class="sim-label">源泉税（税抜×10.21%）</div><div id="dp-edit-p-src" style="font-family:var(--mono);color:var(--yellow)"></div></div>
           <div class="sim-row"><div class="sim-label">実手渡し額</div><div id="dp-edit-p-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
         </div>
@@ -502,6 +502,7 @@
         <div style="margin-bottom:24px">
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
           <div class="form-group"><label>メモ（自由記入）</label><input id="ref-edit-note"></div>
+          <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="font-size:10px;color:var(--muted);font-weight:400">（空欄の場合「配信者名　紹介料（コイン数C）」）</span></label><input id="ref-edit-inv-desc" placeholder="例：コンサルティング料"></div>
         </div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -594,6 +595,7 @@
           <div style="margin-bottom:20px">
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
             <div class="form-group"><label>メモ（自由記入）</label><input id="r-note" placeholder="例：SNS経由で紹介"></div>
+            <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="font-size:10px;color:var(--muted);font-weight:400">（空欄の場合「配信者名　紹介料（コイン数C）」）</span></label><input id="r-inv-desc" placeholder="例：コンサルティング料"></div>
           </div>
           <button class="btn btn-primary" onclick="addReferrer()">＋ 登録する</button>
         </div>
@@ -663,9 +665,9 @@
         <tbody id="sales-table"></tbody></table>
       </div>
 
-      <!-- 日払い入力 -->
+      <!-- 前払い入力 -->
       <div class="table-wrap" style="margin-bottom:24px">
-        <div class="table-header"><div class="table-title">💴 日払い入力</div></div>
+        <div class="table-header"><div class="table-title">💴 前払い入力</div></div>
         <div style="padding:16px">
           <!-- Step1: 配信者・支払日 -->
           <div class="form-grid form-grid-4" style="margin-bottom:14px">
@@ -684,7 +686,7 @@
           <!-- Step3: 金額 -->
           <div class="form-grid form-grid-4" style="margin-bottom:14px">
             <div class="form-group">
-              <label>日払い額（税込）</label>
+              <label>前払い額（税込）</label>
               <input id="dp-amount" type="number" placeholder="例：20000">
             </div>
             <div class="form-group" style="align-self:flex-end">
@@ -693,27 +695,27 @@
             </div>
           </div>
           <div id="dp-preview" style="display:none;margin-bottom:12px" class="sim-box">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">日払いプレビュー</div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px">前払いプレビュー</div>
             <div class="sim-row"><div class="sim-label">対象配信</div><div id="dpp-sales-label" style="font-size:12px;color:var(--accent)"></div></div>
-            <div class="sim-row"><div class="sim-label">日払い額（税込）</div><div id="dpp-amount" style="font-family:var(--mono)"></div></div>
+            <div class="sim-row"><div class="sim-label">前払い額（税込）</div><div id="dpp-amount" style="font-family:var(--mono)"></div></div>
             <div class="sim-row"><div class="sim-label">源泉税（税抜×10.21%）</div><div id="dpp-src" style="font-family:var(--mono);color:var(--yellow)"></div></div>
             <div class="sim-row"><div class="sim-label">実手渡し額</div><div id="dpp-hand" style="font-family:var(--mono);color:var(--green)"></div></div>
           </div>
-          <button class="btn btn-primary" onclick="addDailyPay()">＋ 日払いを追加</button>
+          <button class="btn btn-primary" onclick="addDailyPay()">＋ 前払いを追加</button>
         </div>
       </div>
 
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">日払い累計</th><th class="num">日払い源泉計</th><th class="num">月末振込額</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い源泉計</th><th class="num">月末振込額</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
       </div>
 
-      <!-- 日払い明細 -->
+      <!-- 前払い明細 -->
       <div class="table-wrap">
-        <div class="table-header"><div class="table-title">日払い明細</div></div>
-        <table><thead><tr><th>支払日</th><th>対象月</th><th>配信者</th><th>対象配信</th><th class="num">日払い額</th><th class="num">源泉税</th><th class="num">実手渡し額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
+        <div class="table-header"><div class="table-title">前払い明細</div></div>
+        <table><thead><tr><th>支払日</th><th>対象月</th><th>配信者</th><th>対象配信</th><th class="num">前払い額</th><th class="num">源泉税</th><th class="num">実手渡し額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
         <tbody id="daily-pay-table"></tbody></table>
       </div>
 
@@ -934,7 +936,7 @@
             <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
               <div class="form-group"><label>種類</label>
                 <select id="inv-type" onchange="updateInvoicePreview()">
-                  <option value="daily">日払い請求書</option>
+                  <option value="daily">前払い請求書</option>
                   <option value="monthly">月末請求書</option>
                 </select>
               </div>
@@ -946,7 +948,7 @@
                 <input id="inv-month" type="month" onchange="updateInvoicePreview()">
               </div>
               <div class="form-group" id="inv-daily-wrap" style="display:none">
-                <label>日払い選択</label>
+                <label>前払い選択</label>
                 <select id="inv-daily-sel" onchange="updateInvoicePreview()"></select>
               </div>
               <div class="form-group"><label>請求日</label>
@@ -1114,7 +1116,7 @@ async function loadFromDB() {
     }
     if (referrersR.data?.length > 0) {
       state.referrers = referrersR.data.map(r => ({
-        id: r.id, name: r.name, note: r.note, company: r.name,
+        id: r.id, name: r.name, note: r.note, invDesc: r.inv_desc||'', company: r.name,
         honorific: r.honorific, refType: r.ref_type,
         r1pct: Number(r.r1pct), r2a: Number(r.r2a), r2b: Number(r.r2b), r2pct: Number(r.r2pct),
         invoiceNo: r.invoice_no, createInvoice: r.create_invoice,
@@ -1260,7 +1262,7 @@ let state = {
   },
   dailyPays: [
     { id:101, casterId:2, amount:96979, srcTax:9001, date:'2026-03-05', note:'', y:2026, m:3, saleIds:[12,16], salesLabel:'2026-03-02・2026-03-04 配信分' },
-  ], // 日払いデータ
+  ], // 前払いデータ
   fxRecords: [], // 両替記録
   nextId: 300,
 };
@@ -1962,13 +1964,17 @@ function addReferrer() {
   const accountType = document.getElementById('r-accountType').value;
   const accountNo   = document.getElementById('r-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
-  state.referrers.push({ id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account });
+  const invDesc = document.getElementById('r-inv-desc').value.trim();
+  const newRef = { id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
+  state.referrers.push(newRef);
+  dbSave('referrers', { id: newRef.id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   document.getElementById('r-invoiceno').value = '';
   document.getElementById('r-createInvoice').value = 'false';
   document.getElementById('r-name').value = '';
   document.getElementById('r-company').value = '';
   document.getElementById('r-honorific').value = '様';
   document.getElementById('r-note').value = '';
+  document.getElementById('r-inv-desc').value = '';
   document.getElementById('r-zip').value = '';
   document.getElementById('r-address').value = '';
   document.getElementById('r-tel').value = '';
@@ -2000,6 +2006,7 @@ function openRefEditModal(id) {
   document.getElementById('ref-edit-company').value = r.company || '';
   document.getElementById('ref-edit-honorific').value = r.honorific || '様';
   document.getElementById('ref-edit-note').value = r.note || '';
+  document.getElementById('ref-edit-inv-desc').value = r.invDesc || '';
   document.getElementById('ref-edit-invoiceno').value = r.invoiceNo || '';
   document.getElementById('ref-edit-type').value = r.refType;
   if (r.refType === 'A') {
@@ -2034,6 +2041,7 @@ function saveRefEdit() {
   const company = document.getElementById('ref-edit-company').value.trim();
   const honorific = document.getElementById('ref-edit-honorific').value;
   const note = document.getElementById('ref-edit-note').value.trim();
+  const invDesc = document.getElementById('ref-edit-inv-desc').value.trim();
   const invoiceNo = document.getElementById('ref-edit-invoiceno').value.trim();
   const refType = document.getElementById('ref-edit-type').value;
   if (!name) { alert('紹介者名を入力してください'); return; }
@@ -2062,7 +2070,8 @@ function saveRefEdit() {
   const createInvoice = document.getElementById('ref-edit-createInvoice').value === 'true';
   const idx = state.referrers.findIndex(r => r.id === id);
   if (idx !== -1) {
-    state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
+    state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
+    dbSave('referrers', { id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   }
   closeRefEditModal();
   renderAll();
@@ -2413,7 +2422,7 @@ function addDailyPay() {
 }
 
 
-// 日払い編集用の選択セット
+// 前払い編集用の選択セット
 let dpEditSelectedSaleIds = new Set();
 
 function openDpEditModal(id) {
@@ -2530,7 +2539,7 @@ function renderSales() {
     document.getElementById('s-coins').oninput = updateSalePreview;
   }
   const sales = salesOfMonth(y, m);
-  // 日払いセレクト
+  // 前払いセレクト
   const dpCasterSel = document.getElementById('dp-caster');
   if (dpCasterSel) {
     dpCasterSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
@@ -2564,7 +2573,7 @@ function renderSales() {
     </tr>`;
   }).filter(Boolean).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
-  // 日払い明細：対象月が表示中の月に該当するものを表示（支払日降順）
+  // 前払い明細：対象月が表示中の月に該当するものを表示（支払日降順）
   const dpForTable = [...state.dailyPays]
     .filter(d => { const ty = d.targetY ?? d.y; const tm = d.targetM ?? d.m; return ty === y && tm === m; })
     .sort((a,b) => b.date.localeCompare(a.date));
@@ -2588,7 +2597,7 @@ function renderSales() {
       <td style="font-size:12px;color:var(--accent)">${deadline}</td>
       <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">日払いなし</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">前払いなし</td></tr>';
 
   // ソート
   // 各行の計算値キャッシュ（ソート用）
@@ -2653,8 +2662,8 @@ function renderSales() {
       <td class="num" style="color:var(--yellow)">${yen(src)}</td>
       <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
       <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '-'}</td>
-      <td class="num" style="color:#fb923c">${r1>0?yen(r1):'-'}</td>
-      <td class="num" style="color:#fb923c">${r2>0?yen(r2):'-'}</td>
+      <td class="num" style="color:var(--muted);font-size:12px">${r1>0?yen(r1):'-'}</td>
+      <td class="num" style="color:var(--muted);font-size:12px">${r2>0?yen(r2):'-'}</td>
       <td class="num" style="color:#fb923c;font-weight:700">${(r1+r2)>0?yen(r1+r2):'-'}</td>
       <td class="num" style="color:var(--muted);font-size:12px">${s.rate?s.rate:'-'}</td>
       <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
@@ -2925,8 +2934,8 @@ function renderPL() {
   const refRows = byIdList.filter(x => x.ref).map(x => {
     return '<tr><td>' + x.c.name + '</td><td><span class="badge badge-orange">' + x.ref.name + '</span></td>'
       + '<td class="num"><span class="coin-badge">' + fmt(x.totalCoins) + 'C</span></td>'
-      + '<td class="num" style="color:#fb923c">' + yen(x.r1) + '</td>'
-      + '<td class="num" style="color:#fb923c">' + yen(x.r2) + '</td>'
+      + '<td class="num" style="color:var(--muted);font-size:12px">' + yen(x.r1) + '</td>'
+      + '<td class="num" style="color:var(--muted);font-size:12px">' + yen(x.r2) + '</td>'
       + '<td class="num" style="color:#fb923c;font-weight:700">' + yen(x.r1+x.r2) + '</td></tr>';
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">紹介料なし</td></tr>';
 
@@ -2988,15 +2997,15 @@ function renderTax() {
     const sales = salesOfMonth(y, m);
     const dailyPays = dailyPaysByPayMonth(y, m);
 
-    // 日払い分：支払月の翌月10日
+    // 前払い分：支払月の翌月10日
     const dailySrc = dailyPays.reduce((s,d) => s + d.srcTax, 0);
     if (dailySrc > 0) {
       const dlM = m+1>12?1:m+1; const dlY = m+1>12?y+1:y;
       const key = `dp-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月分【日払い】`, dailySrc, new Date(dlY, dlM-1, 10), key, today));
+      rows.push(makeTaxRow(`${y}年${m}月分【前払い】`, dailySrc, new Date(dlY, dlM-1, 10), key, today));
     }
 
-    // 月末払い分：翌月22日払い→翌々月10日が納付期限
+    // 月末払い分：翌月22前払い→翌々月10日が納付期限
     const totalRewardSrc = sales.reduce((s,x) => { const c=getCaster(x.casterId); return s+(c?calcSrcTax(calcReward(coinToYen(x.coins),c.rate)):0); }, 0);
     const cDailySrc = dailyPays.reduce((s,d) => s + d.srcTax, 0);
     const settleSrc = Math.max(0, totalRewardSrc - cDailySrc);
@@ -3004,7 +3013,7 @@ function renderTax() {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
       const key = `se-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月分【月末精算 ${py}年${pm}月22日払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
+      rows.push(makeTaxRow(`${y}年${m}月分【月末精算 ${py}年${pm}月22前払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
     }
   }
 
@@ -3052,14 +3061,14 @@ function renderInvoiceSelects() {
   cSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
   if (prev) cSel.value = prev;
 
-  // 配信者切替時に日払い選択を更新
+  // 配信者切替時に前払い選択を更新
   cSel.onchange = () => { updateDailySelect(); updateInvoicePreview(); };
 
   const typeSel = document.getElementById('inv-type');
   if (typeSel) {
     typeSel.onchange = () => { toggleInvoiceType(); updateInvoicePreview(); };
   }
-  // 常に日払い選択を最新化してからプレビュー更新
+  // 常に前払い選択を最新化してからプレビュー更新
   updateDailySelect();
   toggleInvoiceType();
   updateInvoicePreview();
@@ -3087,7 +3096,7 @@ function updateDailySelect() {
   const pays = state.dailyPays.filter(d => d.casterId === casterId);
   sel.innerHTML = pays.length > 0
     ? pays.map(d => `<option value="${d.id}">${d.date}　${yen(d.amount)}${d.salesLabel ? '　（'+d.salesLabel+'）' : ''}</option>`).join('')
-    : '<option value="">日払いデータなし</option>';
+    : '<option value="">前払いデータなし</option>';
   sel.onchange = updateInvoicePreview;
 }
 
@@ -3112,7 +3121,7 @@ function updateInvoicePreview() {
   if (type === 'daily') {
     const dpId = parseInt(document.getElementById('inv-daily-sel')?.value);
     const dp = state.dailyPays.find(d => d.id === dpId);
-    if (!dp) { document.getElementById('invoice-preview').innerHTML = '<p style="color:var(--muted)">日払いデータを選択してください</p>'; return; }
+    if (!dp) { document.getElementById('invoice-preview').innerHTML = '<p style="color:var(--muted)">前払いデータを選択してください</p>'; return; }
     // saleIds から実際の配信日を取り出す
     const dpSaleDates = (dp.saleIds || [])
       .map(sid => state.sales.find(x => x.id === sid))
@@ -3148,7 +3157,7 @@ function updateInvoicePreview() {
       rows.push({ label: `ライブ配信出演報酬　${my}年${mm}月分`, qty: 1, unitPrice: rw, taxRate: 10, amount: rw, src, deduct: false });
     });
     if (dpTotal > 0) {
-      rows.push({ label: `日払い控除（${my}年${mm}月分　既払い）`, qty: 1, unitPrice: -dpTotal, taxRate: 10, amount: -dpTotal, src: -dpSrcTotal, deduct: true });
+      rows.push({ label: `前払い控除（${my}年${mm}月分　既払い）`, qty: 1, unitPrice: -dpTotal, taxRate: 10, amount: -dpTotal, src: -dpSrcTotal, deduct: true });
     }
 
     totalReward = rows.reduce((s,r)=>s+r.amount,0);
@@ -3383,7 +3392,7 @@ function renderReport() {
         <div class="table-header"><div class="table-title">${y}年${m}月　全員サマリー</div></div>
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
-          <th class="num">源泉税</th><th class="num">日払い累計</th>
+          <th class="num">源泉税</th><th class="num">前払い累計</th>
           <th class="num">月末振込</th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
@@ -3458,7 +3467,7 @@ function renderReport() {
             <div class="table-header"><div class="table-title">月末精算</div></div>
             <div style="padding:16px"><div class="sim-box">
               <div class="sim-row"><div class="sim-label">月間報酬（税込）</div><div style="font-family:var(--mono);color:var(--red)">${yen(totReward)}</div></div>
-              <div class="sim-row"><div class="sim-label">日払い累計</div><div style="font-family:var(--mono);color:var(--yellow)">▲${yen(dpAmt)}</div></div>
+              <div class="sim-row"><div class="sim-label">前払い累計</div><div style="font-family:var(--mono);color:var(--yellow)">▲${yen(dpAmt)}</div></div>
               <div class="sim-row"><div class="sim-label">月末振込額（税込）</div><div style="font-family:var(--mono);color:var(--accent)">${yen(remaining)}</div></div>
               <div class="sim-row"><div class="sim-label">月末源泉税</div><div style="font-family:var(--mono);color:var(--yellow)">▲${yen(remSrc)}</div></div>
               <div class="sim-row total"><div>翌月22日振込額</div><div>${yen(remaining-remSrc)}</div></div>
@@ -3467,7 +3476,7 @@ function renderReport() {
           </div>
           ${cDp.length>0?`
           <div class="table-wrap">
-            <div class="table-header"><div class="table-title">日払い履歴</div></div>
+            <div class="table-header"><div class="table-title">前払い履歴</div></div>
             <table><thead><tr><th>支払日</th><th class="num">金額</th><th class="num">源泉税</th><th class="num">手渡し額</th></tr></thead>
             <tbody>${cDp.map(d=>`<tr>
               <td style="font-size:12px;color:var(--muted)">${d.date}</td>
@@ -3608,7 +3617,7 @@ function renderRefReport() {
           ${rows.map((r,i) => `
             <tr style="background:${i%2===0?'#fff':'#f7fafc'}">
               <td style="padding:9px 12px;border-bottom:1px solid #e2e8f0">
-                ${r.c.name}　紹介料（${fmt(r.totalCoins)}C）
+                ${ref.invDesc || `${r.c.name}　紹介料（${fmt(r.totalCoins)}C）`}
                 ${isA ? `<span style="font-size:11px;color:#888">　顧問料 ¥${fmt(r.r1)} ＋ 紹介料 ¥${fmt(r.r2)}</span>` : ''}
               </td>
               <td style="padding:9px 12px;text-align:right;border-bottom:1px solid #e2e8f0;font-family:monospace">¥${fmt(r.r1+r.r2)}</td>
