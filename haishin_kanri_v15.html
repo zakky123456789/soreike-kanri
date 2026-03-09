@@ -550,6 +550,7 @@
           <!-- Step1: 配信者・支払日 -->
           <div class="form-grid form-grid-4" style="margin-bottom:14px">
             <div class="form-group"><label>配信者</label><select id="dp-caster" onchange="updateDpSaleList()"></select></div>
+            <div class="form-group"><label>対象月 <span style="color:var(--accent)">（売上集計月）</span></label><input id="dp-target-month" type="month" placeholder="例：2026-01"></div>
             <div class="form-group"><label>支払日</label><input id="dp-date" type="date"></div>
             <div class="form-group"><label>備考</label><input id="dp-note" placeholder="例：前払い"></div>
           </div>
@@ -1007,13 +1008,16 @@ async function loadFromDB() {
   } catch(e) {
     console.error('DB load error:', e);
     showSyncStatus('error');
+    renderAll(); // DBなしでも初期データで表示
+    const el = document.getElementById('dash-alerts');
+    if (el) el.innerHTML += `<div class="alert alert-red">⚠️ DBロード失敗（オフライン/エラー）: ${e.message}</div>`;
   }
 }
 
 // state→DB 保存ヘルパー
 async function dbSave(table, data) {
   const { error } = await sb.from(table).upsert(data, { onConflict: 'id' });
-  if (error) { console.error('DB save error:', table, error); showSyncStatus('error'); return false; }
+  if (error) { console.error('DB save error:', table, JSON.stringify(error)); showSyncStatus('error'); return false; }
   showSyncStatus('ok');
   return true;
 }
@@ -2030,8 +2034,11 @@ function renderSales() {
     </tr>`;
   }).filter(Boolean).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
-  // 日払い明細
-  document.getElementById('daily-pay-table').innerHTML = dailyPays.map(d => {
+  // 日払い明細：対象月が表示中の月に該当するものを表示（支払日降順）
+  const dpForTable = [...state.dailyPays]
+    .filter(d => { const ty = d.targetY ?? d.y; const tm = d.targetM ?? d.m; return ty === y && tm === m; })
+    .sort((a,b) => b.date.localeCompare(a.date));
+  document.getElementById('daily-pay-table').innerHTML = dpForTable.map(d => {
     const c = getCaster(d.casterId);
     // 納付期限：支払月の翌月10日
     const dlM = d.m+1>12?1:d.m+1; const dlY = d.m+1>12?d.y+1:d.y;
