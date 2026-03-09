@@ -702,6 +702,46 @@
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
+      <!-- AI レシート読み込み -->
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="table-header" style="cursor:pointer" onclick="toggleForm('ai-receipt-form', this)">
+          <div class="table-title">🤖 AIレシート読み込み（画像・PDF→自動入力）</div>
+          <span style="color:var(--muted);font-size:12px">▼ 開く</span>
+        </div>
+        <div id="ai-receipt-form" style="display:none;padding:20px">
+          <div class="alert alert-blue" style="margin-bottom:16px">
+            💡 レシート・領収書の画像またはPDFをアップロードすると、日付・品名・金額・消費税区分を自動で読み取ります。
+          </div>
+          <!-- ドロップゾーン -->
+          <div id="receipt-dropzone"
+            style="border:2px dashed var(--border);border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:16px"
+            onclick="document.getElementById('receipt-file-input').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(79,156,249,0.05)'"
+            ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+            ondrop="handleReceiptDrop(event)">
+            <div style="font-size:32px;margin-bottom:8px">📂</div>
+            <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:4px">クリックまたはドラッグ&ドロップ</div>
+            <div style="font-size:12px;color:var(--muted)">JPG / PNG / PDF 対応　複数ファイル同時OK</div>
+          </div>
+          <input type="file" id="receipt-file-input" accept="image/*,application/pdf" multiple style="display:none" onchange="handleReceiptFiles(this.files)">
+          <!-- プレビュー＆結果リスト -->
+          <div id="receipt-results" style="display:none">
+            <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">読み取り結果 — チェックして一括追加</div>
+            <div id="receipt-result-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px"></div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <button class="btn btn-primary" onclick="addCheckedReceipts()">✅ チェック済みを一括追加</button>
+              <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="clearReceiptResults()">クリア</button>
+              <span id="receipt-add-msg" style="font-size:12px;color:var(--green)"></span>
+            </div>
+          </div>
+          <!-- ローディング -->
+          <div id="receipt-loading" style="display:none;text-align:center;padding:24px">
+            <div style="font-size:20px;margin-bottom:8px">⏳</div>
+            <div style="font-size:13px;color:var(--muted)" id="receipt-loading-msg">AIが読み取り中...</div>
+          </div>
+        </div>
+      </div>
+
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">経費入力</div></div>
         <div style="padding:16px">
@@ -1341,6 +1381,235 @@ function updateLabels() {
     const el = document.getElementById('ml-' + id);
     if (el) el.textContent = lbl;
   });
+}
+
+
+// ===== AI レシート読み込み =====
+const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','光熱費','通信費','交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','その他'];
+const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税・不課税' }];
+const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
+let receiptResults = [];
+
+function handleReceiptDrop(e) {
+  e.preventDefault();
+  document.getElementById('receipt-dropzone').style.borderColor = 'var(--border)';
+  document.getElementById('receipt-dropzone').style.background = '';
+  handleReceiptFiles(e.dataTransfer.files);
+}
+
+async function handleReceiptFiles(files) {
+  if (!files || files.length === 0) return;
+  const fileArr = Array.from(files);
+  document.getElementById('receipt-loading').style.display = 'block';
+  document.getElementById('receipt-results').style.display = 'none';
+  document.getElementById('receipt-loading-msg').textContent = `AIが読み取り中... (0/${fileArr.length})`;
+
+  const newResults = [];
+  for (let i = 0; i < fileArr.length; i++) {
+    document.getElementById('receipt-loading-msg').textContent = `AIが読み取り中... (${i+1}/${fileArr.length}) ${fileArr[i].name}`;
+    try {
+      const items = await readReceiptFile(fileArr[i]); // 配列で返る
+      items.forEach((item, j) => {
+        item._sourceFile = fileArr[i].name;   // 元ファイル名（グループキー）
+        item._indexInFile = j;                // 同ファイル内の何番目か（0始まり）
+        item._totalInFile = items.length;     // 同ファイル内の総数
+        item._id = Date.now() + i * 100 + j;
+        newResults.push(item);
+      });
+    } catch(e) {
+      newResults.push({ _filename: fileArr[i].name, _id: Date.now()+i*100, _error: e.message || '読み取り失敗' });
+    }
+  }
+  receiptResults = [...receiptResults, ...newResults];
+  document.getElementById('receipt-loading').style.display = 'none';
+  renderReceiptResults();
+}
+
+// readReceiptFile: 1ファイルから複数レシートの配列を返す
+async function readReceiptFile(file) {
+  const isPdf = file.type === 'application/pdf';
+  const base64 = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = () => rej(new Error('ファイル読み込み失敗'));
+    r.readAsDataURL(file);
+  });
+
+  const mediaType = isPdf ? 'application/pdf' : file.type || 'image/jpeg';
+  const today = new Date().toISOString().split('T')[0];
+  const catList = RECEIPT_CAT_OPTIONS.join('・');
+
+  const content = isPdf
+    ? [{ type:'document', source:{ type:'base64', media_type:'application/pdf', data:base64 } },
+       { type:'text', text:'このファイルに含まれるレシート・領収書を全て読み取ってください。' }]
+    : [{ type:'image', source:{ type:'base64', media_type:mediaType, data:base64 } },
+       { type:'text', text:'この画像に含まれるレシート・領収書を全て読み取ってください。' }];
+
+  const prompt = `画像またはファイルに含まれるレシート・領収書を全て読み取り、JSON配列のみで返してください。
+前置き・説明・マークダウン記法（バッククォートなど）は一切不要です。JSONのみ出力してください。
+
+【重要ルール】
+1. 1枚の画像に複数のレシートが含まれている場合は、それぞれを別の要素として配列に含めてください。
+2. 1枚のレシートに8%（食品・飲料）と10%（それ以外）が混在している場合は、税率ごとに要素を分けてください。
+   例：スーパーのレシートで食品合計¥2,160（8%）、日用品合計¥1,100（10%）→ 2つの要素に分割
+3. レシートが1枚だけ・税率も1種類だけの場合も必ず配列形式で返してください。
+4. nameは税率分割した場合、「消耗品 ○○（10%分）」「消耗品 ○○（8%分）」のように区別できる名前にしてください。
+
+[
+  {
+    "date": "YYYY-MM-DD形式（不明な場合は${today}）",
+    "name": "品名・店名（税率分割した場合は区別できる名前）",
+    "payee": "支払先名（例：焼肉キング 川口店）",
+    "amount": その税率区分の税込合計金額（数値）,
+    "tax": "10" か "8" か "0"（食品・飲料→8、それ以外→10、家賃・非課税→0）,
+    "cat": "${catList}" のいずれか最も適切なもの,
+    "invoiceNo": "T+13桁のインボイス番号、なければ空文字"
+  }
+]`;
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      system: prompt,
+      messages: [{ role: 'user', content }]
+    })
+  });
+
+  if (!resp.ok) throw new Error(`API Error ${resp.status}`);
+  const data = await resp.json();
+  const text = data.content?.find(b => b.type === 'text')?.text || '';
+
+  // JSON配列を抽出（バッククォートがあっても対応）
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const parsed = JSON.parse(arrMatch[0]);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  }
+  // フォールバック：オブジェクト単体
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  if (objMatch) return [JSON.parse(objMatch[0])];
+  throw new Error('JSONが取得できませんでした');
+}
+
+function renderReceiptResults() {
+  const container = document.getElementById('receipt-result-list');
+  if (!container) return;
+  if (receiptResults.length === 0) {
+    document.getElementById('receipt-results').style.display = 'none';
+    return;
+  }
+  document.getElementById('receipt-results').style.display = 'block';
+
+  // ファイルごとにグループ化
+  const groups = [];
+  const seen = new Map();
+  receiptResults.forEach(r => {
+    const key = r._sourceFile || r._filename || '_unknown';
+    if (!seen.has(key)) { seen.set(key, []); groups.push({ key, items: seen.get(key) }); }
+    seen.get(key).push(r);
+  });
+
+  const taxLabel = { '10':'課税10%', '8':'課税8%（軽減）', '0':'非課税' };
+  const taxColor = { '10':'var(--accent)', '8':'var(--green)', '0':'var(--muted)' };
+
+  container.innerHTML = groups.map(({ key, items }) => {
+    const hasMultiple = items.filter(r => !r._error).length > 1;
+    const groupHeader = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:16px">📄</span>
+        <span style="font-size:13px;font-weight:600;color:var(--text);flex:1">${key}</span>
+        ${hasMultiple ? `<span style="font-size:11px;background:rgba(79,156,249,0.15);color:var(--accent);padding:2px 8px;border-radius:10px;font-weight:600">${items.filter(r=>!r._error).length}件に分割</span>` : ''}
+      </div>`;
+
+    const cards = items.map((r, cardIdx) => {
+      if (r._error) {
+        return `<div style="background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px">
+          <span style="color:var(--red)">❌</span>
+          <span style="color:var(--red);font-size:13px">${r._error}</span>
+        </div>`;
+      }
+      const catOpts = RECEIPT_CAT_OPTIONS.map(c => `<option value="${c}" ${c===r.cat?'selected':''}>${c}</option>`).join('');
+      const taxOpts = RECEIPT_TAX_OPTIONS.map(t => `<option value="${t.v}" ${t.v===String(r.tax)?'selected':''}>${t.label}</option>`).join('');
+      const methodOpts = RECEIPT_METHOD_OPTIONS.map(m => `<option value="${m}" ${m===r.method?'selected':''}>${m}</option>`).join('');
+      const taxBadge = `<span style="font-size:10px;font-weight:700;background:rgba(79,156,249,0.12);color:${taxColor[String(r.tax)]||'var(--muted)'};padding:1px 7px;border-radius:8px;margin-left:6px">${taxLabel[String(r.tax)]||''}</span>`;
+      const cardLabel = hasMultiple
+        ? `<span style="font-size:12px;font-weight:700;color:var(--accent2)">カード ${cardIdx+1}</span>${taxBadge}`
+        : `<span style="font-size:12px;color:var(--muted)">読み取り結果</span>`;
+      return `
+        <div id="receipt-item-${r._id}" style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px${hasMultiple ? ';border-left:3px solid var(--accent2)' : ''}">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <input type="checkbox" id="rc-chk-${r._id}" checked style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+            <label for="rc-chk-${r._id}" style="cursor:pointer;flex:1">${cardLabel}</label>
+            <button onclick="removeReceiptItem(${r._id})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;line-height:1">✕</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+            <div class="form-group"><label>日付</label><input id="rc-date-${r._id}" type="date" value="${r.date||''}" style="background:var(--surface2);font-size:12px"></div>
+            <div class="form-group" style="grid-column:span 2"><label>品名</label><input id="rc-name-${r._id}" value="${(r.name||'').replace(/"/g,'&quot;')}" style="background:var(--surface2);font-size:12px"></div>
+            <div class="form-group"><label>支払先</label><input id="rc-payee-${r._id}" value="${(r.payee||'').replace(/"/g,'&quot;')}" style="background:var(--surface2);font-size:12px"></div>
+            <div class="form-group"><label>金額（税込）</label><input id="rc-amount-${r._id}" type="number" value="${r.amount||''}" style="background:var(--surface2);font-size:12px"></div>
+            <div class="form-group"><label>消費税区分</label><select id="rc-tax-${r._id}" style="background:var(--surface2);font-size:12px">${taxOpts}</select></div>
+            <div class="form-group"><label>勘定科目</label><select id="rc-cat-${r._id}" style="background:var(--surface2);font-size:12px">${catOpts}</select></div>
+            <div class="form-group"><label>支払方法</label><select id="rc-method-${r._id}" style="background:var(--surface2);font-size:12px">${methodOpts}</select></div>
+          </div>
+          ${r.invoiceNo ? `<div style="margin-top:8px;font-size:11px;color:var(--accent)">🧾 ${r.invoiceNo}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    // グループ全体をボックスで囲む（複数分割の場合のみ枠強調）
+    const groupStyle = hasMultiple
+      ? 'background:rgba(124,92,252,0.05);border:1px solid rgba(124,92,252,0.25);border-radius:10px;padding:16px;margin-bottom:8px'
+      : 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:8px';
+    return `<div style="${groupStyle}">${groupHeader}<div style="display:flex;flex-direction:column;gap:10px">${cards}</div></div>`;
+  }).join('');
+}
+
+function removeReceiptItem(id) {
+  receiptResults = receiptResults.filter(r => r._id !== id);
+  renderReceiptResults();
+}
+
+function clearReceiptResults() {
+  receiptResults = [];
+  document.getElementById('receipt-results').style.display = 'none';
+  document.getElementById('receipt-result-list').innerHTML = '';
+  document.getElementById('receipt-add-msg').textContent = '';
+  document.getElementById('receipt-file-input').value = '';
+}
+
+function addCheckedReceipts() {
+  const { y, m } = state;
+  let added = 0;
+  receiptResults.forEach(r => {
+    if (r._error) return;
+    const chk = document.getElementById(`rc-chk-${r._id}`);
+    if (!chk?.checked) return;
+    const date  = document.getElementById(`rc-date-${r._id}`)?.value || '';
+    const name  = document.getElementById(`rc-name-${r._id}`)?.value.trim() || '';
+    const payee = document.getElementById(`rc-payee-${r._id}`)?.value.trim() || '';
+    const amount = parseFloat(document.getElementById(`rc-amount-${r._id}`)?.value);
+    const tax   = parseInt(document.getElementById(`rc-tax-${r._id}`)?.value);
+    const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
+    const method = document.getElementById(`rc-method-${r._id}`)?.value || '';
+    if (!date || !name || isNaN(amount)) return;
+    const [ey, em] = date.split('-').map(Number);
+    const newExp = { id: state.nextId++, date, name, payee: payee||'', cat, amount, tax, method, invoiceNo: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em };
+    state.expenses.push(newExp);
+    dbSave('expenses', { id: newExp.id, date, name, payee: payee||'', cat, amount, tax, method, invoice_no: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em });
+    added++;
+  });
+  if (added > 0) {
+    document.getElementById('receipt-add-msg').textContent = `✅ ${added}件を追加しました`;
+    setTimeout(() => {
+      if(document.getElementById('receipt-add-msg')) document.getElementById('receipt-add-msg').textContent = '';
+    }, 3000);
+    clearReceiptResults();
+    renderAll();
+  } else {
+    document.getElementById('receipt-add-msg').textContent = '⚠️ チェックされた有効なデータがありません';
+  }
 }
 
 // ===== RENDER ALL =====
