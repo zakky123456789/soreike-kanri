@@ -1467,7 +1467,7 @@ async function readReceiptFile(file) {
   }
 ]`;
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const resp = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
