@@ -467,11 +467,14 @@
           <div class="form-grid form-grid-4">
             <div class="form-group" style="grid-column:span 2"><label>インボイス番号（T+13桁）</label><input id="ref-edit-invoiceno" placeholder="例：T1234567890123"></div>
             <div class="form-group"><label>請求書作成</label>
-              <select id="ref-edit-createInvoice">
+              <select id="ref-edit-createInvoice" onchange="toggleRefEditInvDesc('ref-edit')">
                 <option value="false">しない（相手から届く）</option>
                 <option value="true">する（こちらで作成）</option>
               </select>
             </div>
+          </div>
+          <div id="ref-edit-inv-desc-wrap" style="display:none;margin-top:10px">
+            <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="color:var(--red)">*</span></label><input id="ref-edit-inv-desc" placeholder="例：コンサルティング料"></div>
           </div>
         </div>
 
@@ -502,7 +505,6 @@
         <div style="margin-bottom:24px">
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
           <div class="form-group"><label>メモ（自由記入）</label><input id="ref-edit-note"></div>
-          <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="font-size:10px;color:var(--muted);font-weight:400">（空欄の場合「配信者名　紹介料（コイン数C）」）</span></label><input id="ref-edit-inv-desc" placeholder="例：コンサルティング料"></div>
         </div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -559,11 +561,14 @@
             <div class="form-grid form-grid-4">
               <div class="form-group" style="grid-column:span 2"><label>インボイス番号（T+13桁）</label><input id="r-invoiceno" placeholder="例：T1234567890123"></div>
               <div class="form-group"><label>請求書作成</label>
-                <select id="r-createInvoice">
+                <select id="r-createInvoice" onchange="toggleRefEditInvDesc('r')">
                   <option value="false">しない（相手から届く）</option>
                   <option value="true">する（こちらで作成）</option>
                 </select>
               </div>
+            </div>
+            <div id="r-inv-desc-wrap" style="display:none;margin-top:10px">
+              <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="color:var(--red)">*</span></label><input id="r-inv-desc" placeholder="例：コンサルティング料"></div>
             </div>
           </div>
           <!-- ④ 連絡先・振込先 -->
@@ -595,7 +600,6 @@
           <div style="margin-bottom:20px">
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
             <div class="form-group"><label>メモ（自由記入）</label><input id="r-note" placeholder="例：SNS経由で紹介"></div>
-            <div class="form-group" style="grid-column:span 2"><label>請求書摘要 <span style="font-size:10px;color:var(--muted);font-weight:400">（空欄の場合「配信者名　紹介料（コイン数C）」）</span></label><input id="r-inv-desc" placeholder="例：コンサルティング料"></div>
           </div>
           <button class="btn btn-primary" onclick="addReferrer()">＋ 登録する</button>
         </div>
@@ -1412,6 +1416,13 @@ function updateLabels() {
   });
 }
 
+// ===== 紹介者フォーム 請求書摘要トグル =====
+function toggleRefEditInvDesc(prefix) {
+  const val = document.getElementById(prefix + '-createInvoice')?.value;
+  const wrap = document.getElementById(prefix + '-inv-desc-wrap');
+  if (wrap) wrap.style.display = val === 'true' ? 'block' : 'none';
+}
+
 // ===== 年月ピッカー =====
 let mpYear = 0;
 function openMonthPicker() {
@@ -1940,6 +1951,8 @@ function addReferrer() {
   const note = document.getElementById('r-note').value.trim();
   const refType = document.getElementById('r-type').value;
   if (!name) { alert('紹介者名を入力してください'); return; }
+  const invDesc = document.getElementById('r-inv-desc').value.trim();
+  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('r-inv-desc').focus(); return; }
   let r1pct, r2pct;
   let r2a = 0, r2b = 0;
   if (refType === 'A') {
@@ -1964,7 +1977,6 @@ function addReferrer() {
   const accountType = document.getElementById('r-accountType').value;
   const accountNo   = document.getElementById('r-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
-  const invDesc = document.getElementById('r-inv-desc').value.trim();
   const newRef = { id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
   state.referrers.push(newRef);
   dbSave('referrers', { id: newRef.id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
@@ -2007,6 +2019,7 @@ function openRefEditModal(id) {
   document.getElementById('ref-edit-honorific').value = r.honorific || '様';
   document.getElementById('ref-edit-note').value = r.note || '';
   document.getElementById('ref-edit-inv-desc').value = r.invDesc || '';
+  toggleRefEditInvDesc('ref-edit');
   document.getElementById('ref-edit-invoiceno').value = r.invoiceNo || '';
   document.getElementById('ref-edit-type').value = r.refType;
   if (r.refType === 'A') {
@@ -2045,6 +2058,8 @@ function saveRefEdit() {
   const invoiceNo = document.getElementById('ref-edit-invoiceno').value.trim();
   const refType = document.getElementById('ref-edit-type').value;
   if (!name) { alert('紹介者名を入力してください'); return; }
+
+  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('ref-edit-inv-desc').focus(); return; }
   let r1pct, r2pct;
   let r2a = 0, r2b = 0;
   if (refType === 'A') {
