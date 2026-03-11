@@ -1961,10 +1961,10 @@ function clearReceiptResults() {
 async function addCheckedReceipts() {
   const { y, m } = state;
   let added = 0;
-  receiptResults.forEach(r => {
-    if (r._error) return;
+  for (const r of receiptResults) {
+    if (r._error) continue;
     const chk = document.getElementById(`rc-chk-${r._id}`);
-    if (!chk?.checked) return;
+    if (!chk?.checked) continue;
     const date  = document.getElementById(`rc-date-${r._id}`)?.value || '';
     let   name  = document.getElementById(`rc-name-${r._id}`)?.value.trim() || '';
     const payee = document.getElementById(`rc-payee-${r._id}`)?.value.trim() || '';
@@ -1972,7 +1972,7 @@ async function addCheckedReceipts() {
     const tax   = parseInt(document.getElementById(`rc-tax-${r._id}`)?.value);
     const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
     const method = document.getElementById(`rc-method-${r._id}`)?.value || '';
-    if (!date || !name || isNaN(amount)) return;
+    if (!date || !name || isNaN(amount)) continue;
     // 分割レシートの場合、品名の先頭に【分割N/M】マーカーを付与（経費明細で識別可能にする）
     if (r._totalInFile && r._totalInFile > 1) {
       const idx = (r._indexInFile ?? 0) + 1;
@@ -2007,9 +2007,7 @@ async function addCheckedReceipts() {
       } catch(uploadErr) { console.warn('領収書自動添付失敗:', uploadErr); }
     }
     added++;
-  });
-  // 非同期処理をawaitするためPromise.allで待機
-  await Promise.resolve();
+  }
   if (added > 0) {
     document.getElementById('receipt-add-msg').textContent = `✅ ${added}件を追加しました`;
     setTimeout(() => {
