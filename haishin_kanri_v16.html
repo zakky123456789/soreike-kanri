@@ -1800,7 +1800,7 @@ async function readReceiptFile(file) {
     processedFilename = file.name;
   }
   const base64 = processedBase64;
-  const mediaType = isPdf ? 'application/pdf' : file.type || 'image/jpeg';
+  const mediaType = processedContentType || (isPdf ? 'application/pdf' : 'image/jpeg');
   const today = new Date().toISOString().split('T')[0];
   const catList = RECEIPT_CAT_OPTIONS.join('・');
 
@@ -1859,6 +1859,7 @@ async function readReceiptFile(file) {
   if (!resp.ok) throw new Error(`API Error ${resp.status}`);
   const data = await resp.json();
   const text = data.content?.find(b => b.type === 'text')?.text || '';
+  console.log('AI response text:', text.substring(0, 500));
 
   // JSON配列を抽出（バッククォートがあっても対応）
   const arrMatch = text.match(/\[[\s\S]*\]/);
