@@ -875,8 +875,13 @@
               <div class="form-group"><label>目的・事由 <span style="color:var(--red)">*</span></label><input id="e-purpose" placeholder="例：キャスト慰労会"></div>
             </div>
           </div>
-          <div style="margin-top:12px">
+          <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="addExpense()">＋ 追加</button>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--surface2);border:1px dashed var(--border);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--muted);transition:all 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+              <span>📎</span>
+              <span id="e-receipt-label">領収書を添付（任意）</span>
+              <input type="file" id="e-receipt-file" style="display:none" accept="image/*,.pdf,.heic,.heif" onchange="updateExpReceiptLabel(this)">
+            </label>
           </div>
         </div>
       </div>
@@ -1512,6 +1517,15 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e 
   }
 });
 
+// dbSaveAsync: dbSaveのPromise版（awaitで使える）
+async function dbSaveAsync(table, row) {
+  try {
+    const { error } = await sb.from(table).upsert(row);
+    if (error) { console.error('dbSaveAsync error:', error); return false; }
+    return true;
+  } catch(e) { console.error('dbSaveAsync exception:', e); return false; }
+}
+
 // ===== 領収書管理 =====
 const R2_PROXY = 'https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/r2-proxy';
 
@@ -1734,12 +1748,15 @@ async function handleReceiptFiles(files) {
   for (let i = 0; i < fileArr.length; i++) {
     document.getElementById('receipt-loading-msg').textContent = `AIが読み取り中... (${i+1}/${fileArr.length}) ${fileArr[i].name}`;
     try {
-      const items = await readReceiptFile(fileArr[i]); // 配列で返る
+      const { items, base64, contentType, filename } = await readReceiptFile(fileArr[i]); // 配列で返る
       items.forEach((item, j) => {
         item._sourceFile = fileArr[i].name;   // 元ファイル名（グループキー）
         item._indexInFile = j;                // 同ファイル内の何番目か（0始まり）
         item._totalInFile = items.length;     // 同ファイル内の総数
         item._id = Date.now() + i * 100 + j;
+        item._base64 = base64;               // 元画像データ（領収書保存用）
+        item._contentType = contentType;     // 画像のMIMEタイプ
+        item._filename = filename;           // ファイル名
         newResults.push(item);
       });
     } catch(e) {
@@ -1766,13 +1783,23 @@ async function readReceiptFile(file) {
   }
 
   const isPdf = file.type === 'application/pdf';
-  const base64 = await new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result.split(',')[1]);
-    r.onerror = () => rej(new Error('ファイル読み込み失敗'));
-    r.readAsDataURL(file);
-  });
-
+  // 圧縮処理（PDF以外）
+  let processedBase64, processedContentType, processedFilename;
+  if (!isPdf) {
+    const compressed = await compressImage(file);
+    processedBase64 = await new Promise(res => {
+      const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(compressed.blob);
+    });
+    processedContentType = compressed.contentType;
+    processedFilename = compressed.filename;
+  } else {
+    processedBase64 = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = () => rej(new Error('ファイル読み込み失敗')); r.readAsDataURL(file);
+    });
+    processedContentType = 'application/pdf';
+    processedFilename = file.name;
+  }
+  const base64 = processedBase64;
   const mediaType = isPdf ? 'application/pdf' : file.type || 'image/jpeg';
   const today = new Date().toISOString().split('T')[0];
   const catList = RECEIPT_CAT_OPTIONS.join('・');
@@ -1837,11 +1864,12 @@ async function readReceiptFile(file) {
   const arrMatch = text.match(/\[[\s\S]*\]/);
   if (arrMatch) {
     const parsed = JSON.parse(arrMatch[0]);
-    return Array.isArray(parsed) ? parsed : [parsed];
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return { items, base64: processedBase64, contentType: processedContentType, filename: processedFilename };
   }
   // フォールバック：オブジェクト単体
   const objMatch = text.match(/\{[\s\S]*\}/);
-  if (objMatch) return [JSON.parse(objMatch[0])];
+  if (objMatch) return { items: [JSON.parse(objMatch[0])], base64: processedBase64, contentType: processedContentType, filename: processedFilename };
   throw new Error('JSONが取得できませんでした');
 }
 
@@ -1930,7 +1958,7 @@ function clearReceiptResults() {
   document.getElementById('receipt-file-input').value = '';
 }
 
-function addCheckedReceipts() {
+async function addCheckedReceipts() {
   const { y, m } = state;
   let added = 0;
   receiptResults.forEach(r => {
@@ -1953,9 +1981,35 @@ function addCheckedReceipts() {
     const [ey, em] = date.split('-').map(Number);
     const newExp = { id: state.nextId++, date, name, payee: payee||'', cat, amount, tax, method, invoiceNo: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em };
     state.expenses.push(newExp);
-    dbSave('expenses', { id: newExp.id, date, name, payee: payee||'', cat, amount, tax, method, invoice_no: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em });
+    const savedItems = await dbSaveAsync('expenses', { id: newExp.id, date, name, payee: payee||'', cat, amount, tax, method, invoice_no: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em });
+    // 領収書の自動添付（AIで読み込んだ画像をそのまま保存）
+    if (r._base64 && r._contentType && savedItems) {
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const r2Key = `expenses/${newExp.id}/${timestamp}_${r._filename || 'receipt.jpg'}`;
+        const res = await fetch(R2_PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({ action: 'upload', key: r2Key, contentType: r._contentType, fileBase64: r._base64 })
+        });
+        const uploadData = await res.json();
+        if (uploadData.ok) {
+          const { data: recData } = await sb.from('receipts').insert({
+            expense_id: newExp.id, r2_key: r2Key, filename: r._filename || 'receipt.jpg',
+            content_type: r._contentType, file_size: Math.round(r._base64.length * 0.75), note: 'AIレシート読み込みで自動添付'
+          }).select().single();
+          if (recData) {
+            state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
+              filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+              uploadedAt: recData.uploaded_at, note: recData.note || '' });
+          }
+        }
+      } catch(uploadErr) { console.warn('領収書自動添付失敗:', uploadErr); }
+    }
     added++;
   });
+  // 非同期処理をawaitするためPromise.allで待機
+  await Promise.resolve();
   if (added > 0) {
     document.getElementById('receipt-add-msg').textContent = `✅ ${added}件を追加しました`;
     setTimeout(() => {
@@ -2988,7 +3042,18 @@ function toggleEntertainFields() {
   if (el) el.style.display = cat === '接待交際費' ? 'block' : 'none';
 }
 
-function addExpense() {
+function updateExpReceiptLabel(input) {
+  const label = document.getElementById('e-receipt-label');
+  if (input.files.length > 0) {
+    label.textContent = `📎 ${input.files[0].name}`;
+    label.style.color = 'var(--green)';
+  } else {
+    label.textContent = '領収書を添付（任意）';
+    label.style.color = '';
+  }
+}
+
+async function addExpense() {
   const date = document.getElementById('e-date').value;
   const name = document.getElementById('e-name').value.trim();
   const payee = document.getElementById('e-payee').value.trim();
@@ -3002,13 +3067,42 @@ function addExpense() {
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if (cat === '接待交際費' && (!participants || !purpose)) { alert('接待交際費は参加者と目的・事由が必須です'); return; }
   const [y, m] = date.split('-').map(Number);
-  state.expenses.push({ id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m });
+  const newExp = { id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m };
+  state.expenses.push(newExp);
+  await dbSaveAsync('expenses', { id: newExp.id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m });
+  // 領収書添付
+  const receiptFile = document.getElementById('e-receipt-file')?.files?.[0];
+  if (receiptFile) {
+    try {
+      const { blob, contentType, filename } = await compressImage(receiptFile);
+      const base64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(blob); });
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const r2Key = `expenses/${newExp.id}/${timestamp}_${filename}`;
+      const res = await fetch(R2_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
+      });
+      const uploadData = await res.json();
+      if (uploadData.ok) {
+        const { data: recData } = await sb.from('receipts').insert({
+          expense_id: newExp.id, r2_key: r2Key, filename,
+          content_type: contentType, file_size: blob.size
+        }).select().single();
+        if (recData) state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
+          filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+          uploadedAt: recData.uploaded_at, note: recData.note || '' });
+      }
+    } catch(e) { console.warn('領収書添付失敗:', e); }
+  }
   document.getElementById('e-name').value = '';
   document.getElementById('e-payee').value = '';
   document.getElementById('e-amount').value = '';
   document.getElementById('e-invoice').value = '';
   document.getElementById('e-participants').value = '';
   document.getElementById('e-purpose').value = '';
+  const receiptInput = document.getElementById('e-receipt-file');
+  if (receiptInput) { receiptInput.value = ''; updateExpReceiptLabel(receiptInput); }
   renderAll();
 }
 
