@@ -157,6 +157,7 @@
 
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
+      <div id="receipt-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
       <div class="page-header">
         <div class="page-title">ダッシュボード</div>
         <div class="month-nav">
@@ -317,6 +318,35 @@
           <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="closeEditModal()">キャンセル</button>
           <button class="btn btn-primary" onclick="saveEdit()">保存する</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 領収書管理モーダル -->
+    <div id="receipt-mgmt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:600px;max-width:95vw;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-size:16px;font-weight:700">📎 領収書管理</div>
+          <button onclick="closeReceiptModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div id="receipt-mgmt-expense-info" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
+        <!-- アップロードエリア -->
+        <div id="receipt-mgmt-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
+          onclick="document.getElementById('receipt-mgmt-file').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+          ondragleave="this.style.borderColor='var(--border)'"
+          ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleReceiptDrop(event)">
+          <div style="font-size:24px;margin-bottom:8px">📄</div>
+          <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+        </div>
+        <input type="file" id="receipt-mgmt-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handleReceiptFileSelect(event)">
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考（差し替え理由など）</label>
+          <input id="receipt-mgmt-note" placeholder="例：誤アップロードのため差し替え" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+        </div>
+        <div id="receipt-mgmt-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
+        <!-- 登録済み領収書一覧 -->
+        <div id="receipt-mgmt-list"></div>
       </div>
     </div>
 
@@ -852,7 +882,7 @@
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">経費明細</div></div>
-        <table><thead><tr><th>日付</th><th>品名</th><th>支払先</th><th>勘定科目</th><th class="num">金額</th><th>消費税区分</th><th class="num">消費税額</th><th>インボイス</th><th>参加者・目的</th><th>支払方法</th><th></th></tr></thead>
+        <table><thead><tr><th>日付</th><th>品名</th><th>支払先</th><th>勘定科目</th><th class="num">金額</th><th>消費税区分</th><th class="num">消費税額</th><th>インボイス</th><th>参加者・目的</th><th>支払方法</th><th>領収書</th><th></th></tr></thead>
         <tbody id="expenses-table"></tbody></table>
       </div>
 
@@ -1115,7 +1145,7 @@ let dbReady = false;
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR] = await Promise.all([
       sb.from('casters').select('*').order('id'),
       sb.from('referrers').select('*').order('id'),
       sb.from('sales').select('*').order('id'),
@@ -1124,6 +1154,7 @@ async function loadFromDB() {
       sb.from('tax_paid').select('*'),
       sb.from('exchanges').select('*').order('id'),
       sb.from('manager').select('*').limit(1),
+      sb.from('receipts').select('*').order('id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1184,6 +1215,12 @@ async function loadFromDB() {
       };
     }
 
+    if (receiptsR.data?.length > 0) {
+      state.receipts = receiptsR.data.map(r => ({
+        id: r.id, expenseId: r.expense_id, r2Key: r.r2_key, filename: r.filename,
+        contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||''
+      }));
+    }
     dbReady = true;
     showSyncStatus('ok');
     renderAll();
@@ -1284,6 +1321,7 @@ let state = {
     { id:101, casterId:2, amount:96979, srcTax:9001, date:'2026-03-05', note:'', y:2026, m:3, saleIds:[12,16], salesLabel:'2026-03-02・2026-03-04 配信分' },
   ], // 前払いデータ
   fxRecords: [], // 両替記録
+  receipts: [], // 領収書
   nextId: 300,
 };
 
@@ -1473,6 +1511,168 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e 
     updateThemeLabel();
   }
 });
+
+// ===== 領収書管理 =====
+const R2_PROXY = 'https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/r2-proxy';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5dGh2anVmcW5tdnd3bGVjeWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDA2NzYsImV4cCI6MjA4ODU3NjY3Nn0.LuuchGYqhqWfAcFxP0ZjIckQVeBhOwR7MItaFaUFjBo';
+
+let receiptMgmtExpenseId = null;
+
+function openReceiptModal(expenseId) {
+  receiptMgmtExpenseId = expenseId;
+  const exp = state.expenses.find(e => e.id === expenseId);
+  if (!exp) return;
+  document.getElementById('receipt-mgmt-expense-info').innerHTML =
+    `<span style="color:var(--muted)">${exp.date}</span>　<strong>${exp.name}</strong>　<span style="font-family:var(--mono);color:var(--accent)">${yen(exp.amount)}</span>　<span class="badge badge-purple">${exp.cat}</span>`;
+  document.getElementById('receipt-mgmt-note').value = '';
+  renderReceiptList();
+  document.getElementById('receipt-mgmt-modal').style.display = 'flex';
+}
+
+function closeReceiptModal() {
+  document.getElementById('receipt-mgmt-modal').style.display = 'none';
+  receiptMgmtExpenseId = null;
+}
+
+function renderReceiptList() {
+  const recs = state.receipts.filter(r => r.expenseId === receiptMgmtExpenseId);
+  const el = document.getElementById('receipt-mgmt-list');
+  if (recs.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">領収書が登録されていません</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">登録済み領収書</div>' +
+    recs.map(r => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+        <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">
+            ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
+            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+          </div>
+        </div>
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteReceipt(${r.id},'${r.r2Key}')">削除</button>
+      </div>`).join('');
+}
+
+async function compressImage(file) {
+  // HEIC変換
+  let processFile = file;
+  if (file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
+    try {
+      const heic2any = window.heic2any;
+      const blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      processFile = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
+    } catch(e) { processFile = file; }
+  }
+  if (processFile.type === 'application/pdf') {
+    return { blob: processFile, contentType: 'application/pdf', filename: file.name };
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(processFile);
+    img.onload = () => {
+      const maxSize = 1500;
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => {
+        URL.revokeObjectURL(url);
+        resolve({ blob, contentType: 'image/jpeg', filename: file.name.replace(/\.[^.]+$/, '.jpg') });
+      }, 'image/jpeg', 0.82);
+    };
+    img.src = url;
+  });
+}
+
+async function uploadReceipt(file) {
+  const note = document.getElementById('receipt-mgmt-note').value.trim();
+  document.getElementById('receipt-mgmt-loading').style.display = 'block';
+  try {
+    const { blob, contentType, filename } = await compressImage(file);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const r2Key = `expenses/${receiptMgmtExpenseId}/${timestamp}_${filename}`;
+    // base64変換
+    const base64 = await new Promise(res => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+    // R2アップロード
+    const res = await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    // Supabase DBに記録
+    const { data: recData, error } = await sb.from('receipts').insert({
+      expense_id: receiptMgmtExpenseId, r2_key: r2Key, filename,
+      content_type: contentType, file_size: blob.size, note: note || null
+    }).select().single();
+    if (error) throw error;
+    state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
+      filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+      uploadedAt: recData.uploaded_at, note: recData.note || '' });
+    renderReceiptList();
+    renderExpenses();
+  } catch(e) {
+    alert('アップロード失敗: ' + e.message);
+  } finally {
+    document.getElementById('receipt-mgmt-loading').style.display = 'none';
+  }
+}
+
+async function handleReceiptFileSelect(event) {
+  const files = [...event.target.files];
+  for (const f of files) await uploadReceipt(f);
+  event.target.value = '';
+}
+
+async function handleReceiptDrop(event) {
+  const files = [...event.dataTransfer.files];
+  for (const f of files) await uploadReceipt(f);
+}
+
+async function downloadReceipt(r2Key, filename, contentType) {
+  try {
+    const res = await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'download', key: r2Key, contentType })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const blob = new Blob([Uint8Array.from(atob(data.base64), c => c.charCodeAt(0))], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) { alert('ダウンロード失敗: ' + e.message); }
+}
+
+async function deleteReceipt(id, r2Key) {
+  if (!confirm('この領収書を削除しますか？')) return;
+  try {
+    await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'delete', key: r2Key })
+    });
+    await sb.from('receipts').delete().eq('id', id);
+    state.receipts = state.receipts.filter(r => r.id !== id);
+    renderReceiptList();
+    renderExpenses();
+  } catch(e) { alert('削除失敗: ' + e.message); }
+}
 
 // ===== 紹介者フォーム 請求書摘要トグル =====
 function toggleRefEditInvDesc(prefix) {
@@ -1777,6 +1977,20 @@ function renderAll() {
 
 // ===== DASHBOARD =====
 function renderDashboard() {
+  // 未領収書アラート
+  const expWithNoReceipt = state.expenses.filter(e => {
+    const daysDiff = (new Date() - new Date(e.date)) / (1000 * 60 * 60 * 24);
+    return daysDiff > 3 && state.receipts.filter(r => r.expenseId === e.id).length === 0;
+  });
+  const alertEl = document.getElementById('receipt-alert');
+  if (alertEl) {
+    if (expWithNoReceipt.length > 0) {
+      alertEl.style.display = 'flex';
+      alertEl.innerHTML = `<span style="font-size:16px">📎</span><div><div style="font-weight:600;font-size:13px">領収書未添付の経費が${expWithNoReceipt.length}件あります</div><div style="font-size:11px;color:var(--muted);margin-top:2px">電子帳簿保存法：受領後2ヶ月以内にアップロードしてください</div></div>`;
+    } else {
+      alertEl.style.display = 'none';
+    }
+  }
   const { y, m } = state;
   const sales = salesOfMonth(y, m);
   const exps = expOfMonth(y, m);
@@ -2888,6 +3102,13 @@ function renderExpenses() {
       <td>${invBadge}</td>
       <td>${entertainInfo}</td>
       <td style="font-size:12px;color:var(--muted)">${e.method}</td>
+      <td>${(() => {
+        const recs = state.receipts.filter(r => r.expenseId === e.id);
+        if (recs.length > 0) {
+          return `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green)" onclick="openReceiptModal(${e.id})">📎 ${recs.length}件</button>`;
+        }
+        return `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openReceiptModal(${e.id})">📎 追加</button>`;
+      })()}</td>
       <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
