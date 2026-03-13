@@ -1664,7 +1664,10 @@ async function downloadReceipt(r2Key, filename, contentType) {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
-    const blob = new Blob([Uint8Array.from(atob(data.base64), c => c.charCodeAt(0))], { type: contentType });
+    const binary = atob(data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: contentType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename; a.click();
