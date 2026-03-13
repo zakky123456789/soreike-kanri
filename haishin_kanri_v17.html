@@ -2896,6 +2896,7 @@ function closeDpEditModal() {
 }
 
 async function deleteDailyPay(id) {
+  await dbDelete('daily_pays', id);
   state.dailyPays = state.dailyPays.filter(d => d.id !== id);
   renderAll();
   updateDailySelect();
