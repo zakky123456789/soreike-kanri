@@ -1964,7 +1964,9 @@ function clearReceiptResults() {
 
 async function addCheckedReceipts() {
   const { y, m } = state;
-  let added = 0;
+
+  // チェック済みアイテムを収集
+  const toAdd = [];
   for (const r of receiptResults) {
     if (r._error) continue;
     const chk = document.getElementById(`rc-chk-${r._id}`);
@@ -1977,41 +1979,56 @@ async function addCheckedReceipts() {
     const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
     const method = document.getElementById(`rc-method-${r._id}`)?.value || '';
     if (!date || !name || isNaN(amount)) continue;
-    // 分割レシートの場合、品名の先頭に【分割N/M】マーカーを付与（経費明細で識別可能にする）
     if (r._totalInFile && r._totalInFile > 1) {
       const idx = (r._indexInFile ?? 0) + 1;
       name = `【分割${idx}/${r._totalInFile}】${name}`;
     }
     const [ey, em] = date.split('-').map(Number);
-    const newExp = { id: state.nextId++, date, name, payee: payee||'', cat, amount, tax, method, invoiceNo: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em };
-    state.expenses.push(newExp);
-    const savedItems = await dbSaveAsync('expenses', { id: newExp.id, date, name, payee: payee||'', cat, amount, tax, method, invoice_no: r.invoiceNo||'', participants:'', purpose:'', y: ey, m: em });
-    // 領収書の自動添付（AIで読み込んだ画像をそのまま保存）
-    if (r._base64 && r._contentType && savedItems) {
-      try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const r2Key = `expenses/${newExp.id}/${timestamp}_${r._filename || 'receipt.jpg'}`;
-        const res = await fetch(R2_PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-          body: JSON.stringify({ action: 'upload', key: r2Key, contentType: r._contentType, fileBase64: r._base64 })
-        });
-        const uploadData = await res.json();
-        if (uploadData.ok) {
-          const { data: recData } = await sb.from('receipts').insert({
-            expense_id: newExp.id, r2_key: r2Key, filename: r._filename || 'receipt.jpg',
-            content_type: r._contentType, file_size: Math.round(r._base64.length * 0.75), note: 'AIレシート読み込みで自動添付'
-          }).select().single();
-          if (recData) {
-            state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
-              filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
-              uploadedAt: recData.uploaded_at, note: recData.note || '' });
-          }
-        }
-      } catch(uploadErr) { console.warn('領収書自動添付失敗:', uploadErr); }
-    }
-    added++;
+    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em });
   }
+
+  if (toAdd.length === 0) {
+    document.getElementById('receipt-add-msg').textContent = '⚠️ チェックされた有効なデータがありません';
+    return;
+  }
+
+  document.getElementById('receipt-add-msg').textContent = '⏳ 保存中...';
+
+  // 全経費をDBに一括保存（並列）
+  const expRows = toAdd.map(item => {
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em };
+    state.expenses.push(newExp);
+    item.newExp = newExp;
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em });
+  });
+  await Promise.all(expRows);
+
+  // 領収書を並列アップロード
+  await Promise.all(toAdd.map(async item => {
+    const { r, newExp } = item;
+    if (!r._base64 || !r._contentType) return;
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const r2Key = `expenses/${newExp.id}/${timestamp}_${r._filename || 'receipt.jpg'}`;
+      const res = await fetch(R2_PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        body: JSON.stringify({ action: 'upload', key: r2Key, contentType: r._contentType, fileBase64: r._base64 })
+      });
+      const uploadData = await res.json();
+      if (uploadData.ok) {
+        const { data: recData } = await sb.from('receipts').insert({
+          expense_id: newExp.id, r2_key: r2Key, filename: r._filename || 'receipt.jpg',
+          content_type: r._contentType, file_size: Math.round(r._base64.length * 0.75), note: 'AIレシート読み込みで自動添付'
+        }).select().single();
+        if (recData) state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
+          filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+          uploadedAt: recData.uploaded_at, note: recData.note || '' });
+      }
+    } catch(e) { console.warn('領収書自動添付失敗:', e); }
+  }));
+
+  const added = toAdd.length;
   if (added > 0) {
     document.getElementById('receipt-add-msg').textContent = `✅ ${added}件を追加しました`;
     setTimeout(() => {
