@@ -2720,7 +2720,7 @@ function closeSaleEditModal() {
   document.getElementById('sale-edit-modal').style.display = 'none';
 }
 
-function saveSaleEdit() {
+async function saveSaleEdit() {
   const id = parseInt(document.getElementById('se-id').value);
   const casterId = parseInt(document.getElementById('se-caster').value);
   const date = document.getElementById('se-date').value;
@@ -2732,6 +2732,7 @@ function saveSaleEdit() {
   const idx = state.sales.findIndex(s => s.id === id);
   if (idx !== -1) {
     state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m };
+    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate });
   }
   closeSaleEditModal();
   renderAll();
