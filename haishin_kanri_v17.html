@@ -1283,6 +1283,18 @@ async function loadFromDB() {
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||''
       }));
     }
+    // nextIdをDBの最大ID+1に更新（ID衝突防止）
+    const allIds = [
+      ...state.casters.map(r => r.id),
+      ...state.referrers.map(r => r.id),
+      ...state.sales.map(r => r.id),
+      ...state.expenses.map(r => r.id),
+      ...state.dailyPays.map(r => r.id),
+      ...state.exchanges.map(r => r.id),
+      ...state.receipts.map(r => r.id),
+    ];
+    if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
+
     dbReady = true;
     showSyncStatus('ok');
     renderAll();
