@@ -765,7 +765,7 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い源泉計</th><th class="num">月末振込額</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末振込額</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
       </div>
 
@@ -2953,6 +2953,7 @@ function renderSales() {
     const cDailyPays = dailyPays.filter(d => d.casterId === c.id);
     const totalDailyAmt = cDailyPays.reduce((s,d) => s + d.amount, 0);
     const totalDailySrc = cDailyPays.reduce((s,d) => s + d.srcTax, 0);
+    const totalDailyTransfer = cDailyPays.reduce((s,d) => s + (d.amount - d.srcTax), 0);
     const remaining = totalReward - totalDailyAmt;
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
@@ -2960,12 +2961,13 @@ function renderSales() {
       <td><strong>${c.name}</strong></td>
       <td class="num" style="color:var(--red)">${yen(totalReward)}</td>
       <td class="num" style="color:var(--yellow)">${totalDailyAmt>0?yen(totalDailyAmt):'-'}</td>
+      <td class="num" style="color:var(--green);font-weight:600">${totalDailyTransfer>0?yen(totalDailyTransfer):'-'}</td>
       <td class="num" style="color:var(--yellow)">${totalDailySrc>0?yen(totalDailySrc):'-'}</td>
       <td class="num" style="color:var(--accent)">${yen(remaining>0?remaining:0)}</td>
       <td class="num" style="color:var(--yellow)">${yen(remainingSrc)}</td>
       <td class="num" style="color:var(--green);font-weight:700">${yen(transfer>0?transfer:0)}</td>
     </tr>`;
-  }).filter(Boolean).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+  }).filter(Boolean).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
   // 前払い明細：対象月が表示中の月に該当するものを表示（支払日降順）
   const dpForTable = [...state.dailyPays]
