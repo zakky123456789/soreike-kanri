@@ -458,6 +458,13 @@
           </div>
           <div class="form-group"><label>インボイス番号</label><input id="exp-edit-invoice" placeholder="例：T1234567890123"></div>
         </div>
+        <div style="margin-bottom:12px">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
+            <input type="checkbox" id="exp-edit-exclude-manager" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer">
+            <span>管理人の報酬計算から除外する</span>
+            <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
+          </label>
+        </div>
         <div id="exp-edit-entertain" style="display:none;margin-bottom:14px">
           <div class="form-grid form-grid-2">
             <div class="form-group"><label>参加者 <span style="color:var(--red)">*</span></label><input id="exp-edit-participants" placeholder="例：ラム、ゆの、代表者"></div>
@@ -868,6 +875,13 @@
             </div>
             <div class="form-group"><label>インボイス番号</label><input id="e-invoice" placeholder="例：T1234567890123"></div>
           </div>
+          <div style="margin-top:10px">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
+              <input type="checkbox" id="e-exclude-manager" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer">
+              <span>管理人の報酬計算から除外する</span>
+              <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
+            </label>
+          </div>
           <!-- 接待交際費の詳細（接待交際費選択時のみ表示） -->
           <div id="e-entertain-fields" style="margin-top:10px;display:none">
             <div class="form-grid form-grid-2">
@@ -1191,7 +1205,8 @@ async function loadFromDB() {
         id: r.id, date: r.date, name: r.name, cat: r.cat,
         amount: Number(r.amount), tax: r.tax, method: r.method, y: r.y, m: r.m,
         invoiceNo: r.invoice_no || '', payee: r.payee || '',
-        participants: r.participants || '', purpose: r.purpose || '', settled: r.settled || false
+        participants: r.participants || '', purpose: r.purpose || '', settled: r.settled || false,
+        excludeManager: r.exclude_manager || false
       }));
     }
     if (dailyR.data?.length > 0) {
@@ -3084,12 +3099,13 @@ async function addExpense() {
   const invoiceNo = document.getElementById('e-invoice').value.trim();
   const participants = cat === '接待交際費' ? document.getElementById('e-participants').value.trim() : '';
   const purpose = cat === '接待交際費' ? document.getElementById('e-purpose').value.trim() : '';
+  const excludeManager = document.getElementById('e-exclude-manager')?.checked || false;
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if (cat === '接待交際費' && (!participants || !purpose)) { alert('接待交際費は参加者と目的・事由が必須です'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newExp = { id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m };
+  const newExp = { id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager };
   state.expenses.push(newExp);
-  await dbSaveAsync('expenses', { id: newExp.id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m });
+  await dbSaveAsync('expenses', { id: newExp.id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager });
   // 領収書添付
   const receiptFile = document.getElementById('e-receipt-file')?.files?.[0];
   if (receiptFile) {
@@ -3121,6 +3137,8 @@ async function addExpense() {
   document.getElementById('e-invoice').value = '';
   document.getElementById('e-participants').value = '';
   document.getElementById('e-purpose').value = '';
+  const exclCb = document.getElementById('e-exclude-manager');
+  if (exclCb) exclCb.checked = false;
   const receiptInput = document.getElementById('e-receipt-file');
   if (receiptInput) { receiptInput.value = ''; updateExpReceiptLabel(receiptInput); }
   renderAll();
@@ -3146,6 +3164,8 @@ function openExpEditModal(id) {
   document.getElementById('exp-edit-invoice').value = e.invoiceNo || '';
   document.getElementById('exp-edit-participants').value = e.participants || '';
   document.getElementById('exp-edit-purpose').value = e.purpose || '';
+  const editExclCb = document.getElementById('exp-edit-exclude-manager');
+  if (editExclCb) editExclCb.checked = e.excludeManager || false;
   toggleExpEditEntertain();
   document.getElementById('exp-edit-modal').style.display = 'flex';
 }
@@ -3154,7 +3174,7 @@ function closeExpEditModal() {
   document.getElementById('exp-edit-modal').style.display = 'none';
 }
 
-function saveExpEdit() {
+async function saveExpEdit() {
   const id = parseInt(document.getElementById('exp-edit-id').value);
   const date = document.getElementById('exp-edit-date').value;
   const name = document.getElementById('exp-edit-name').value.trim();
@@ -3166,12 +3186,14 @@ function saveExpEdit() {
   const invoiceNo = document.getElementById('exp-edit-invoice').value.trim();
   const participants = cat === '接待交際費' ? document.getElementById('exp-edit-participants').value.trim() : '';
   const purpose = cat === '接待交際費' ? document.getElementById('exp-edit-purpose').value.trim() : '';
+  const excludeManager = document.getElementById('exp-edit-exclude-manager')?.checked || false;
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if (cat === '接待交際費' && (!participants || !purpose)) { alert('接待交際費は参加者と目的・事由が必須です'); return; }
   const [y, m] = date.split('-').map(Number);
   const idx = state.expenses.findIndex(x => x.id === id);
   if (idx !== -1) {
-    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m };
+    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager };
+    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager });
   }
   closeExpEditModal();
   renderAll();
@@ -3201,11 +3223,17 @@ function renderExpenses() {
       <td style="color:var(--muted);font-size:12px">${e.date}</td>
       <td>${(() => {
         const splitMatch = e.name && e.name.match(/^【分割(\d+)\/(\d+)】([\s\S]*)$/);
+        let nameHtml;
         if (splitMatch) {
           const [, idx, total, dispName] = splitMatch;
-          return `<span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:10px;background:rgba(124,92,252,0.18);color:var(--accent2);border:1px solid rgba(124,92,252,0.35);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔗${idx}/${total}</span>${dispName}</span>`;
+          nameHtml = `<span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:10px;background:rgba(124,92,252,0.18);color:var(--accent2);border:1px solid rgba(124,92,252,0.35);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔗${idx}/${total}</span>${dispName}</span>`;
+        } else {
+          nameHtml = e.name;
         }
-        return e.name;
+        if (e.excludeManager) {
+          nameHtml += ` <span style="font-size:10px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">報酬除外</span>`;
+        }
+        return nameHtml;
       })()}</td>
       <td style="font-size:12px;color:var(--muted)">${e.payee||'-'}</td>
       <td><span class="badge badge-purple">${e.cat}</span></td>
@@ -4280,7 +4308,8 @@ function calcManagerReward(y, m) {
     return s + calcRefTotal(x.coins, rw, ref).total;
   }, 0);
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
-  const opProfit = totalSales - totalReward - totalRef - totalExp;
+  const totalExpForMgr = exps.reduce((s,e) => e.excludeManager ? s : s + e.amount, 0);
+  const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
   const mgrReward = Math.floor(Math.max(0, opProfit) * 0.5);
 
   // 管理人立替経費（settled未問わず全件）
@@ -4288,7 +4317,7 @@ function calcManagerReward(y, m) {
   const replaceExps = exps.filter(e => replaceMethods.includes(e.method));
   const replaceTotal = replaceExps.reduce((s,e) => s + e.amount, 0);
 
-  return { totalSales, totalReward, totalRef, totalExp, opProfit, mgrReward, replaceTotal, replaceExps, totalPayment: mgrReward + replaceTotal };
+  return { totalSales, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, totalPayment: mgrReward + replaceTotal };
 }
 
 function renderManagerReward() {
@@ -4300,7 +4329,8 @@ function renderManagerReward() {
     <div class="sim-row"><div class="sim-label">売上高</div><div style="font-family:var(--mono);color:var(--accent)">${yen(r.totalSales)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 配信者報酬合計</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalReward)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 紹介料合計</div><div style="font-family:var(--mono);color:#fb923c">▲${yen(r.totalRef)}</div></div>
-    <div class="sim-row"><div class="sim-label">▲ 経費合計</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalExp)}</div></div>
+    <div class="sim-row"><div class="sim-label">▲ 経費合計（管理人対象分）</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalExpForMgr)}</div></div>
+    ${r.totalExp !== r.totalExpForMgr ? `<div class="sim-row"><div class="sim-label" style="color:var(--accent2)">　うち除外分</div><div style="font-family:var(--mono);color:var(--accent2)">▲${yen(r.totalExp - r.totalExpForMgr)}</div></div>` : ''}
     <div class="sim-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px">
       <div style="font-weight:600">営業利益</div>
       <div style="font-family:var(--mono);font-weight:700;color:${r.opProfit>=0?'var(--green)':'var(--red)'}">${yen(r.opProfit)}</div>
