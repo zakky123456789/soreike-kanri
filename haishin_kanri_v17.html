@@ -148,6 +148,7 @@
     <div class="nav-item" onclick="showPage('report')"><span>👁️</span>配信者レポート</div>
     <div class="nav-item" onclick="showPage('invoice')"><span>🧾</span>請求書作成</div>
     <div class="nav-item" onclick="showPage('refReport')"><span>📨</span>紹介者報告書</div>
+    <div class="nav-item" onclick="showPage('withholding')"><span>📄</span>支払調書</div>
     <div class="nav-item" onclick="showPage('manager')"><span>👔</span>管理人</div>
     <div id="nav-refund" class="nav-item" onclick="showPage('refund')" style="display:none"><span>↩️</span>消費税還付</div>
     <div id="role-badge" style="display:none"><div id="role-badge-dot"></div></div>
@@ -1149,6 +1150,47 @@
       <div id="report-content"></div>
     </div>
 
+    <!-- 支払調書 -->
+    <div class="page" id="page-withholding">
+      <div class="page-header"><div class="page-title">支払調書</div></div>
+      <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:start">
+        <!-- 左：設定パネル -->
+        <div>
+          <div class="table-wrap" style="margin-bottom:16px">
+            <div class="table-header"><div class="table-title">設定</div></div>
+            <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+              <div class="form-group">
+                <label>年度</label>
+                <select id="wh-year" onchange="renderWithholding()"></select>
+              </div>
+              <div class="form-group">
+                <label>配信者</label>
+                <select id="wh-caster" onchange="renderWithholding()"></select>
+              </div>
+              <div class="form-group">
+                <label>作成日</label>
+                <input id="wh-date" type="date" onchange="renderWithholding()">
+              </div>
+              <button class="btn btn-primary" onclick="printWithholding()">🖨️ 印刷・PDF保存</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <div class="table-header"><div class="table-title">支払者情報</div></div>
+            <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+              <div class="form-group"><label>住所・所在地</label><input id="wh-payer-address" value="〒012-0055 秋田県湯沢市山田字荻生田26-2" oninput="renderWithholding()"></div>
+              <div class="form-group"><label>氏名・名称</label><input id="wh-payer-name" value="それいけ合同会社" oninput="renderWithholding()"></div>
+              <div class="form-group"><label>電話番号</label><input id="wh-payer-tel" value="080-1659-2527" oninput="renderWithholding()"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 右：プレビュー -->
+        <div class="table-wrap">
+          <div class="table-header"><div class="table-title">プレビュー</div></div>
+          <div id="withholding-preview" style="padding:24px"></div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -2059,7 +2101,7 @@ async function addCheckedReceipts() {
 // ===== RENDER ALL =====
 function renderAll() {
   renderDashboard(); renderCasters(); renderReferrers(); renderManager();
-  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects();
+  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects();
 }
 
 // ===== DASHBOARD =====
@@ -4580,6 +4622,284 @@ function dashSecretClick() {
 
 
 // ===== 請求書番号生成（統一）=====
+// ===== 支払調書 =====
+
+function renderWithholdingSelects() {
+  // 年度セレクト：データのある年 + 当年
+  const yearSel = document.getElementById('wh-year');
+  if (!yearSel) return;
+  const currentYear = new Date().getFullYear();
+  const years = new Set([currentYear]);
+  state.sales.forEach(s => years.add(s.y));
+  state.dailyPays.forEach(d => years.add(d.targetY ?? d.y));
+  const sorted = [...years].sort((a,b) => b - a);
+  const prevVal = yearSel.value || String(currentYear);
+  yearSel.innerHTML = sorted.map(y => `<option value="${y}" ${String(y)===prevVal?'selected':''}>${y}年</option>`).join('');
+
+  // 配信者セレクト
+  const casterSel = document.getElementById('wh-caster');
+  if (!casterSel) return;
+  const prevCaster = casterSel.value;
+  casterSel.innerHTML = state.casters.map(c => `<option value="${c.id}" ${String(c.id)===prevCaster?'selected':''}>${c.name}</option>`).join('');
+
+  // 作成日の初期値
+  const whDate = document.getElementById('wh-date');
+  if (whDate && !whDate.value) whDate.value = new Date().toISOString().split('T')[0];
+
+  renderWithholding();
+}
+
+function renderWithholding() {
+  const el = document.getElementById('withholding-preview');
+  if (!el) return;
+
+  const yearSel   = document.getElementById('wh-year');
+  const casterSel = document.getElementById('wh-caster');
+  if (!yearSel || !casterSel) return;
+
+  const year      = parseInt(yearSel.value);
+  const casterId  = parseInt(casterSel.value);
+  const caster    = state.casters.find(c => c.id === casterId);
+  if (!caster) { el.innerHTML = '<div style="color:var(--muted);padding:24px;text-align:center">配信者を選択してください</div>'; return; }
+
+  const payerName = document.getElementById('wh-payer-name')?.value || 'それいけ合同会社';
+  const payerAddr = document.getElementById('wh-payer-address')?.value || '';
+  const payerTel  = document.getElementById('wh-payer-tel')?.value || '';
+
+  // 年間集計（1月〜12月、target_y/target_m基準）
+  let totalReward = 0;
+  let totalSrcTax = 0;
+  const monthRows = [];
+
+  for (let m = 1; m <= 12; m++) {
+    const mSales = state.sales.filter(s => s.casterId === casterId && s.y === year && s.m === m);
+    const mReward = mSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), caster.rate), 0);
+    const mDailyPays = state.dailyPays.filter(d => {
+      const ty = d.targetY ?? d.y; const tm = d.targetM ?? d.m;
+      return d.casterId === casterId && ty === year && tm === m;
+    });
+    const mDailyAmt = mDailyPays.reduce((s,d) => s + d.amount, 0);
+    const mDailySrc = mDailyPays.reduce((s,d) => s + d.srcTax, 0);
+    const remaining = mReward - mDailyAmt;
+    const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
+    totalReward += mReward;
+    totalSrcTax += mDailySrc + remainingSrc;
+    if (mSales.length > 0) {
+      monthRows.push({ m, mReward, mDailyAmt, mDailySrc, remaining: remaining > 0 ? remaining : 0, remainingSrc });
+    }
+  }
+
+  // 和暦変換
+  const wareki = year >= 2019 ? `令和${year - 2018}` : year >= 1989 ? `平成${year - 1988}` : `昭和${year - 1925}`;
+
+  // 摘要：月別報酬サマリー
+  const tekiyoLines = monthRows.map(r =>
+    `${r.m}月：報酬${yen(r.mReward)}／源泉${yen(r.mDailySrc + r.remainingSrc)}`
+  ).join('　');
+  const invoiceInfo = (caster.invoice === 'yes' && caster.invoiceNo) ? `適格請求書番号：${caster.invoiceNo}` : '';
+  const tekiyo = [invoiceInfo, tekiyoLines].filter(Boolean).join('\n');
+
+  // 共通スタイル
+  const style = `
+    <style>
+      .wh-doc { font-family:'Hiragino Kaku Gothic ProN','Meiryo',sans-serif; color:#000; background:#fff; font-size:11px; line-height:1.4; }
+      .wh-form { border:1.5px solid #000; width:100%; border-collapse:collapse; table-layout:fixed; }
+      .wh-form th, .wh-form td { border:1px solid #000; padding:0; vertical-align:top; }
+      .wh-cell { padding:3px 5px; }
+      .wh-label { font-size:9px; color:#333; white-space:nowrap; }
+      .wh-val { font-size:12px; font-weight:600; min-height:18px; }
+      .wh-val-mono { font-size:13px; font-weight:700; font-family:monospace; text-align:right; display:block; padding-right:4px; }
+      .wh-title-row { text-align:center; font-size:13px; font-weight:700; letter-spacing:0.1em; padding:6px 0; border-bottom:1.5px solid #000; }
+      .wh-stamp { width:44px; height:44px; border:1px solid #999; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:9px; color:#aaa; }
+      .wh-section-head { writing-mode:vertical-rl; font-size:10px; font-weight:700; text-align:center; padding:4px 2px; background:#f5f5f5; white-space:nowrap; width:24px; }
+      .wh-month-tbl { width:100%; border-collapse:collapse; font-size:10px; margin-top:4px; }
+      .wh-month-tbl th { background:#eee; padding:2px 4px; border:1px solid #ccc; text-align:center; font-size:9px; }
+      .wh-month-tbl td { padding:2px 4px; border:1px solid #ccc; text-align:right; }
+      .wh-month-tbl td:first-child { text-align:center; }
+      .wh-month-tbl tr.total-row td { font-weight:700; background:#f8f8f8; border-top:1.5px solid #999; }
+    </style>
+  `;
+
+  // 1票分のHTMLを生成する関数（提出用・交付用で共通）
+  function buildTicket(label, showMonthDetail) {
+    return `
+    <div style="margin-bottom:24px; page-break-inside:avoid;">
+      <table class="wh-form" style="margin-bottom:0">
+        <!-- タイトル行 -->
+        <tr>
+          <td colspan="6" class="wh-title-row">
+            ${wareki}年分　報酬、料金、契約金及び賞金の支払調書
+            <span style="float:right;font-size:10px;font-weight:400;color:#555;margin-right:8px">${label}</span>
+          </td>
+        </tr>
+
+        <!-- 支払を受ける者 -->
+        <tr>
+          <td rowspan="2" class="wh-section-head">支払を受ける者</td>
+          <td colspan="5">
+            <div class="wh-cell">
+              <div class="wh-label">住所（居所）又は所在地</div>
+              <div class="wh-val">${caster.zip ? '〒' + caster.zip + '　' : ''}${caster.address || '　'}</div>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="3">
+            <div class="wh-cell">
+              <div class="wh-label">氏名又は名称</div>
+              <div class="wh-val">${caster.realname || caster.name}</div>
+            </div>
+          </td>
+          <td colspan="2">
+            <div class="wh-cell">
+              <div class="wh-label">個人番号又は法人番号</div>
+              <div class="wh-val" style="color:#aaa;font-size:10px">（記載省略）</div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 区分・細目・支払金額・源泉徴収税額 -->
+        <tr>
+          <td style="width:24px"></td>
+          <td style="width:18%">
+            <div class="wh-cell">
+              <div class="wh-label">区分</div>
+              <div class="wh-val">配信業務報酬</div>
+            </div>
+          </td>
+          <td style="width:18%">
+            <div class="wh-cell">
+              <div class="wh-label">細目</div>
+              <div class="wh-val">${(caster.invoice === 'yes' && caster.invoiceNo) ? caster.invoiceNo : (caster.invoice === 'yes' ? 'インボイス登録' : '免税事業者')}</div>
+            </div>
+          </td>
+          <td colspan="2" style="width:28%">
+            <div class="wh-cell">
+              <div class="wh-label">支払金額</div>
+              <span class="wh-val-mono">${yen(totalReward)}</span>
+            </div>
+          </td>
+          <td style="width:22%">
+            <div class="wh-cell">
+              <div class="wh-label">源泉徴収税額</div>
+              <span class="wh-val-mono">${yen(totalSrcTax)}</span>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 摘要 -->
+        <tr>
+          <td style="width:24px"></td>
+          <td colspan="5">
+            <div class="wh-cell">
+              <div class="wh-label">（摘要）</div>
+              <div style="font-size:10px; min-height:36px; white-space:pre-wrap; padding:2px 0">${tekiyo}</div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 支払者 -->
+        <tr>
+          <td rowspan="2" class="wh-section-head">支払者</td>
+          <td colspan="5">
+            <div class="wh-cell">
+              <div class="wh-label">住所（居所）又は所在地</div>
+              <div class="wh-val">${payerAddr}${payerTel ? '　TEL：' + payerTel : ''}</div>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td colspan="3">
+            <div class="wh-cell">
+              <div class="wh-label">氏名又は名称</div>
+              <div class="wh-val">${payerName}</div>
+            </div>
+          </td>
+          <td colspan="2">
+            <div class="wh-cell">
+              <div class="wh-label">個人番号又は法人番号</div>
+              <div class="wh-val" style="font-size:12px;font-family:monospace">410003004203</div>
+            </div>
+          </td>
+        </tr>
+
+        <!-- 整理欄 -->
+        <tr>
+          <td></td>
+          <td colspan="2">
+            <div class="wh-cell" style="display:flex;align-items:center;gap:6px">
+              <div class="wh-stamp">印</div>
+              <span style="font-size:9px;color:#999">整理欄　① 　②</span>
+            </div>
+          </td>
+          <td colspan="3">
+            <div class="wh-cell" style="font-size:9px;color:#555">
+              ${year}年分　作成日：${new Date().toLocaleDateString('ja-JP')}
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      ${showMonthDetail && monthRows.length > 0 ? `
+      <div style="margin-top:8px;padding:8px 4px;border:1px solid #ccc;background:#fafafa">
+        <div style="font-size:10px;font-weight:700;color:#333;margin-bottom:4px">月別内訳（参考）</div>
+        <table class="wh-month-tbl">
+          <thead><tr>
+            <th>月</th><th>月間報酬</th><th>前払い額</th><th>前払い源泉</th><th>月末振込</th><th>月末源泉</th><th>源泉合計</th>
+          </tr></thead>
+          <tbody>
+            ${monthRows.map(r => `<tr>
+              <td>${r.m}月</td>
+              <td>${yen(r.mReward)}</td>
+              <td>${r.mDailyAmt > 0 ? yen(r.mDailyAmt) : '-'}</td>
+              <td>${r.mDailySrc > 0 ? yen(r.mDailySrc) : '-'}</td>
+              <td>${r.remaining > 0 ? yen(r.remaining) : '-'}</td>
+              <td>${r.remainingSrc > 0 ? yen(r.remainingSrc) : '-'}</td>
+              <td>${yen(r.mDailySrc + r.remainingSrc)}</td>
+            </tr>`).join('')}
+            <tr class="total-row">
+              <td>合計</td>
+              <td>${yen(monthRows.reduce((s,r)=>s+r.mReward,0))}</td>
+              <td>${yen(monthRows.reduce((s,r)=>s+r.mDailyAmt,0))}</td>
+              <td>${yen(monthRows.reduce((s,r)=>s+r.mDailySrc,0))}</td>
+              <td>${yen(monthRows.reduce((s,r)=>s+r.remaining,0))}</td>
+              <td>${yen(monthRows.reduce((s,r)=>s+r.remainingSrc,0))}</td>
+              <td>${yen(totalSrcTax)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>` : ''}
+    </div>`;
+  }
+
+  el.innerHTML = style + `<div class="wh-doc" id="wh-print-area">
+    ${buildTicket('税務署提出用', false)}
+    <hr style="border:none;border-top:2px dashed #ccc;margin:16px 0">
+    ${buildTicket('受給者交付用', true)}
+  </div>`;
+}
+
+function printWithholding() {
+  const content = document.getElementById('wh-print-area')?.innerHTML;
+  if (!content) return;
+  const styleEl = document.querySelector('#withholding-preview style');
+  const styleStr = styleEl ? styleEl.outerHTML : '';
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>支払調書</title>
+  ${styleStr}
+  <style>
+    body { margin: 10mm 12mm; background:#fff; }
+    @page { size: A4 portrait; margin: 10mm 12mm; }
+    hr { display:none; }
+    .wh-doc > div:first-child { margin-bottom: 12mm; }
+  </style>
+  </head><body><div class="wh-doc">${content}</div></body></html>`);
+  w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
+// ===== END 支払調書 =====
+
 // 発行者名 + 日付(YYYYMMDD) + その日の連番(001〜)
 // state.invoiceSeq = { 'ヤマダ-20260307': 1, ... }
 if (!('invoiceSeq' in state)) state.invoiceSeq = {};
