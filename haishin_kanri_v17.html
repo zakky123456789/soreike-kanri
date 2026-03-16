@@ -1290,7 +1290,7 @@ async function loadFromDB() {
       ...state.sales.map(r => r.id),
       ...state.expenses.map(r => r.id),
       ...state.dailyPays.map(r => r.id),
-      ...state.exchanges.map(r => r.id),
+      ...state.fxRecords.map(r => r.id),
       ...state.receipts.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
