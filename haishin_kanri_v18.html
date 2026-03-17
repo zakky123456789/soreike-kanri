@@ -2891,14 +2891,42 @@ function updateDpSaleList() {
     el.innerHTML = '<span style="color:var(--muted);font-size:12px">配信データがありません</span>';
     return;
   }
-  // すでに前払い済みの累計額をsaleIdごとに集計
+  // すでに前払い済みの累計額をsaleIdごとに集計（按分方式）
   const paidBySaleId = {};
+  const casterObj = getCaster(casterId);
   state.dailyPays
     .filter(d => d.casterId === casterId && d.y === y && d.m === m)
     .forEach(d => {
-      (d.saleIds || []).forEach(sid => {
-        paidBySaleId[sid] = (paidBySaleId[sid] || 0) + d.amount;
-      });
+      const ids = d.saleIds || [];
+      if (ids.length === 0) return;
+      if (ids.length === 1) {
+        paidBySaleId[ids[0]] = (paidBySaleId[ids[0]] || 0) + d.amount;
+      } else {
+        const rewardMap = {};
+        let totalRw = 0;
+        ids.forEach(sid => {
+          const sv = cSales.find(x => x.id === sid);
+          const rw = sv && casterObj ? calcReward(coinToYen(sv.coins), casterObj.rate) : 0;
+          rewardMap[sid] = rw;
+          totalRw += rw;
+        });
+        if (totalRw > 0) {
+          let allocated = 0;
+          ids.forEach((sid, i) => {
+            const share = i === ids.length - 1
+              ? d.amount - allocated
+              : Math.floor(d.amount * rewardMap[sid] / totalRw);
+            paidBySaleId[sid] = (paidBySaleId[sid] || 0) + share;
+            allocated += share;
+          });
+        } else {
+          const share = Math.floor(d.amount / ids.length);
+          ids.forEach((sid, i) => {
+            const s = i === ids.length - 1 ? d.amount - share * i : share;
+            paidBySaleId[sid] = (paidBySaleId[sid] || 0) + s;
+          });
+        }
+      }
     });
 
   el.innerHTML = cSales.map(s => {
@@ -3913,12 +3941,42 @@ function updateInvoicePreview() {
     const dpTotal = dpList.reduce((s,d)=>s+d.amount,0);
     const dpSrcTotal = dpList.reduce((s,d)=>s+d.srcTax,0);
 
-    // saleIdごとに前払い済み累計額を集計（一部前払い対応）
+    // saleIdごとに前払い済み累計額を集計（按分方式・一部前払い対応）
     const prepaidBySaleId = {};
     dpList.forEach(d => {
-      (d.saleIds || []).forEach(sid => {
-        prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + d.amount;
-      });
+      const ids = d.saleIds || [];
+      if (ids.length === 0) return;
+      if (ids.length === 1) {
+        // 1件なら全額をそのsaleに充当
+        prepaidBySaleId[ids[0]] = (prepaidBySaleId[ids[0]] || 0) + d.amount;
+      } else {
+        // 複数件なら各saleの報酬額で按分
+        const rewardMap = {};
+        let totalRw = 0;
+        ids.forEach(sid => {
+          const sv = sales.find(x => x.id === sid);
+          const rw = sv && c ? calcReward(coinToYen(sv.coins), c.rate) : 0;
+          rewardMap[sid] = rw;
+          totalRw += rw;
+        });
+        if (totalRw > 0) {
+          let allocated = 0;
+          ids.forEach((sid, i) => {
+            const share = i === ids.length - 1
+              ? d.amount - allocated  // 最後の1件は端数を全部載せる
+              : Math.floor(d.amount * rewardMap[sid] / totalRw);
+            prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + share;
+            allocated += share;
+          });
+        } else {
+          // 報酬額が取れない場合は均等割り
+          const share = Math.floor(d.amount / ids.length);
+          ids.forEach((sid, i) => {
+            const s = i === ids.length - 1 ? d.amount - share * i : share;
+            prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + s;
+          });
+        }
+      }
     });
 
     // 同日に複数エントリがある日付を事前にカウント（残額>0の行のみ）
