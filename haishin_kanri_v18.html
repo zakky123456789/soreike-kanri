@@ -773,7 +773,7 @@
       <!-- 前払い明細 -->
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">前払い明細</div></div>
-        <table><thead><tr><th>支払日</th><th>対象月</th><th>配信者</th><th>対象配信</th><th class="num">前払い額</th><th class="num">源泉税</th><th class="num">支払額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
+        <table><thead><tr><th style="cursor:pointer" onclick="sortDpTable('date')" id="dp-th-date">支払日 ▲</th><th>対象月</th><th style="cursor:pointer" onclick="sortDpTable('name')" id="dp-th-name">配信者</th><th>対象配信</th><th class="num">前払い額</th><th class="num">源泉税</th><th class="num">支払額</th><th>備考</th><th>納付期限</th><th></th></tr></thead>
         <tbody id="daily-pay-table"></tbody></table>
       </div>
 
@@ -1469,6 +1469,7 @@ async function fetchAddress(zipInputId, addressInputId) {
 
 // ===== SALES SORT =====
 let salesSort = { key: 'date', dir: 1 }; // dir: 1=昇順, -1=降順
+let dpSort = { key: 'date', dir: 1 };
 
 function setSalesSort(key) {
   if (salesSort.key === key) {
@@ -2979,6 +2980,11 @@ function dailyPaysByPayMonth(y, m) {
   return state.dailyPays.filter(d => d.y === y && d.m === m);
 }
 
+function sortDpTable(key) {
+  if (dpSort.key === key) { dpSort.dir *= -1; } else { dpSort.key = key; dpSort.dir = 1; }
+  renderSales();
+}
+
 function renderSales() {
   const { y, m } = state;
   const sCasterSel = document.getElementById('s-caster');
@@ -3024,10 +3030,22 @@ function renderSales() {
     </tr>`;
   }).filter(Boolean).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
-  // 前払い明細：対象月が表示中の月に該当するものを表示（支払日降順）
+  // 前払い明細：対象月が表示中の月に該当するものを表示
   const dpForTable = [...state.dailyPays]
     .filter(d => { const ty = d.targetY ?? d.y; const tm = d.targetM ?? d.m; return ty === y && tm === m; })
-    .sort((a,b) => b.date.localeCompare(a.date));
+    .sort((a,b) => {
+      if (dpSort.key === 'name') {
+        const na = getCaster(a.casterId)?.name || '';
+        const nb = getCaster(b.casterId)?.name || '';
+        return dpSort.dir * na.localeCompare(nb, 'ja');
+      }
+      return dpSort.dir * a.date.localeCompare(b.date);
+    });
+  // ヘッダーアイコン更新
+  const dpThDate = document.getElementById('dp-th-date');
+  const dpThName = document.getElementById('dp-th-name');
+  if (dpThDate) dpThDate.innerHTML = `支払日${dpSort.key==='date' ? (dpSort.dir===1?' ▲':' ▼') : ''}`;
+  if (dpThName) dpThName.innerHTML = `配信者${dpSort.key==='name' ? (dpSort.dir===1?' ▲':' ▼') : ''}`;
   document.getElementById('daily-pay-table').innerHTML = dpForTable.map(d => {
     const c = getCaster(d.casterId);
     // 納付期限：支払月の翌月10日
