@@ -5002,10 +5002,16 @@ function renderWithholding() {
     const mDailySrc = mDailyPays.reduce((s,d) => s + d.srcTax, 0);
     const remaining = mReward - mDailyAmt;
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
+    // 前払い支払日リスト（複数可）
+    const dailyPayDates = mDailyPays.map(d => d.date).filter(Boolean).sort();
+    // 後払支払日：翌月22日
+    const endPayM = m === 12 ? 1 : m + 1;
+    const endPayY = m === 12 ? year + 1 : year;
+    const endPayDate = (remaining > 0) ? `${endPayY}/${String(endPayM).padStart(2,'0')}/22` : '';
     totalReward += mReward;
     totalSrcTax += mDailySrc + remainingSrc;
     if (mSales.length > 0) {
-      monthRows.push({ m, mReward, mDailyAmt, mDailySrc, remaining: remaining > 0 ? remaining : 0, remainingSrc });
+      monthRows.push({ m, mReward, mDailyAmt, mDailySrc, remaining: remaining > 0 ? remaining : 0, remainingSrc, dailyPayDates, endPayDate });
     }
   }
 
@@ -5036,7 +5042,9 @@ function renderWithholding() {
       .wh-month-tbl th { background:#eee; padding:2px 4px; border:1px solid #ccc; text-align:center; font-size:9px; }
       .wh-month-tbl td { padding:2px 4px; border:1px solid #ccc; text-align:right; }
       .wh-month-tbl td:first-child { text-align:center; }
+      .wh-month-tbl td.date-cell { text-align:center; font-size:9px; color:#444; white-space:nowrap; }
       .wh-month-tbl tr.total-row td { font-weight:700; background:#f8f8f8; border-top:1.5px solid #999; }
+      .wh-note { font-size:9px; color:#555; margin-top:4px; padding:3px 6px; border-left:2px solid #999; background:#f5f5f5; line-height:1.5; }
     </style>
   `;
 
@@ -5162,32 +5170,42 @@ function renderWithholding() {
 
       ${showMonthDetail && monthRows.length > 0 ? `
       <div style="margin-top:8px;padding:8px 4px;border:1px solid #ccc;background:#fafafa">
-        <div style="font-size:10px;font-weight:700;color:#333;margin-bottom:4px">月別内訳（参考）</div>
+        <div style="font-size:10px;font-weight:700;color:#333;margin-bottom:4px">月別支払内訳（参考）</div>
         <table class="wh-month-tbl">
           <thead><tr>
-            <th>月</th><th>月間報酬</th><th>前払い額</th><th>前払い源泉</th><th>月末振込</th><th>月末源泉</th><th>源泉合計</th>
+            <th>月</th>
+            <th>前払支払日</th>
+            <th>前払支払額</th>
+            <th>前払時源泉</th>
+            <th>後払支払日</th>
+            <th>後払支払額</th>
+            <th>後払時源泉徴収税額</th>
+            <th>源泉合計</th>
           </tr></thead>
           <tbody>
             ${monthRows.map(r => `<tr>
               <td>${r.m}月</td>
-              <td>${yen(r.mReward)}</td>
+              <td class="date-cell">${r.dailyPayDates.length > 0 ? r.dailyPayDates.map(d => d.replace(/-/g,'/')).join('<br>') : '-'}</td>
               <td>${r.mDailyAmt > 0 ? yen(r.mDailyAmt) : '-'}</td>
               <td>${r.mDailySrc > 0 ? yen(r.mDailySrc) : '-'}</td>
+              <td class="date-cell">${r.endPayDate || '-'}</td>
               <td>${r.remaining > 0 ? yen(r.remaining) : '-'}</td>
               <td>${r.remainingSrc > 0 ? yen(r.remainingSrc) : '-'}</td>
               <td>${yen(r.mDailySrc + r.remainingSrc)}</td>
             </tr>`).join('')}
             <tr class="total-row">
               <td>合計</td>
-              <td>${yen(monthRows.reduce((s,r)=>s+r.mReward,0))}</td>
+              <td class="date-cell">-</td>
               <td>${yen(monthRows.reduce((s,r)=>s+r.mDailyAmt,0))}</td>
               <td>${yen(monthRows.reduce((s,r)=>s+r.mDailySrc,0))}</td>
+              <td class="date-cell">-</td>
               <td>${yen(monthRows.reduce((s,r)=>s+r.remaining,0))}</td>
               <td>${yen(monthRows.reduce((s,r)=>s+r.remainingSrc,0))}</td>
               <td>${yen(totalSrcTax)}</td>
             </tr>
           </tbody>
         </table>
+        <div class="wh-note">※ 本表は月別の参考内訳です。源泉徴収税額は各支払日ごとの支払額に基づき計算しています。<br>　（前払分は各前払支払日、月末精算分は翌月22日を支払日として算出）</div>
       </div>` : ''}
     </div>`;
   }
