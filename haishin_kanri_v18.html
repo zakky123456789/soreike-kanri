@@ -3120,7 +3120,7 @@ function renderSales() {
     const r1 = _rc.r1; const r2 = _rc.r2;
     const office = calcOfficeSales(s.coins, s.rate, reward, r1+r2);
     return `<tr>
-      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `&nbsp;<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
+      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
       <td><strong>${c?.name||'?'}</strong></td>
       <td class="num"><span class="badge badge-blue">${c?.rate||0}%</span></td>
       <td class="num"><span class="coin-badge">${coins(s.coins)}</span></td>
