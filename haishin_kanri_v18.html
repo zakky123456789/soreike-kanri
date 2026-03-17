@@ -2077,10 +2077,11 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em };
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, excludeManager: false };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em });
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, exclude_manager: false })
+      .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
   });
   await Promise.all(expRows);
 
@@ -2098,13 +2099,16 @@ async function addCheckedReceipts() {
       });
       const uploadData = await res.json();
       if (uploadData.ok) {
-        const { data: recData } = await sb.from('receipts').insert({
+        const { data: recData, error: recError } = await sb.from('receipts').insert({
           expense_id: newExp.id, r2_key: r2Key, filename: r._filename || 'receipt.jpg',
           content_type: r._contentType, file_size: Math.round(r._base64.length * 0.75), note: 'AIレシート読み込みで自動添付'
         }).select().single();
+        if (recError) { console.warn('receipts insert失敗:', recError.message); return; }
         if (recData) state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
           filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
           uploadedAt: recData.uploaded_at, note: recData.note || '' });
+      } else {
+        console.warn('R2アップロード失敗:', uploadData);
       }
     } catch(e) { console.warn('領収書自動添付失敗:', e); }
   }));
