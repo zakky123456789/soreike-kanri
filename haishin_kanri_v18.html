@@ -3089,6 +3089,21 @@ function renderSales() {
     }
     return 0;
   });
+  // 同日・同配信者の連番マップを生成（key: casterId_date）
+  const dayCountMap = {};   // 合計件数
+  const dayIdxMap   = {};   // 表示順インデックス（Map: saleId → 回目）
+  sortedSales.forEach(s => {
+    const key = `${s.casterId}_${s.date}`;
+    dayCountMap[key] = (dayCountMap[key] || 0) + 1;
+  });
+  const daySeq = {};
+  sortedSales.forEach(s => {
+    const key = `${s.casterId}_${s.date}`;
+    if (dayCountMap[key] > 1) {
+      daySeq[key] = (daySeq[key] || 0) + 1;
+      dayIdxMap[s.id] = daySeq[key];
+    }
+  });
   // ヘッダーアイコン更新
   const shLabels = { date:'日付', name:'配信者', coins:'コイン', reward:'報酬額', src:'源泉税', transfer:'振込額', ref:'紹介者', ref1:'紹介料①', ref2:'紹介料②', refamt:'紹介料計', rate:'レート', jpy:'円換算', office:'事務所売上' };
   Object.keys(shLabels).forEach(k => {
@@ -3105,7 +3120,7 @@ function renderSales() {
     const r1 = _rc.r1; const r2 = _rc.r2;
     const office = calcOfficeSales(s.coins, s.rate, reward, r1+r2);
     return `<tr>
-      <td style="color:var(--muted);font-size:12px">${s.date}</td>
+      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `&nbsp;<span style="font-size:10px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
       <td><strong>${c?.name||'?'}</strong></td>
       <td class="num"><span class="badge badge-blue">${c?.rate||0}%</span></td>
       <td class="num"><span class="coin-badge">${coins(s.coins)}</span></td>
@@ -3672,10 +3687,21 @@ function updateInvoicePreview() {
     const dpTotal = dpList.reduce((s,d)=>s+d.amount,0);
     const dpSrcTotal = dpList.reduce((s,d)=>s+d.srcTax,0);
 
+    // 同日に複数エントリがある日付を事前にカウント
+    const dateCounts = {};
+    sales.forEach(s => { dateCounts[s.date] = (dateCounts[s.date] || 0) + 1; });
+    const dateIdx = {};
     sales.forEach(s => {
       const rw = calcReward(coinToYen(s.coins), c.rate);
       const src = calcSrcTax(rw);
-      rows.push({ label: `ライブ配信出演報酬　${my}年${mm}月分`, qty: 1, unitPrice: rw, taxRate: 10, amount: rw, src, deduct: false });
+      let label;
+      if (dateCounts[s.date] > 1) {
+        dateIdx[s.date] = (dateIdx[s.date] || 0) + 1;
+        label = `ライブ配信出演報酬　${s.date} 配信分（${dateIdx[s.date]}回目）`;
+      } else {
+        label = `ライブ配信出演報酬　${s.date} 配信分`;
+      }
+      rows.push({ label, qty: 1, unitPrice: rw, taxRate: 10, amount: rw, src, deduct: false });
     });
     if (dpTotal > 0) {
       // 支払日をフォーマット（複数ある場合は「・」で結合）
