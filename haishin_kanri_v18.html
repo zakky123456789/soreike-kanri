@@ -768,7 +768,7 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th><th>後払登録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
       </div>
 
@@ -1181,6 +1181,45 @@
       <div id="report-content"></div>
     </div>
 
+    <!-- 後払登録モーダル -->
+    <div id="mep-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:12px;padding:28px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+        <div style="font-size:16px;font-weight:700;margin-bottom:20px">後払い支払い登録</div>
+        <input type="hidden" id="mep-caster-id">
+        <input type="hidden" id="mep-target-y">
+        <input type="hidden" id="mep-target-m">
+        <input type="hidden" id="mep-edit-id">
+        <div style="margin-bottom:14px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:4px">配信者・対象月</div>
+          <div id="mep-label" style="font-weight:600;color:var(--accent)"></div>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="font-size:12px;color:var(--muted)">支払日 <span style="color:var(--red)">*</span></label>
+          <input id="mep-pay-date" type="date" class="form-control" style="margin-top:4px">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div>
+            <label style="font-size:12px;color:var(--muted)">振込額（税込・源泉控除後）</label>
+            <input id="mep-amount" type="number" class="form-control" style="margin-top:4px" readonly>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算（変更不可）</div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--muted)">源泉徴収税額</label>
+            <input id="mep-src-tax" type="number" class="form-control" style="margin-top:4px" readonly>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算（変更不可）</div>
+          </div>
+        </div>
+        <div style="margin-bottom:20px">
+          <label style="font-size:12px;color:var(--muted)">メモ</label>
+          <input id="mep-note" type="text" class="form-control" style="margin-top:4px" placeholder="任意">
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn" onclick="closeMepModal()">キャンセル</button>
+          <button id="mep-delete-btn" class="btn" style="background:var(--red);color:#fff;display:none" onclick="deleteMep()">削除</button>
+          <button class="btn btn-primary" onclick="saveMep()">保存</button>
+        </div>
+      </div>
+    </div>
     <!-- 支払調書 -->
     <div class="page" id="page-withholding">
       <div class="page-header"><div class="page-title">支払調書</div></div>
@@ -1237,7 +1276,7 @@ let dbReady = false;
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR] = await Promise.all([
       sb.from('casters').select('*').order('id'),
       sb.from('referrers').select('*').order('id'),
       sb.from('sales').select('*').order('id'),
@@ -1247,6 +1286,7 @@ async function loadFromDB() {
       sb.from('exchanges').select('*').order('id'),
       sb.from('manager').select('*').limit(1),
       sb.from('receipts').select('*').order('id'),
+      sb.from('month_end_pays').select('*').order('id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1314,6 +1354,13 @@ async function loadFromDB() {
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||''
       }));
     }
+    if (mepR.data?.length > 0) {
+      state.monthEndPays = mepR.data.map(r => ({
+        id: r.id, casterId: r.caster_id, payDate: r.pay_date,
+        amount: Number(r.amount), srcTax: Number(r.src_tax),
+        targetY: r.target_y, targetM: r.target_m, note: r.note||''
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -1323,6 +1370,7 @@ async function loadFromDB() {
       ...state.dailyPays.map(r => r.id),
       ...state.fxRecords.map(r => r.id),
       ...state.receipts.map(r => r.id),
+      ...state.monthEndPays.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -1425,6 +1473,7 @@ let state = {
   dailyPays: [
     { id:101, casterId:2, amount:96979, srcTax:9001, date:'2026-03-05', note:'', y:2026, m:3, saleIds:[12,16], salesLabel:'2026-03-02・2026-03-04 配信分' },
   ], // 前払いデータ
+  monthEndPays: [], // 後払いデータ
   fxRecords: [], // 両替記録
   receipts: [], // 領収書
   nextId: 300,
@@ -3117,6 +3166,13 @@ function renderSales() {
     const remaining = totalReward - totalDailyAmt;
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
+    // 後払い登録済みか確認
+    const existingMep = state.monthEndPays.find(p => p.casterId === c.id && p.targetY === y && p.targetM === m);
+    const mepBtn = remaining > 0
+      ? existingMep
+        ? `<button class="btn btn-sm" style="background:var(--green);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">✏️ 編集</button>`
+        : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 後払登録</button>`
+      : '<span style="color:var(--muted);font-size:11px">-</span>';
     return `<tr>
       <td><strong>${c.name}</strong></td>
       <td class="num" style="color:var(--red)">${yen(totalReward)}</td>
@@ -3126,6 +3182,7 @@ function renderSales() {
       <td class="num" style="color:var(--accent)">${yen(remaining>0?remaining:0)}</td>
       <td class="num" style="color:var(--yellow)">${yen(remainingSrc)}</td>
       <td class="num" style="color:var(--green);font-weight:700">${yen(transfer>0?transfer:0)}</td>
+      <td style="text-align:center">${mepBtn}</td>
     </tr>`;
   }).filter(Boolean).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
@@ -4942,6 +4999,97 @@ function dashSecretClick() {
 
 
 // ===== 請求書番号生成（統一）=====
+// ===== 後払い登録 =====
+
+function openMepModal(casterId, y, m, editId) {
+  const caster = state.casters.find(c => c.id === casterId);
+  if (!caster) return;
+
+  // 月末精算の計算（renderSummaryと同じロジック）
+  const sales = salesOfMonth(y, m);
+  const cSales = sales.filter(s => s.casterId === casterId);
+  const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), caster.rate), 0);
+  const dailyPays = dailyPaysOfMonth(y, m);
+  const cDailyPays = dailyPays.filter(d => d.casterId === casterId);
+  const totalDailyAmt = cDailyPays.reduce((s,d) => s + d.amount, 0);
+  const remaining = totalReward - totalDailyAmt;
+  const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
+  const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
+
+  // デフォルト支払日：翌月22日
+  const defPayM = m === 12 ? 1 : m + 1;
+  const defPayY = m === 12 ? y + 1 : y;
+  const defDate = `${defPayY}-${String(defPayM).padStart(2,'0')}-22`;
+
+  document.getElementById('mep-caster-id').value = casterId;
+  document.getElementById('mep-target-y').value = y;
+  document.getElementById('mep-target-m').value = m;
+  document.getElementById('mep-edit-id').value = editId || '';
+  document.getElementById('mep-label').textContent = `${caster.name}　${y}年${m}月分`;
+  document.getElementById('mep-amount').value = transfer > 0 ? transfer : 0;
+  document.getElementById('mep-src-tax').value = remainingSrc;
+  document.getElementById('mep-note').value = '';
+
+  if (editId) {
+    const existing = state.monthEndPays.find(p => p.id === editId);
+    if (existing) {
+      document.getElementById('mep-pay-date').value = existing.payDate || defDate;
+      document.getElementById('mep-note').value = existing.note || '';
+    }
+    document.getElementById('mep-delete-btn').style.display = '';
+  } else {
+    document.getElementById('mep-pay-date').value = defDate;
+    document.getElementById('mep-delete-btn').style.display = 'none';
+  }
+
+  const modal = document.getElementById('mep-modal');
+  modal.style.display = 'flex';
+}
+
+function closeMepModal() {
+  document.getElementById('mep-modal').style.display = 'none';
+}
+
+async function saveMep() {
+  const casterId = parseInt(document.getElementById('mep-caster-id').value);
+  const targetY  = parseInt(document.getElementById('mep-target-y').value);
+  const targetM  = parseInt(document.getElementById('mep-target-m').value);
+  const editId   = document.getElementById('mep-edit-id').value;
+  const payDate  = document.getElementById('mep-pay-date').value;
+  const amount   = parseInt(document.getElementById('mep-amount').value) || 0;
+  const srcTax   = parseInt(document.getElementById('mep-src-tax').value) || 0;
+  const note     = document.getElementById('mep-note').value.trim();
+
+  if (!payDate) { alert('支払日を入力してください'); return; }
+
+  const record = { casterId, payDate, amount, srcTax, targetY, targetM, note };
+
+  if (editId) {
+    const id = parseInt(editId);
+    const idx = state.monthEndPays.findIndex(p => p.id === id);
+    if (idx !== -1) state.monthEndPays[idx] = { ...state.monthEndPays[idx], ...record };
+    await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
+  } else {
+    const id = state.nextId++;
+    state.monthEndPays.push({ id, ...record });
+    await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
+  }
+
+  closeMepModal();
+  renderSales();
+}
+
+async function deleteMep() {
+  const editId = document.getElementById('mep-edit-id').value;
+  if (!editId) return;
+  if (!confirm('後払い登録を削除しますか？')) return;
+  const id = parseInt(editId);
+  await dbDelete('month_end_pays', id);
+  state.monthEndPays = state.monthEndPays.filter(p => p.id !== id);
+  closeMepModal();
+  renderSales();
+}
+
 // ===== 支払調書 =====
 
 function renderWithholdingSelects() {
@@ -5004,10 +5152,9 @@ function renderWithholding() {
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     // 前払い支払日リスト（複数可）
     const dailyPayDates = mDailyPays.map(d => d.date).filter(Boolean).sort();
-    // 後払支払日：翌月22日
-    const endPayM = m === 12 ? 1 : m + 1;
-    const endPayY = m === 12 ? year + 1 : year;
-    const endPayDate = (remaining > 0) ? `${endPayY}/${String(endPayM).padStart(2,'0')}/22` : '';
+    // 後払支払日：month_end_pays に登録があればその日付、なければ空欄
+    const mepRecord = state.monthEndPays.find(p => p.casterId === casterId && p.targetY === year && p.targetM === m);
+    const endPayDate = mepRecord ? mepRecord.payDate.replace(/-/g, '/') : '';
     totalReward += mReward;
     totalSrcTax += mDailySrc + remainingSrc;
     if (mSales.length > 0) {
