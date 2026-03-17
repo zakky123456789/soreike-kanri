@@ -3142,6 +3142,7 @@ function renderSales() {
   });
   // 同日・同配信者の連番マップを生成（key: casterId_date）
   const dayCountMap = {};   // 合計件数
+  const dpIdxColors = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6'];
   const dayIdxMap   = {};   // 表示順インデックス（Map: saleId → 回目）
   sortedSales.forEach(s => {
     const key = `${s.casterId}_${s.date}`;
@@ -3171,7 +3172,7 @@ function renderSales() {
     const r1 = _rc.r1; const r2 = _rc.r2;
     const office = calcOfficeSales(s.coins, s.rate, reward, r1+r2);
     return `<tr>
-      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
+      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:${dpIdxColors[(dayIdxMap[s.id]-1) % dpIdxColors.length]};color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
       <td><strong>${c?.name||'?'}</strong></td>
       <td class="num"><span class="badge badge-blue">${c?.rate||0}%</span></td>
       <td class="num"><span class="coin-badge">${coins(s.coins)}</span></td>
