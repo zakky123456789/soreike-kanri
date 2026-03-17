@@ -2017,10 +2017,12 @@ function renderReceiptResults() {
             <div class="form-group"><label>消費税区分</label><select id="rc-tax-${r._id}" style="background:var(--surface2);font-size:12px">${taxOpts}</select></div>
             <div class="form-group"><label>勘定科目</label><select id="rc-cat-${r._id}" style="background:var(--surface2);font-size:12px">${catOpts}</select></div>
             <div class="form-group"><label>支払方法</label><select id="rc-method-${r._id}" style="background:var(--surface2);font-size:12px">${methodOpts}</select></div>
-            <div class="form-group" style="grid-column:span 3;display:flex;align-items:center;gap:8px;margin-top:2px">
-              <input type="checkbox" id="rc-excl-${r._id}" style="width:auto;accent-color:#a855f7;cursor:pointer">
-              <label for="rc-excl-${r._id}" style="font-size:12px;color:var(--text);cursor:pointer;margin:0">管理人の報酬計算から除外する</label>
-              <span style="font-size:11px;background:#7c3aed22;color:#a855f7;border-radius:4px;padding:1px 7px;margin-left:2px">会社経費・管理人負担なし</span>
+            <div style="grid-column:span 3;margin-top:10px">
+              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
+                <input type="checkbox" id="rc-excl-${r._id}" style="width:16px;height:16px;accent-color:var(--accent2);cursor:pointer">
+                <span>管理人の報酬計算から除外する</span>
+                <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
+              </label>
             </div>
           </div>
           ${r.invoiceNo ? `<div style="margin-top:8px;font-size:11px;color:var(--accent)">🧾 ${r.invoiceNo}</div>` : ''}
