@@ -466,6 +466,7 @@
             <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
           </label>
         </div>
+        <div class="form-group" style="margin-bottom:14px"><label>備考</label><input id="exp-edit-note" placeholder="メモ・補足など"></div>
         <div id="exp-edit-entertain" style="display:none;margin-bottom:14px">
           <div class="form-grid form-grid-2">
             <div class="form-group"><label>参加者 <span style="color:var(--red)">*</span></label><input id="exp-edit-participants" placeholder="例：ラム、ゆの、代表者"></div>
@@ -894,6 +895,9 @@
               <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
             </label>
           </div>
+          <div style="margin-top:10px">
+            <div class="form-group"><label>備考</label><input id="e-note" placeholder="メモ・補足など"></div>
+          </div>
           <!-- 接待交際費の詳細（接待交際費選択時のみ表示） -->
           <div id="e-entertain-fields" style="margin-top:10px;display:none">
             <div class="form-grid form-grid-2">
@@ -913,7 +917,21 @@
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">経費明細</div></div>
-        <table><thead><tr><th>日付</th><th>品名</th><th>支払先</th><th>勘定科目</th><th class="num">金額</th><th>消費税区分</th><th class="num">消費税額</th><th>インボイス</th><th>参加者・目的</th><th>支払方法</th><th>領収書</th><th></th></tr></thead>
+        <table><thead><tr>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('date')"><span id="eh-date">日付</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('name')"><span id="eh-name">品名</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('payee')"><span id="eh-payee">支払先</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('cat')"><span id="eh-cat">勘定科目</span></th>
+          <th class="num" style="cursor:pointer;user-select:none" onclick="setExpSort('amount')"><span id="eh-amount">金額</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('tax')"><span id="eh-tax">消費税区分</span></th>
+          <th class="num" style="cursor:pointer;user-select:none" onclick="setExpSort('taxAmt')"><span id="eh-taxAmt">消費税額</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('invoiceNo')"><span id="eh-invoiceNo">インボイス</span></th>
+          <th>参加者・目的</th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('method')"><span id="eh-method">支払方法</span></th>
+          <th style="cursor:pointer;user-select:none" onclick="setExpSort('note')"><span id="eh-note">備考</span></th>
+          <th>領収書</th>
+          <th></th>
+        </tr></thead>
         <tbody id="expenses-table"></tbody></table>
       </div>
 
@@ -1259,7 +1277,7 @@ async function loadFromDB() {
         amount: Number(r.amount), tax: r.tax, method: r.method, y: r.y, m: r.m,
         invoiceNo: r.invoice_no || '', payee: r.payee || '',
         participants: r.participants || '', purpose: r.purpose || '', settled: r.settled || false,
-        excludeManager: r.exclude_manager || false
+        excludeManager: r.exclude_manager || false, note: r.note || ''
       }));
     }
     if (dailyR.data?.length > 0) {
@@ -1481,6 +1499,7 @@ async function fetchAddress(zipInputId, addressInputId) {
 // ===== SALES SORT =====
 let salesSort = { key: 'date', dir: 1 }; // dir: 1=昇順, -1=降順
 let dpSort = { key: 'date', dir: 1 };
+let expSort = { key: 'date', dir: 1 };
 
 function setSalesSort(key) {
   if (salesSort.key === key) {
@@ -2024,6 +2043,10 @@ function renderReceiptResults() {
                 <span style="font-size:11px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 7px">会社経費・管理人負担なし</span>
               </label>
             </div>
+            <div style="grid-column:span 3;margin-top:8px">
+              <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
+              <input id="rc-note-${r._id}" placeholder="メモ・補足など" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);box-sizing:border-box">
+            </div>
           </div>
           ${r.invoiceNo ? `<div style="margin-top:8px;font-size:11px;color:var(--accent)">🧾 ${r.invoiceNo}</div>` : ''}
         </div>`;
@@ -2067,13 +2090,14 @@ async function addCheckedReceipts() {
     const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
     const method = document.getElementById(`rc-method-${r._id}`)?.value || '';
     const excludeManager = document.getElementById(`rc-excl-${r._id}`)?.checked || false;
+    const note = document.getElementById(`rc-note-${r._id}`)?.value.trim() || '';
     if (!date || !name || isNaN(amount)) continue;
     if (r._totalInFile && r._totalInFile > 1) {
       const idx = (r._indexInFile ?? 0) + 1;
       name = `【分割${idx}/${r._totalInFile}】${name}`;
     }
     const [ey, em] = date.split('-').map(Number);
-    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager });
+    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note });
   }
 
   if (toAdd.length === 0) {
@@ -2085,10 +2109,10 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, excludeManager: item.excludeManager };
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'' };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, exclude_manager: item.excludeManager })
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'' })
       .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
   });
   await Promise.all(expRows);
@@ -3236,12 +3260,13 @@ async function addExpense() {
   const participants = cat === '接待交際費' ? document.getElementById('e-participants').value.trim() : '';
   const purpose = cat === '接待交際費' ? document.getElementById('e-purpose').value.trim() : '';
   const excludeManager = document.getElementById('e-exclude-manager')?.checked || false;
+  const note = document.getElementById('e-note')?.value.trim() || '';
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if (cat === '接待交際費' && (!participants || !purpose)) { alert('接待交際費は参加者と目的・事由が必須です'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newExp = { id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager };
+  const newExp = { id: state.nextId++, date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note };
   state.expenses.push(newExp);
-  await dbSaveAsync('expenses', { id: newExp.id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager });
+  await dbSaveAsync('expenses', { id: newExp.id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note });
   // 領収書添付
   const receiptFile = document.getElementById('e-receipt-file')?.files?.[0];
   if (receiptFile) {
@@ -3302,6 +3327,8 @@ function openExpEditModal(id) {
   document.getElementById('exp-edit-purpose').value = e.purpose || '';
   const editExclCb = document.getElementById('exp-edit-exclude-manager');
   if (editExclCb) editExclCb.checked = e.excludeManager || false;
+  const editNoteFld = document.getElementById('exp-edit-note');
+  if (editNoteFld) editNoteFld.value = e.note || '';
   toggleExpEditEntertain();
   document.getElementById('exp-edit-modal').style.display = 'flex';
 }
@@ -3323,13 +3350,14 @@ async function saveExpEdit() {
   const participants = cat === '接待交際費' ? document.getElementById('exp-edit-participants').value.trim() : '';
   const purpose = cat === '接待交際費' ? document.getElementById('exp-edit-purpose').value.trim() : '';
   const excludeManager = document.getElementById('exp-edit-exclude-manager')?.checked || false;
+  const note = document.getElementById('exp-edit-note')?.value.trim() || '';
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if (cat === '接待交際費' && (!participants || !purpose)) { alert('接待交際費は参加者と目的・事由が必須です'); return; }
   const [y, m] = date.split('-').map(Number);
   const idx = state.expenses.findIndex(x => x.id === id);
   if (idx !== -1) {
-    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager };
-    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager });
+    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note };
+    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note });
   }
   closeExpEditModal();
   renderAll();
@@ -3347,9 +3375,38 @@ async function deleteExpense(id) {
   renderAll();
 }
 
+function expSortIcon(key) {
+  if (expSort.key !== key) return '<span style="color:var(--border);margin-left:4px">⇅</span>';
+  return expSort.dir === 1
+    ? '<span style="color:var(--accent);margin-left:4px">↑</span>'
+    : '<span style="color:var(--accent);margin-left:4px">↓</span>';
+}
+function setExpSort(key) {
+  if (expSort.key === key) { expSort.dir *= -1; } else { expSort.key = key; expSort.dir = 1; }
+  renderExpenses();
+}
+
 function renderExpenses() {
   const { y, m } = state;
-  document.getElementById('expenses-table').innerHTML = expOfMonth(y, m).map(e => {
+  const ehLabels = { date:'日付', name:'品名', payee:'支払先', cat:'勘定科目', amount:'金額', tax:'消費税区分', taxAmt:'消費税額', invoiceNo:'インボイス', method:'支払方法', note:'備考' };
+  Object.keys(ehLabels).forEach(k => {
+    const el = document.getElementById('eh-' + k);
+    if (el) el.innerHTML = ehLabels[k] + expSortIcon(k);
+  });
+  const sortedExps = [...expOfMonth(y, m)].sort((a, b) => {
+    const k = expSort.key, d = expSort.dir;
+    if (k === 'name')      return d * (a.name||'').localeCompare(b.name||'', 'ja');
+    if (k === 'payee')     return d * (a.payee||'').localeCompare(b.payee||'', 'ja');
+    if (k === 'cat')       return d * (a.cat||'').localeCompare(b.cat||'', 'ja');
+    if (k === 'amount')    return d * (a.amount - b.amount);
+    if (k === 'tax')       return d * ((a.tax||0) - (b.tax||0));
+    if (k === 'taxAmt')    return d * (calcExpTax(a.amount, a.tax) - calcExpTax(b.amount, b.tax));
+    if (k === 'invoiceNo') return d * (a.invoiceNo||'').localeCompare(b.invoiceNo||'');
+    if (k === 'method')    return d * (a.method||'').localeCompare(b.method||'', 'ja');
+    if (k === 'note')      return d * (a.note||'').localeCompare(b.note||'', 'ja');
+    return d * (a.date||'').localeCompare(b.date||''); // date (default)
+  });
+  document.getElementById('expenses-table').innerHTML = sortedExps.map(e => {
     const taxAmt = calcExpTax(e.amount, e.tax);
     const entertainInfo = e.cat === '接待交際費' && (e.participants || e.purpose)
       ? `<span style="font-size:11px;color:var(--muted)">${[e.participants, e.purpose].filter(Boolean).join('　')}</span>` : '-';
@@ -3379,6 +3436,7 @@ function renderExpenses() {
       <td>${invBadge}</td>
       <td>${entertainInfo}</td>
       <td style="font-size:12px;color:var(--muted)">${e.method}</td>
+      <td style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.note||''}">${e.note||'-'}</td>
       <td>${(() => {
         const recs = state.receipts.filter(r => r.expenseId === e.id);
         if (recs.length > 0) {
@@ -3388,7 +3446,7 @@ function renderExpenses() {
       })()}</td>
       <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
+  }).join('') || '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
 
   // 立替精算サマリー
   const FURIKAE_METHODS = ['個人クレジット・デビットカード（立替）', '現金（立替）', '個人口座銀行振込（立替）', '管理人立替'];
