@@ -2668,9 +2668,13 @@ async function saveRefEdit() {
   const accountNo   = document.getElementById('ref-edit-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
   const idx = state.referrers.findIndex(r => r.id === id);
+  console.log('saveRefEdit: id=', id, 'idx=', idx, 'referrers=', state.referrers.map(r=>r.id));
   if (idx !== -1) {
     state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
-    await dbSave('referrers', { id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+    const saveResult = await dbSave('referrers', { id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+    console.log('saveRefEdit: dbSave result=', saveResult);
+  } else {
+    console.warn('saveRefEdit: referrer not found in state! id=', id);
   }
   closeRefEditModal();
   renderAll();
