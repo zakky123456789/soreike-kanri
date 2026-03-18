@@ -2374,16 +2374,48 @@ function renderDashboard() {
     .map(([cat,amt]) => `<tr><td>${cat}</td><td class="num">${yen(amt)}</td></tr>`).join('');
 
   const today = new Date();
-  const totalSrc = sales.reduce((s,x) => { const c=getCaster(x.casterId); return s+(c?calcSrcTax(calcReward(coinToYen(x.coins),c.rate)):0); }, 0);
-  const key = `${y}-${String(m).padStart(2,'0')}`;
-  const paid = state.taxPaid[key];
-  const deadline = new Date(y, m, 10);
-  const days = Math.ceil((deadline - today) / 86400000);
+
+  // 表示月（y/m）に納付期限が来る源泉税を集計（renderTaxと同じロジック）
   let alerts = '';
-  if (totalSrc > 0) {
-    if (paid) alerts += `<div class="alert alert-green">✅ ${m}月分の源泉税は納付済みです。</div>`;
-    else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${m}月分の源泉税 ${yen(totalSrc)} の納付期限が過ぎています！</div>`;
-    else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${m}月分の源泉税 ${yen(totalSrc)} の納付期限まで残り${days}日です。</div>`;
+  for (let i = 0; i < 6; i++) {
+    let ty = state.y, tm = state.m - i;
+    while (tm <= 0) { tm += 12; ty--; }
+    const tSales = salesOfMonth(ty, tm);
+    const tDailyPays = dailyPaysByPayMonth(ty, tm);
+
+    // 前払い分：支払月の翌月10日
+    const dailySrc = tDailyPays.reduce((s,d) => s + d.srcTax, 0);
+    if (dailySrc > 0) {
+      const dlM = tm+1>12?1:tm+1; const dlY = tm+1>12?ty+1:ty;
+      const deadline = new Date(dlY, dlM-1, 10);
+      // 納付期限が表示月内のものだけアラート
+      if (deadline.getFullYear() === y && deadline.getMonth()+1 === m) {
+        const key = `dp-${ty}-${String(tm).padStart(2,'0')}`;
+        const paid = state.taxPaid[key];
+        const days = Math.ceil((deadline - today) / 86400000);
+        if (paid) alerts += `<div class="alert alert-green">✅ ${ty}年${tm}月分【前払い】源泉税 納付済</div>`;
+        else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${ty}年${tm}月分【前払い】源泉税 ${yen(dailySrc)} 期限切れ！</div>`;
+        else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${ty}年${tm}月分【前払い】源泉税 ${yen(dailySrc)} 残り${days}日</div>`;
+      }
+    }
+
+    // 月末精算分：翌々月10日
+    const totalRewardSrc = tSales.reduce((s,x) => { const c=getCaster(x.casterId); return s+(c?calcSrcTax(calcReward(coinToYen(x.coins),c.rate)):0); }, 0);
+    const cDailySrc = tDailyPays.reduce((s,d) => s + d.srcTax, 0);
+    const settleSrc = Math.max(0, totalRewardSrc - cDailySrc);
+    if (settleSrc > 0) {
+      const pm = tm+1>12?1:tm+1; const py = tm+1>12?ty+1:ty;
+      const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
+      const deadline = new Date(ddy, ddm-1, 10);
+      if (deadline.getFullYear() === y && deadline.getMonth()+1 === m) {
+        const key = `se-${ty}-${String(tm).padStart(2,'0')}`;
+        const paid = state.taxPaid[key];
+        const days = Math.ceil((deadline - today) / 86400000);
+        if (paid) alerts += `<div class="alert alert-green">✅ ${ty}年${tm}月分【月末精算】源泉税 納付済</div>`;
+        else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${ty}年${tm}月分【月末精算】源泉税 ${yen(settleSrc)} 期限切れ！</div>`;
+        else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${ty}年${tm}月分【月末精算】源泉税 ${yen(settleSrc)} 残り${days}日</div>`;
+      }
+    }
   }
   document.getElementById('dash-alerts').innerHTML = alerts;
 }
