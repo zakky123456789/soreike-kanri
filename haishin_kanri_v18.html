@@ -2517,6 +2517,7 @@ async function saveEdit() {
     const holder  = document.getElementById('edit-holder').value.trim();
     const memo    = document.getElementById('edit-memo').value.trim();
     state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo };
+    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo });
   }
   closeEditModal();
   renderAll();
