@@ -109,10 +109,60 @@
   .sub-table tr:first-child td { border-top: none; }
   .coin-badge { background: rgba(251,191,36,0.15); color: var(--yellow); padding: 2px 8px; border-radius: 10px; font-size: 11px; font-family: var(--mono); }
 
+  /* ===== スマホ対応 ===== */
+  @media (max-width: 768px) {
+    /* レイアウト */
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; padding: 0; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar.open { display: flex; position: fixed; inset: 0; z-index: 500; background: var(--surface); overflow-y: auto; }
+    .main { padding: 12px; }
+
+    /* モバイルヘッダー */
+    #mobile-header { display: flex !important; }
+
+    /* フォームグリッドを1カラムに */
+    .form-grid, .form-grid-2, .form-grid-4, .form-grid-5 { grid-template-columns: 1fr !important; gap: 10px; }
+
+    /* カードを2カラムに */
+    .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+    /* ページヘッダー */
+    .page-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+    /* テーブルをカード形式に（経費明細） */
+    #exp-table-wrap table, #exp-table-wrap thead, #exp-table-wrap tbody,
+    #exp-table-wrap th, #exp-table-wrap td, #exp-table-wrap tr { display: block; }
+    #exp-table-wrap thead { display: none; }
+    #exp-table-wrap tr { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; }
+    #exp-table-wrap td { border: none; padding: 4px 0; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+    #exp-table-wrap td[data-label]::before { content: attr(data-label); font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; flex-shrink: 0; margin-right: 8px; }
+
+    /* AIレシートドロップゾーン → カメラボタン優先 */
+    #receipt-dropzone { padding: 20px 12px; }
+    #mobile-camera-btn { display: flex !important; }
+
+    /* ボタン */
+    .btn { font-size: 14px; padding: 10px 16px; }
+    .btn-sm { font-size: 12px; padding: 5px 10px; }
+
+    /* モーダル */
+    #edit-modal > div, #exp-edit-modal > div { width: 95vw !important; max-height: 90vh; overflow-y: auto; }
+  }
+  #mobile-header { display: none; position: sticky; top: 0; z-index: 200; background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px; align-items: center; justify-content: space-between; }
+  #mobile-camera-btn { display: none; }
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
 <body>
+<!-- モバイルヘッダー -->
+<div id="mobile-header">
+  <div>
+    <div style="font-size:13px;font-weight:700;color:var(--accent)">それいけ合同会社</div>
+    <div style="font-size:11px;color:var(--muted)">配信事務所管理システム</div>
+  </div>
+  <button onclick="toggleMobileNav()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:18px;cursor:pointer">☰</button>
+</div>
 <!-- 年月ピッカーモーダル -->
 <div id="month-picker-overlay" onclick="if(event.target===this)closeMonthPicker()">
   <div id="month-picker-box">
@@ -824,6 +874,17 @@
             <div style="font-size:12px;color:var(--muted)">JPG / PNG / HEIC / PDF 対応　複数ファイル同時OK</div>
           </div>
           <input type="file" id="receipt-file-input" accept="image/*,.heic,.heif,application/pdf" multiple style="display:none" onchange="handleReceiptFiles(this.files)">
+          <!-- スマホ用カメラ直撮りボタン -->
+          <div id="mobile-camera-btn" style="margin-bottom:12px;display:flex;gap:10px">
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--accent);color:#fff;padding:14px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
+              📷 カメラで撮影してAI読み取り
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="handleReceiptFiles(this.files)">
+            </label>
+            <label style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:14px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
+              🖼️ 写真を選択
+              <input type="file" accept="image/*,.heic,.heif,application/pdf" multiple style="display:none" onchange="handleReceiptFiles(this.files)">
+            </label>
+          </div>
           <!-- プレビュー＆結果リスト -->
           <div id="receipt-results" style="display:none">
             <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">読み取り結果 — チェックして一括追加</div>
@@ -917,7 +978,7 @@
           </div>
         </div>
       </div>
-      <div class="table-wrap">
+      <div class="table-wrap" id="exp-table-wrap">
         <div class="table-header"><div class="table-title">経費明細</div></div>
         <table><thead><tr>
           <th style="cursor:pointer;user-select:none" onclick="setExpSort('date')"><span id="eh-date">日付</span></th>
@@ -1637,7 +1698,13 @@ const salesOfMonth = (y, m) => state.sales.filter(s => s.y === y && s.m === m);
 const expOfMonth = (y, m) => state.expenses.filter(e => e.y === y && e.m === m);
 
 // ===== NAV =====
+function toggleMobileNav() {
+  const sidebar = document.querySelector('.sidebar');
+  sidebar.classList.toggle('open');
+}
 function showPage(id) {
+  // モバイルナビを閉じる
+  document.querySelector('.sidebar')?.classList.remove('open');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
@@ -3661,8 +3728,8 @@ function renderExpenses() {
     const invBadge = e.invoiceNo
       ? `<span style="font-size:11px;font-family:var(--mono);color:var(--accent)">${e.invoiceNo}</span>` : '-';
     return `<tr>
-      <td style="color:var(--muted);font-size:12px">${e.date}</td>
-      <td>${(() => {
+      <td data-label="日付" style="color:var(--muted);font-size:12px">${e.date}</td>
+      <td data-label="品名">${(() => {
         const splitMatch = e.name && e.name.match(/^【分割(\d+)\/(\d+)】([\s\S]*)$/);
         let nameHtml;
         if (splitMatch) {
@@ -3676,15 +3743,15 @@ function renderExpenses() {
         }
         return nameHtml;
       })()}</td>
-      <td style="font-size:12px;color:var(--muted)">${e.payee||'-'}</td>
-      <td>${getCatBadge(e.cat)}</td>
-      <td class="num">${yen(e.amount)}</td>
-      <td><span class="badge ${e.tax>0?'badge-blue':'badge-yellow'}">${e.tax===10?'10%':e.tax===8?'8%軽減':e.tax===0?'非課税':'対象外'}</span></td>
-      <td class="num" style="color:var(--accent)">${taxAmt>0?yen(taxAmt):'-'}</td>
-      <td>${invBadge}</td>
-      <td>${entertainInfo}</td>
-      <td style="font-size:12px;color:var(--muted)">${e.method}</td>
-      <td style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.note||''}">${e.note||'-'}</td>
+      <td data-label="支払先" style="font-size:12px;color:var(--muted)">${e.payee||'-'}</td>
+      <td data-label="勘定科目">${getCatBadge(e.cat)}</td>
+      <td data-label="金額" class="num">${yen(e.amount)}</td>
+      <td data-label="消費税区分"><span class="badge ${e.tax>0?'badge-blue':'badge-yellow'}">${e.tax===10?'10%':e.tax===8?'8%軽減':e.tax===0?'非課税':'対象外'}</span></td>
+      <td data-label="消費税額" class="num" style="color:var(--accent)">${taxAmt>0?yen(taxAmt):'-'}</td>
+      <td data-label="インボイス">${invBadge}</td>
+      <td data-label="参加者・目的">${entertainInfo}</td>
+      <td data-label="支払方法" style="font-size:12px;color:var(--muted)">${e.method}</td>
+      <td data-label="備考" style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.note||''}">${e.note||'-'}</td>
       <td>${(() => {
         const recs = state.receipts.filter(r => r.expenseId === e.id);
         if (recs.length > 0) {
