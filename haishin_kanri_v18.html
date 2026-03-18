@@ -1741,18 +1741,26 @@ function renderReceiptList() {
 }
 
 async function compressImage(file) {
-  // HEIC変換
+  // HEIC変換（heic2any → ブラウザネイティブの順でフォールバック）
   let processFile = file;
-  if (file.type === 'image/heic' || file.type === 'image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')) {
-    if (typeof window.heic2any === 'undefined') throw new Error('HEIC変換ライブラリが読み込まれていません');
-    try {
-      const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-      processFile = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
-    } catch(e) { throw new Error('HEIC変換失敗: ' + e.message); }
+  const isHeicFile = file.type === 'image/heic' || file.type === 'image/heif'
+    || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+  if (isHeicFile) {
+    // まずheic2anyで試みる
+    if (typeof window.heic2any !== 'undefined') {
+      try {
+        const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        processFile = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
+      } catch(e) {
+        console.warn('heic2any失敗、ブラウザネイティブで試みます:', e.message);
+        processFile = file; // フォールバック：ブラウザに任せる
+      }
+    }
   }
   if (processFile.type === 'application/pdf') {
     return { blob: processFile, contentType: 'application/pdf', filename: file.name };
   }
+  // Canvas描画（HEICネイティブ対応ブラウザはそのまま描画できる）
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(processFile);
@@ -1773,7 +1781,7 @@ async function compressImage(file) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('画像の読み込みに失敗しました（形式が非対応の可能性）'));
+      reject(new Error('HEIC画像を読み込めませんでした。JPEGに変換してからお試しください。'));
     };
     img.src = url;
   });
@@ -1950,13 +1958,13 @@ async function readReceiptFile(file) {
   // HEIC/HEIFをJPEGに変換
   const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
     || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
-  if (isHeic) {
-    if (typeof window.heic2any === 'undefined') throw new Error('HEIC変換ライブラリが読み込まれていません');
+  if (isHeic && typeof window.heic2any !== 'undefined') {
     try {
       const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
       file = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
     } catch(e) {
-      throw new Error('HEIC変換失敗: ' + e.message);
+      console.warn('heic2any失敗、ブラウザネイティブで試みます:', e.message);
+      // フォールバック：ブラウザに任せる（compressImage内のCanvas描画で処理）
     }
   }
 
