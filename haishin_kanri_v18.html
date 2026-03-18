@@ -1645,6 +1645,10 @@ function showPage(id) {
     if (n.getAttribute('onclick')?.includes("'" + id + "'")) n.classList.add('active');
   });
   updateLabels(); renderAll();
+  if (id === 'sales') {
+    const date = document.getElementById('s-date').value;
+    if (date) fetchRate(date);
+  }
 }
 
 function changeMonth(d) {
