@@ -732,7 +732,7 @@
           <!-- Step1: 配信者・支払日 -->
           <div class="form-grid form-grid-4" style="margin-bottom:14px">
             <div class="form-group"><label>配信者</label><select id="dp-caster" onchange="updateDpSaleList()"></select></div>
-            <div class="form-group"><label>対象月 <span style="color:var(--accent)">（売上集計月）</span></label><input id="dp-target-month" type="month" placeholder="例：2026-01"></div>
+            <div class="form-group"><label>対象月 <span style="color:var(--accent)">（売上集計月）</span></label><input id="dp-target-month" type="month" placeholder="例：2026-01" onchange="updateDpSaleList()"></div>
             <div class="form-group"><label>支払日</label><input id="dp-date" type="date"></div>
             <div class="form-group"><label>備考</label><input id="dp-note" placeholder="例：前払い"></div>
           </div>
@@ -2864,6 +2864,8 @@ async function addSale() {
   document.getElementById('s-rate-status').textContent = '';
   document.getElementById('s-preview').style.display = 'none';
   renderAll();
+  // 同じ日付で連続入力する場合のためレートを再取得
+  if (date) fetchRate(date);
 }
 
 function updateSalePreview() {
@@ -2955,8 +2957,9 @@ function updateDpSaleList() {
   dpSelectedSaleIds = new Set();
   const el = document.getElementById('dp-sale-list');
   if (!casterId) { el.innerHTML = '<span style="color:var(--muted);font-size:12px">配信者を選択すると配信一覧が表示されます</span>'; return; }
-  // 全月の配信を表示
-  const { y, m } = state;
+  // 対象月の配信を表示
+  const targetMonth = document.getElementById('dp-target-month').value; // "YYYY-MM"
+  const [y, m] = targetMonth ? targetMonth.split('-').map(Number) : [state.y, state.m];
   const cSales = state.sales.filter(s => s.casterId === casterId && s.y === y && s.m === m).sort((a,b) => a.date.localeCompare(b.date));
   if (cSales.length === 0) {
     el.innerHTML = '<span style="color:var(--muted);font-size:12px">配信データがありません</span>';
