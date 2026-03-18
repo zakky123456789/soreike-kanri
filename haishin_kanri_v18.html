@@ -3877,7 +3877,7 @@ function renderTax() {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
       const key = `se-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月分【月末精算 ${py}年${pm}月22前払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
+      rows.push(makeTaxRow(`${y}年${m}月分【月末精算】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
     }
   }
 
@@ -3891,17 +3891,41 @@ function renderTax() {
   });
   document.getElementById('tax-alerts').innerHTML = alerts;
 
-  document.getElementById('tax-table').innerHTML = rows.map(x => `<tr>
-    <td>${x.label}</td>
-    <td class="num" style="font-weight:700;color:var(--yellow)">${yen(x.srcTax)}</td>
-    <td>${x.deadline.toLocaleDateString('ja-JP')}</td>
-    <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
-    <td>${x.paid?'<span class="badge badge-green">✅ 納付済</span>':x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
-    <td>${x.paid
-      ?`<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setTax('${x.key}',false)">取消</button>`
-      :`<button class="btn btn-primary btn-sm" onclick="setTax('${x.key}',true)">納付済にする</button>`
-    }</td>
-  </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">対象データがありません</td></tr>';
+  // 同じ対象月の前払い+月末精算を合算してグループ表示
+  const monthKeys = [...new Set(rows.map(x => x.key.replace(/^(dp|se)-/, '')))];
+  let html = '';
+  monthKeys.forEach(mk => {
+    const group = rows.filter(x => x.key.replace(/^(dp|se)-/, '') === mk);
+    const dpRow = group.find(x => x.key.startsWith('dp-'));
+    const seRow = group.find(x => x.key.startsWith('se-'));
+    // 合算行（前払い＋月末精算が両方ある場合のみ）
+    if (dpRow && seRow) {
+      const totalSrc = dpRow.srcTax + seRow.srcTax;
+      const allPaid = dpRow.paid && seRow.paid;
+      const [yx, mx] = mk.split('-').map(Number);
+      html += `<tr style="background:rgba(79,156,249,0.06);border-left:3px solid var(--accent)">
+        <td><strong>${yx}年${mx}月分【合計】</strong><span style="font-size:11px;color:var(--muted);margin-left:8px">前払い＋月末精算</span></td>
+        <td class="num" style="font-weight:700;color:var(--accent);font-size:15px">${yen(totalSrc)}</td>
+        <td colspan="3" style="color:var(--muted);font-size:12px">${allPaid ? '<span class="badge badge-green">✅ 全納付済</span>' : '↓ 内訳で個別に管理'}</td>
+        <td></td>
+      </tr>`;
+    }
+    // 内訳行（前払い・月末精算それぞれ）
+    group.forEach(x => {
+      html += `<tr style="${dpRow && seRow ? 'opacity:0.85' : ''}">
+        <td style="${dpRow && seRow ? 'padding-left:20px;font-size:13px' : ''}">${dpRow && seRow ? '└ ' : ''}${x.label}</td>
+        <td class="num" style="font-weight:700;color:var(--yellow)">${yen(x.srcTax)}</td>
+        <td>${x.deadline.toLocaleDateString('ja-JP')}</td>
+        <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
+        <td>${x.paid?'<span class="badge badge-green">✅ 納付済</span>':x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
+        <td>${x.paid
+          ?`<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setTax('${x.key}',false)">取消</button>`
+          :`<button class="btn btn-primary btn-sm" onclick="setTax('${x.key}',true)">納付済にする</button>`
+        }</td>
+      </tr>`;
+    });
+  });
+  document.getElementById('tax-table').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">対象データがありません</td></tr>';
 }
 
 async function setTax(key, v) {
