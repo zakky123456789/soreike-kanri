@@ -2144,7 +2144,7 @@ function renderReceiptResults() {
             <div class="form-group"><label>支払先</label><input id="rc-payee-${r._id}" value="${(r.payee||'').replace(/"/g,'&quot;')}" style="background:var(--surface2);font-size:12px"></div>
             <div class="form-group"><label>金額（税込）</label><input id="rc-amount-${r._id}" type="number" value="${r.amount||''}" style="background:var(--surface2);font-size:12px"></div>
             <div class="form-group"><label>消費税区分</label><select id="rc-tax-${r._id}" style="background:var(--surface2);font-size:12px">${taxOpts}</select></div>
-            <div class="form-group"><label>勘定科目</label><select id="rc-cat-${r._id}" style="background:var(--surface2);font-size:12px">${catOpts}</select></div>
+            <div class="form-group"><label>勘定科目</label><select id="rc-cat-${r._id}" style="background:var(--surface2);font-size:12px" onchange="toggleReceiptEntertainFields(${r._id})">${catOpts}</select></div>
             <div class="form-group"><label>支払方法</label><select id="rc-method-${r._id}" style="background:var(--surface2);font-size:12px">${methodOpts}</select></div>
             <div style="grid-column:span 3;margin-top:10px">
               <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
@@ -2156,6 +2156,13 @@ function renderReceiptResults() {
             <div style="grid-column:span 3;margin-top:8px">
               <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
               <input id="rc-note-${r._id}" value="${(r.note||'').replace(/"/g,'&quot;')}" placeholder="メモ・補足など" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);box-sizing:border-box">
+            </div>
+          </div>
+          <div id="rc-entertain-${r._id}" style="margin-top:10px;display:${r.cat==='接待交際費'?'block':'none'};background:rgba(251,146,60,0.06);border:1px solid rgba(251,146,60,0.25);border-radius:6px;padding:10px">
+            <div style="font-size:11px;color:#fb923c;font-weight:600;margin-bottom:8px">⚠️ 接待交際費は参加者・目的の入力が必須です</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="form-group"><label style="font-size:12px">参加者 <span style="color:var(--red)">*</span></label><input id="rc-participants-${r._id}" value="${(r.participants||'').replace(/"/g,'&quot;')}" placeholder="例：ラム、ゆの、代表者" style="background:var(--surface2);font-size:12px"></div>
+              <div class="form-group"><label style="font-size:12px">目的・事由 <span style="color:var(--red)">*</span></label><input id="rc-purpose-${r._id}" value="${(r.purpose||'').replace(/"/g,'&quot;')}" placeholder="例：キャスト慰労会" style="background:var(--surface2);font-size:12px"></div>
             </div>
           </div>
           ${r.invoiceNo ? `<div style="margin-top:8px;font-size:11px;color:var(--accent)">🧾 ${r.invoiceNo}</div>` : ''}
@@ -2198,6 +2205,12 @@ async function addCheckedReceipts() {
     const amount = parseFloat(document.getElementById(`rc-amount-${r._id}`)?.value);
     const tax   = parseInt(document.getElementById(`rc-tax-${r._id}`)?.value);
     const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
+    const participants = cat === '接待交際費' ? (document.getElementById(`rc-participants-${r._id}`)?.value.trim() || '') : '';
+    const purpose      = cat === '接待交際費' ? (document.getElementById(`rc-purpose-${r._id}`)?.value.trim()      || '') : '';
+    if (cat === '接待交際費' && (!participants || !purpose)) {
+      document.getElementById('receipt-add-msg').textContent = `⚠️ 「${name || r._filename}」は接待交際費のため参加者・目的の入力が必須です`;
+      return;
+    }
     const method = document.getElementById(`rc-method-${r._id}`)?.value || '';
     const excludeManager = document.getElementById(`rc-excl-${r._id}`)?.checked || false;
     const note = document.getElementById(`rc-note-${r._id}`)?.value.trim() || '';
@@ -2207,7 +2220,7 @@ async function addCheckedReceipts() {
       name = `【分割${idx}/${r._totalInFile}】${name}`;
     }
     const [ey, em] = date.split('-').map(Number);
-    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note });
+    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note, participants, purpose });
   }
 
   if (toAdd.length === 0) {
@@ -2219,10 +2232,10 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'' };
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.r.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'' };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants:'', purpose:'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'' })
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.r.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'' })
       .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
   });
   await Promise.all(expRows);
@@ -3408,6 +3421,12 @@ function toggleEntertainFields() {
   if (el) el.style.display = cat === '接待交際費' ? 'block' : 'none';
 }
 
+function toggleReceiptEntertainFields(id) {
+  const cat = document.getElementById(`rc-cat-${id}`)?.value;
+  const el = document.getElementById(`rc-entertain-${id}`);
+  if (el) el.style.display = cat === '接待交際費' ? 'block' : 'none';
+}
+
 function updateExpReceiptLabel(input) {
   const label = document.getElementById('e-receipt-label');
   if (input.files.length > 0) {
@@ -3420,6 +3439,7 @@ function updateExpReceiptLabel(input) {
 }
 
 async function addExpense() {
+  toggleEntertainFields(); // 念のため表示状態を同期
   const date = document.getElementById('e-date').value;
   const name = document.getElementById('e-name').value.trim();
   const payee = document.getElementById('e-payee').value.trim();
