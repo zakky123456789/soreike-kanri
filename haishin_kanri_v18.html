@@ -2966,7 +2966,7 @@ function updateDpSaleList() {
   const paidBySaleId = {};
   const casterObj = getCaster(casterId);
   state.dailyPays
-    .filter(d => d.casterId === casterId && d.y === y && d.m === m)
+    .filter(d => d.casterId === casterId && (d.targetY || d.y) === y && (d.targetM || d.m) === m)
     .forEach(d => {
       const ids = d.saleIds || [];
       if (ids.length === 0) return;
