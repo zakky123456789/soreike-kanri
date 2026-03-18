@@ -3891,31 +3891,46 @@ function renderTax() {
   });
   document.getElementById('tax-alerts').innerHTML = alerts;
 
-  // 同じ対象月の前払い+月末精算を合算してグループ表示
-  const monthKeys = [...new Set(rows.map(x => x.key.replace(/^(dp|se)-/, '')))];
+  // 納付期限ごとにグループ化
+  const deadlineMap = new Map();
+  rows.forEach(x => {
+    const dk = x.deadline.toLocaleDateString('ja-JP');
+    if (!deadlineMap.has(dk)) deadlineMap.set(dk, { deadline: x.deadline, rows: [] });
+    deadlineMap.get(dk).rows.push(x);
+  });
+  // 納付期限昇順にソート
+  const deadlineGroups = [...deadlineMap.values()].sort((a,b) => a.deadline - b.deadline);
+
   let html = '';
-  monthKeys.forEach(mk => {
-    const group = rows.filter(x => x.key.replace(/^(dp|se)-/, '') === mk);
-    const dpRow = group.find(x => x.key.startsWith('dp-'));
-    const seRow = group.find(x => x.key.startsWith('se-'));
-    // 合算行（前払い＋月末精算が両方ある場合のみ）
-    if (dpRow && seRow) {
-      const totalSrc = dpRow.srcTax + seRow.srcTax;
-      const allPaid = dpRow.paid && seRow.paid;
-      const [yx, mx] = mk.split('-').map(Number);
-      html += `<tr style="background:rgba(79,156,249,0.06);border-left:3px solid var(--accent)">
-        <td><strong>${yx}年${mx}月分【合計】</strong><span style="font-size:11px;color:var(--muted);margin-left:8px">前払い＋月末精算</span></td>
-        <td class="num" style="font-weight:700;color:var(--accent);font-size:15px">${yen(totalSrc)}</td>
-        <td colspan="3" style="color:var(--muted);font-size:12px">${allPaid ? '<span class="badge badge-green">✅ 全納付済</span>' : '↓ 内訳で個別に管理'}</td>
-        <td></td>
-      </tr>`;
-    }
-    // 内訳行（前払い・月末精算それぞれ）
+  deadlineGroups.forEach(({ deadline, rows: group }) => {
+    const totalSrc = group.reduce((s,x) => s + x.srcTax, 0);
+    const allPaid = group.every(x => x.paid);
+    const daysLeft = Math.ceil((deadline - today) / 86400000);
+    const deadlineStr = deadline.toLocaleDateString('ja-JP');
+    const statusBadge = allPaid
+      ? '<span class="badge badge-green">✅ 全納付済</span>'
+      : daysLeft <= 0 ? '<span class="badge badge-red">🚨 期限切れ</span>'
+      : daysLeft <= 5 ? '<span class="badge badge-yellow">⚠️ 要注意</span>'
+      : '<span class="badge badge-blue">📅 期限内</span>';
+    const daysStr = allPaid ? '-' : daysLeft + '日';
+    const daysColor = allPaid ? 'var(--muted)' : daysLeft <= 0 ? 'var(--red)' : daysLeft <= 5 ? 'var(--yellow)' : 'var(--muted)';
+
+    // 合算ヘッダー行
+    html += `<tr style="background:rgba(79,156,249,0.06);border-left:3px solid var(--accent)">
+      <td><strong>${deadlineStr} 納付分</strong><span style="font-size:11px;color:var(--muted);margin-left:8px">${group.map(x=>x.label).join('・')}</span></td>
+      <td class="num" style="font-weight:700;color:var(--accent);font-size:15px">${yen(totalSrc)}</td>
+      <td><strong>${deadlineStr}</strong></td>
+      <td style="font-family:var(--mono);color:${daysColor}">${daysStr}</td>
+      <td>${statusBadge}</td>
+      <td></td>
+    </tr>`;
+
+    // 内訳行
     group.forEach(x => {
-      html += `<tr style="${dpRow && seRow ? 'opacity:0.85' : ''}">
-        <td style="${dpRow && seRow ? 'padding-left:20px;font-size:13px' : ''}">${dpRow && seRow ? '└ ' : ''}${x.label}</td>
-        <td class="num" style="font-weight:700;color:var(--yellow)">${yen(x.srcTax)}</td>
-        <td>${x.deadline.toLocaleDateString('ja-JP')}</td>
+      html += `<tr style="opacity:0.8">
+        <td style="padding-left:20px;font-size:13px">└ ${x.label}</td>
+        <td class="num" style="color:var(--yellow)">${yen(x.srcTax)}</td>
+        <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
         <td>${x.paid?'<span class="badge badge-green">✅ 納付済</span>':x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
         <td>${x.paid
