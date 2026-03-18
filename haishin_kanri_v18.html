@@ -2564,7 +2564,7 @@ async function addReferrer() {
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
   const newRef = { id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
   state.referrers.push(newRef);
-  await dbSave('referrers', { id: newRef.id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+  await dbSave('referrers', { id: newRef.id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   document.getElementById('r-invoiceno').value = '';
   document.getElementById('r-createInvoice').value = 'false';
   document.getElementById('r-name').value = '';
@@ -2668,13 +2668,9 @@ async function saveRefEdit() {
   const accountNo   = document.getElementById('ref-edit-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
   const idx = state.referrers.findIndex(r => r.id === id);
-  console.log('saveRefEdit: id=', id, 'idx=', idx, 'referrers=', state.referrers.map(r=>r.id));
   if (idx !== -1) {
     state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
-    const saveResult = await dbSave('referrers', { id, name, company, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
-    console.log('saveRefEdit: dbSave result=', saveResult);
-  } else {
-    console.warn('saveRefEdit: referrer not found in state! id=', id);
+    await dbSave('referrers', { id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   }
   closeRefEditModal();
   renderAll();
@@ -4490,7 +4486,7 @@ function renderRefReport() {
 
   el.innerHTML = `
     <div id="refReport-print-area" style="background:#fff;padding:32px;max-width:600px;border:1px solid #dde3ec;border-radius:8px;font-family:'Noto Sans JP',sans-serif;color:#1a1a1a">
-      <div style="font-size:11px;color:#888;margin-bottom:4px">${y}年${m}月分　紹介者報告</div>
+      <div style="font-size:11px;color:#888;margin-bottom:4px">${y}年${m}月分</div>
       <div style="font-size:18px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:8px;margin-bottom:16px">${ref.company ? ref.company + (ref.honorific !== 'なし' ? '&emsp;' + ref.honorific : '') : ref.name + (ref.honorific !== 'なし' ? '&emsp;' + ref.honorific : '')}</div>
       ${rowsHTML}
       ${summaryHTML}
