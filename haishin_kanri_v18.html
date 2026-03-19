@@ -3083,7 +3083,16 @@ function renderFxRecords() {
   if (!tbl) return;
   tbl.innerHTML = records.length > 0
     ? records.map(r => `<tr>
-        <td style="color:var(--muted);font-size:12px;padding:7px 14px">${r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-'}</td>
+        <td style="color:var(--muted);font-size:12px;padding:7px 14px">${(() => {
+          const period = r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-';
+          const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
+          if (isCross && r.usdFrom != null && r.usdTo != null) {
+            const fromLabel = r.dateFrom.slice(0,7).replace('-','年') + '月';
+            const toLabel   = r.dateTo.slice(0,7).replace('-','年') + '月';
+            return period + '<br><span style="font-size:11px;color:var(--yellow)">⚡ ' + fromLabel + '分：$' + r.usdFrom.toFixed(2) + '　' + toLabel + '分：$' + r.usdTo.toFixed(2) + '</span>';
+          }
+          return period;
+        })()}</td>
         <td style="color:var(--muted);font-size:12px;padding:7px 14px">${r.date}</td>
         <td class="num" style="font-family:var(--mono);padding:7px 14px">$${r.usd.toFixed(2)}</td>
         <td class="num" style="color:var(--muted);font-size:12px;padding:7px 14px">${r.rate ? r.rate : '-'}</td>
