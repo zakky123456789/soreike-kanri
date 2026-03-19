@@ -2435,10 +2435,7 @@ function renderDashboard() {
   const exps = expOfMonth(y, m);
   const totalCoins = sales.reduce((s, x) => s + x.coins, 0);
   const fxRecs = fxOfMonth(y, m);
-  const fxSales = fxSalesOfMonth(y, m);
-  const totalSales = fxSales.hasData
-    ? fxSales.totalJpy
-    : sales.reduce((s, x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const totalSales = sales.reduce((s, x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
   const totalReward = sales.reduce((s, x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
@@ -5269,10 +5266,7 @@ async function saveMgrInfo() {
 function calcManagerReward(y, m) {
   const sales = salesOfMonth(y, m);
   const exps  = expOfMonth(y, m);
-  const fxSalesM = fxSalesOfMonth(y, m);
-  const totalSales  = fxSalesM.hasData
-    ? fxSalesM.totalJpy
-    : sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const totalSales = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
