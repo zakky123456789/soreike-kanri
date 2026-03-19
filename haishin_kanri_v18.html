@@ -409,11 +409,18 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
       <div class="form-group"><label>両替日</label><input id="fx-edit-date" type="date"></div>
       <div class="form-group"><label>　</label></div>
-      <div class="form-group"><label>対象期間（開始）</label><input id="fx-edit-date-from" type="date"></div>
-      <div class="form-group"><label>対象期間（終了）</label><input id="fx-edit-date-to" type="date"></div>
+      <div class="form-group"><label>対象期間（開始）</label><input id="fx-edit-date-from" type="date" onchange="updateFxEditSplitArea()"></div>
+      <div class="form-group"><label>対象期間（終了）</label><input id="fx-edit-date-to" type="date" onchange="updateFxEditSplitArea()"></div>
       <div class="form-group"><label>USD額</label><input id="fx-edit-usd" type="number" step="0.01"></div>
       <div class="form-group"><label>円額（実際の受取額）</label><input id="fx-edit-jpy" type="number"></div>
       <div class="form-group" style="grid-column:span 2"><label>メモ</label><input id="fx-edit-note" placeholder="例：1月分Stripchat入金分"></div>
+    </div>
+    <div id="fx-edit-split-area" style="display:none;margin-bottom:14px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--yellow);margin-bottom:10px">⚡ 月跨ぎ内訳（どちらか一方を入力すると自動計算）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group"><label id="fx-edit-split-label-from">開始月分 USD</label><input id="fx-edit-usd-from" type="number" step="0.01" placeholder="例：800.00" oninput="onFxEditSplitInput('from')"></div>
+        <div class="form-group"><label id="fx-edit-split-label-to">終了月分 USD</label><input id="fx-edit-usd-to" type="number" step="0.01" placeholder="例：1200.00" oninput="onFxEditSplitInput('to')"></div>
+      </div>
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end">
       <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="closeFxEditModal()">キャンセル</button>
@@ -1052,8 +1059,8 @@
         <div class="table-header"><div class="table-title">両替入力</div></div>
         <div style="padding:16px">
           <div style="display:grid;grid-template-columns:160px 160px 160px 160px 160px 160px 1fr auto;gap:14px;align-items:end">
-            <div class="form-group"><label>対象期間（開始）</label><input id="fx-date-from" type="date"></div>
-            <div class="form-group"><label>対象期間（終了）</label><input id="fx-date-to" type="date"></div>
+            <div class="form-group"><label>対象期間（開始）</label><input id="fx-date-from" type="date" onchange="updateFxSplitArea()"></div>
+            <div class="form-group"><label>対象期間（終了）</label><input id="fx-date-to" type="date" onchange="updateFxSplitArea()"></div>
             <div class="form-group"><label>両替日</label><input id="fx-date" type="date"></div>
             <div class="form-group"><label>USD額</label><input id="fx-usd" type="number" step="0.01" placeholder="例：2500.00" oninput="updateFxPreview()"></div>
             <div class="form-group"><label>円額（実際の受取額）</label><input id="fx-jpy" type="number" placeholder="例：387675" oninput="updateFxPreview()"></div>
@@ -1063,6 +1070,13 @@
             </div>
             <div class="form-group"><label>メモ</label><input id="fx-note" placeholder="例：1月分Stripchat入金分"></div>
             <div class="form-group"><label>　</label><button class="btn btn-primary" style="width:100%" onclick="addFxRecord()">＋ 追加</button></div>
+          </div>
+          <div id="fx-split-area" style="display:none;margin-top:12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:12px">
+            <div style="font-size:12px;font-weight:600;color:var(--yellow);margin-bottom:10px">⚡ 月跨ぎ内訳（どちらか一方を入力すると自動計算）</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="form-group"><label id="fx-split-label-from">開始月分 USD</label><input id="fx-usd-from" type="number" step="0.01" placeholder="例：800.00" oninput="onFxSplitInput('from')"></div>
+              <div class="form-group"><label id="fx-split-label-to">終了月分 USD</label><input id="fx-usd-to" type="number" step="0.01" placeholder="例：1200.00" oninput="onFxSplitInput('to')"></div>
+            </div>
           </div>
           <div id="fx-preview" style="display:none;margin-top:12px" class="sim-box">
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px">プレビュー</div>
@@ -1432,7 +1446,9 @@ async function loadFromDB() {
       state.fxRecords = fxR.data.map(r => ({
         id: r.id, date: r.date, usd: Number(r.usd), rate: Number(r.rate),
         jpy: Number(r.jpy), note: r.note, y: r.y, m: r.m,
-        dateFrom: r.date_from || '', dateTo: r.date_to || ''
+        dateFrom: r.date_from || '', dateTo: r.date_to || '',
+        usdFrom: r.usd_from != null ? Number(r.usd_from) : null,
+        usdTo:   r.usd_to   != null ? Number(r.usd_to)   : null
       }));
     }
     if (mgrR.data?.length > 0) {
@@ -2414,8 +2430,9 @@ function renderDashboard() {
   const exps = expOfMonth(y, m);
   const totalCoins = sales.reduce((s, x) => s + x.coins, 0);
   const fxRecs = fxOfMonth(y, m);
-  const totalSales = fxRecs.length > 0
-    ? fxRecs.reduce((s, r) => s + r.jpy, 0)
+  const fxSales = fxSalesOfMonth(y, m);
+  const totalSales = fxSales.hasData
+    ? fxSales.totalJpy
     : sales.reduce((s, x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
   const totalReward = sales.reduce((s, x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
@@ -2844,6 +2861,89 @@ function fxOfMonth(y, m) {
   return state.fxRecords.filter(r => r.y === y && r.m === m);
 }
 
+// 月跨ぎ対応：指定月の確定売上USD・JPYを返す
+function fxSalesOfMonth(y, m) {
+  let totalUsd = 0, totalJpy = 0;
+  state.fxRecords.forEach(r => {
+    const fromY = r.dateFrom ? parseInt(r.dateFrom.slice(0,4)) : r.y;
+    const fromM = r.dateFrom ? parseInt(r.dateFrom.slice(5,7)) : r.m;
+    const toY   = r.dateTo   ? parseInt(r.dateTo.slice(0,4))   : r.y;
+    const toM   = r.dateTo   ? parseInt(r.dateTo.slice(5,7))   : r.m;
+    const isCross = (fromY !== toY || fromM !== toM);
+    if (!isCross) {
+      // 月跨ぎなし：両替日の月で集計
+      if (r.y === y && r.m === m) { totalUsd += r.usd; totalJpy += r.jpy; }
+    } else {
+      // 月跨ぎあり：usdFrom/usdToで月別集計
+      const usdF = r.usdFrom != null ? r.usdFrom : r.usd;
+      const usdT = r.usdTo   != null ? r.usdTo   : 0;
+      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
+      if (fromY === y && fromM === m && r.usdFrom != null) {
+        totalUsd += usdF;
+        totalJpy += Math.round(usdF * rate);
+      }
+      if (toY === y && toM === m && r.usdTo != null) {
+        totalUsd += usdT;
+        totalJpy += Math.round(usdT * rate);
+      }
+    }
+  });
+  return { totalUsd, totalJpy, hasData: totalJpy > 0 };
+}
+
+// 対象期間の月跨ぎ判定・内訳欄表示制御
+function updateFxSplitArea() {
+  const fromVal = document.getElementById('fx-date-from').value;
+  const toVal   = document.getElementById('fx-date-to').value;
+  const area    = document.getElementById('fx-split-area');
+  if (!area) return;
+  if (!fromVal || !toVal) { area.style.display = 'none'; return; }
+  const fromM = fromVal.slice(0, 7); // YYYY-MM
+  const toM   = toVal.slice(0, 7);
+  if (fromM === toM) { area.style.display = 'none'; return; }
+  area.style.display = 'block';
+  document.getElementById('fx-split-label-from').textContent = fromM.replace('-', '年') + '月分 USD';
+  document.getElementById('fx-split-label-to').textContent   = toM.replace('-', '年') + '月分 USD';
+}
+
+function onFxSplitInput(side) {
+  const total = parseFloat(document.getElementById('fx-usd').value) || 0;
+  if (total <= 0) return;
+  if (side === 'from') {
+    const v = parseFloat(document.getElementById('fx-usd-from').value);
+    if (!isNaN(v)) document.getElementById('fx-usd-to').value = Math.max(0, total - v).toFixed(2);
+  } else {
+    const v = parseFloat(document.getElementById('fx-usd-to').value);
+    if (!isNaN(v)) document.getElementById('fx-usd-from').value = Math.max(0, total - v).toFixed(2);
+  }
+}
+
+function updateFxEditSplitArea() {
+  const fromVal = document.getElementById('fx-edit-date-from').value;
+  const toVal   = document.getElementById('fx-edit-date-to').value;
+  const area    = document.getElementById('fx-edit-split-area');
+  if (!area) return;
+  if (!fromVal || !toVal) { area.style.display = 'none'; return; }
+  const fromM = fromVal.slice(0, 7);
+  const toM   = toVal.slice(0, 7);
+  if (fromM === toM) { area.style.display = 'none'; return; }
+  area.style.display = 'block';
+  document.getElementById('fx-edit-split-label-from').textContent = fromM.replace('-', '年') + '月分 USD';
+  document.getElementById('fx-edit-split-label-to').textContent   = toM.replace('-', '年') + '月分 USD';
+}
+
+function onFxEditSplitInput(side) {
+  const total = parseFloat(document.getElementById('fx-edit-usd').value) || 0;
+  if (total <= 0) return;
+  if (side === 'from') {
+    const v = parseFloat(document.getElementById('fx-edit-usd-from').value);
+    if (!isNaN(v)) document.getElementById('fx-edit-usd-to').value = Math.max(0, total - v).toFixed(2);
+  } else {
+    const v = parseFloat(document.getElementById('fx-edit-usd-to').value);
+    if (!isNaN(v)) document.getElementById('fx-edit-usd-from').value = Math.max(0, total - v).toFixed(2);
+  }
+}
+
 function updateFxPreview() {
   const usd = parseFloat(document.getElementById('fx-usd').value);
   const jpy  = parseFloat(document.getElementById('fx-jpy').value);
@@ -2891,17 +2991,22 @@ async function addFxRecord() {
   const note = document.getElementById('fx-note').value.trim();
   if (!date || isNaN(usd) || isNaN(jpy)) { alert('両替日・USD額・円額を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newFx = { id: state.nextId++, date, dateFrom, dateTo, usd, rate, jpy, note, y, m };
+  const usdFrom = parseFloat(document.getElementById('fx-usd-from').value) || null;
+  const usdTo   = parseFloat(document.getElementById('fx-usd-to').value)   || null;
+  const newFx = { id: state.nextId++, date, dateFrom, dateTo, usd, rate, jpy, note, y, m, usdFrom, usdTo };
   state.fxRecords.push(newFx);
-  await dbSave('exchanges', { id: newFx.id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m });
+  await dbSave('exchanges', { id: newFx.id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m, usd_from: usdFrom, usd_to: usdTo });
   document.getElementById('fx-usd').value  = '';
   document.getElementById('fx-date-from').value = '';
   document.getElementById('fx-date-to').value   = '';
+  document.getElementById('fx-usd-from').value  = '';
+  document.getElementById('fx-usd-to').value    = '';
   document.getElementById('fx-rate').value = '';
   document.getElementById('fx-jpy').value  = '';
   document.getElementById('fx-note').value = '';
   document.getElementById('fx-rate-status').textContent = '';
   document.getElementById('fx-preview').style.display = 'none';
+  document.getElementById('fx-split-area').style.display = 'none';
   renderAll();
 }
 
@@ -2909,14 +3014,17 @@ function openFxEditModal(id) {
   id = parseInt(id);
   const r = state.fxRecords.find(r => r.id === id);
   if (!r) return;
-  document.getElementById('fx-edit-id').value        = id;
-  document.getElementById('fx-edit-date').value      = r.date || '';
-  document.getElementById('fx-edit-date-from').value = r.dateFrom || '';
-  document.getElementById('fx-edit-date-to').value   = r.dateTo || '';
-  document.getElementById('fx-edit-usd').value       = r.usd || '';
-  document.getElementById('fx-edit-jpy').value       = r.jpy || '';
-  document.getElementById('fx-edit-note').value      = r.note || '';
+  document.getElementById('fx-edit-id').value           = id;
+  document.getElementById('fx-edit-date').value         = r.date || '';
+  document.getElementById('fx-edit-date-from').value    = r.dateFrom || '';
+  document.getElementById('fx-edit-date-to').value      = r.dateTo || '';
+  document.getElementById('fx-edit-usd').value          = r.usd || '';
+  document.getElementById('fx-edit-jpy').value          = r.jpy || '';
+  document.getElementById('fx-edit-note').value         = r.note || '';
+  document.getElementById('fx-edit-usd-from').value     = r.usdFrom != null ? r.usdFrom : '';
+  document.getElementById('fx-edit-usd-to').value       = r.usdTo   != null ? r.usdTo   : '';
   document.getElementById('fx-edit-modal').style.display = 'flex';
+  updateFxEditSplitArea();
 }
 
 function closeFxEditModal() {
@@ -2934,10 +3042,12 @@ async function saveFxEdit() {
   if (!date || isNaN(usd) || isNaN(jpy)) { alert('両替日・USD額・円額を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
   const rate = usd > 0 ? Math.round(jpy / usd * 100) / 100 : null;
+  const usdFrom = parseFloat(document.getElementById('fx-edit-usd-from').value) || null;
+  const usdTo   = parseFloat(document.getElementById('fx-edit-usd-to').value)   || null;
   const idx = state.fxRecords.findIndex(r => r.id === id);
   if (idx !== -1) {
-    state.fxRecords[idx] = { ...state.fxRecords[idx], date, dateFrom, dateTo, usd, rate, jpy, note, y, m };
-    await dbSave('exchanges', { id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m });
+    state.fxRecords[idx] = { ...state.fxRecords[idx], date, dateFrom, dateTo, usd, rate, jpy, note, y, m, usdFrom, usdTo };
+    await dbSave('exchanges', { id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m, usd_from: usdFrom, usd_to: usdTo });
   }
   closeFxEditModal();
   renderAll();
@@ -3897,7 +4007,8 @@ function renderPL() {
   const sales = salesOfMonth(y, m);
   const exps = expOfMonth(y, m);
   const fxRecs = fxOfMonth(y, m);
-  const hasFx = fxRecs.length > 0;
+  const fxSales = fxSalesOfMonth(y, m);
+  const hasFx = fxSales.hasData;
 
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
@@ -3925,8 +4036,8 @@ function renderPL() {
   const estOp = estGross - totalExp;
 
   // 確定
-  const fxSales = hasFx ? fxRecs.reduce((s,r) => s + r.jpy, 0) : null;
-  const fxGross = hasFx ? fxSales - totalReward - totalRef : null;
+  const fxSalesAmt = hasFx ? fxSales.totalJpy : null;
+  const fxGross = hasFx ? fxSalesAmt - totalReward - totalRef : null;
   const fxOp = hasFx ? fxGross - totalExp : null;
 
   const plBoxHtml = (label, s, gross, op, color) => [
@@ -3942,7 +4053,7 @@ function renderPL() {
   ].join('');
 
   const confirmedHtml = hasFx
-    ? plBoxHtml('確定', fxSales, fxGross, fxOp, 'var(--green)')
+    ? plBoxHtml('確定', fxSalesAmt, fxGross, fxOp, 'var(--green)')
     : '<div style="text-align:center;padding:40px 0;color:var(--muted)">両替記録がありません<br><span style="font-size:12px">両替入力ページで記録を追加してください</span></div>';
 
   // 配信者ごとに集計
@@ -5061,9 +5172,9 @@ async function saveMgrInfo() {
 function calcManagerReward(y, m) {
   const sales = salesOfMonth(y, m);
   const exps  = expOfMonth(y, m);
-  const fxRecsM = fxOfMonth(y, m);
-  const totalSales  = fxRecsM.length > 0
-    ? fxRecsM.reduce((s, r) => s + r.jpy, 0)
+  const fxSalesM = fxSalesOfMonth(y, m);
+  const totalSales  = fxSalesM.hasData
+    ? fxSalesM.totalJpy
     : sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
