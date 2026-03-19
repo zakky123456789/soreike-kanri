@@ -1091,6 +1091,10 @@
         <table style="border-collapse:collapse"><thead><tr><th>対象期間</th><th>両替日</th><th class="num">USD額</th><th class="num">レート</th><th class="num">円額（確定売上）</th><th>メモ</th><th></th></tr></thead>
         <tbody id="fx-table"></tbody></table>
       </div>
+      <div class="table-wrap">
+        <div class="table-header"><div class="table-title">📅 月別確定売上サマリー</div></div>
+        <div id="fx-monthly-summary" style="padding:0"></div>
+      </div>
     </div>
 
     <!-- Tax -->
@@ -3111,6 +3115,55 @@ function renderFxRecords() {
           <td colspan="2"></td>
         </tr>`
     : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">この月の両替記録がありません</td></tr>';
+
+  // 月別サマリー生成
+  const monthMap = {};
+  state.fxRecords.forEach(r => {
+    const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
+    if (isCross && r.usdFrom != null && r.usdTo != null) {
+      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
+      const fromKey = r.dateFrom.slice(0,7);
+      const toKey   = r.dateTo.slice(0,7);
+      if (!monthMap[fromKey]) monthMap[fromKey] = { usd: 0, jpy: 0 };
+      if (!monthMap[toKey])   monthMap[toKey]   = { usd: 0, jpy: 0 };
+      monthMap[fromKey].usd += r.usdFrom;
+      monthMap[fromKey].jpy += Math.round(r.usdFrom * rate);
+      monthMap[toKey].usd   += r.usdTo;
+      monthMap[toKey].jpy   += Math.round(r.usdTo * rate);
+    } else {
+      const key = r.date ? r.date.slice(0,7) : (r.y + '-' + String(r.m).padStart(2,'0'));
+      // 対象期間がある場合は開始月を使用
+      const mKey = r.dateFrom ? r.dateFrom.slice(0,7) : key;
+      if (!monthMap[mKey]) monthMap[mKey] = { usd: 0, jpy: 0 };
+      monthMap[mKey].usd += r.usd;
+      monthMap[mKey].jpy += r.jpy;
+    }
+  });
+
+  const summaryEl = document.getElementById('fx-monthly-summary');
+  if (summaryEl) {
+    const months = Object.keys(monthMap).sort();
+    if (months.length === 0) {
+      summaryEl.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px;text-align:center">データがありません</div>';
+    } else {
+      summaryEl.innerHTML = '<table style="width:100%;border-collapse:collapse">'
+        + '<thead><tr>'
+        + '<th style="background:var(--surface2);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">対象月</th>'
+        + '<th style="background:var(--surface2);padding:10px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">USD合計</th>'
+        + '<th style="background:var(--surface2);padding:10px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">円額合計（確定売上）</th>'
+        + '</tr></thead><tbody>'
+        + months.map(mk => {
+            const label = mk.replace('-', '年') + '月';
+            const d = monthMap[mk];
+            return \`<tr>
+              <td style="padding:9px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600">\${label}</td>
+              <td style="padding:9px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px">$\${d.usd.toFixed(2)}</td>
+              <td style="padding:9px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">\${yen(d.jpy)}</td>
+            </tr>\`;
+          }).join('')
+        + '</tbody></table>';
+    }
+  }
 }
 
 // ===== SALES =====
