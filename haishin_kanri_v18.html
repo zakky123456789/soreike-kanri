@@ -2874,22 +2874,27 @@ function fxSalesOfMonth(y, m) {
     const toY   = r.dateTo   ? parseInt(r.dateTo.slice(0,4))   : r.y;
     const toM   = r.dateTo   ? parseInt(r.dateTo.slice(5,7))   : r.m;
     const isCross = (fromY !== toY || fromM !== toM);
+    const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
+
     if (!isCross) {
-      // 月跨ぎなし：両替日の月で集計
-      if (r.y === y && r.m === m) { totalUsd += r.usd; totalJpy += r.jpy; }
+      // 月跨ぎなし：対象期間が指定月に属する場合はそのまま反映
+      if (fromY === y && fromM === m) {
+        totalUsd += r.usd;
+        totalJpy += r.jpy;
+      }
     } else {
-      // 月跨ぎあり：usdFrom/usdToで月別集計
-      const usdF = r.usdFrom != null ? r.usdFrom : r.usd;
-      const usdT = r.usdTo   != null ? r.usdTo   : 0;
-      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
-      if (fromY === y && fromM === m && r.usdFrom != null) {
-        totalUsd += usdF;
-        totalJpy += Math.round(usdF * rate);
+      // 月跨ぎあり：内訳入力済みの場合のみ月別に反映
+      if (r.usdFrom != null && r.usdTo != null) {
+        if (fromY === y && fromM === m) {
+          totalUsd += r.usdFrom;
+          totalJpy += Math.round(r.usdFrom * rate);
+        }
+        if (toY === y && toM === m) {
+          totalUsd += r.usdTo;
+          totalJpy += Math.round(r.usdTo * rate);
+        }
       }
-      if (toY === y && toM === m && r.usdTo != null) {
-        totalUsd += usdT;
-        totalJpy += Math.round(usdT * rate);
-      }
+      // 内訳未入力の月跨ぎは反映しない（どちらの月か判断不能）
     }
   });
   return { totalUsd, totalJpy, hasData: totalJpy > 0 };
