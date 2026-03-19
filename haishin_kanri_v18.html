@@ -1868,6 +1868,12 @@ function renderReceiptList() {
 }
 
 async function compressImage(file) {
+  // ドラッグ&ドロップ時にtypeが空になる場合があるので拡張子でも補完
+  if (!file.type && file.name) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const typeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', heic: 'image/heic', heif: 'image/heif' };
+    if (typeMap[ext]) file = new File([file], file.name, { type: typeMap[ext] });
+  }
   // HEIC変換（heic2any → ブラウザネイティブの順でフォールバック）
   let processFile = file;
   const isHeicFile = file.type === 'image/heic' || file.type === 'image/heif'
@@ -1908,7 +1914,7 @@ async function compressImage(file) {
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error('HEIC画像を読み込めませんでした。JPEGに変換してからお試しください。'));
+      reject(new Error('画像の読み込みに失敗しました（' + (file.name || '不明') + '）。ファイルが壊れているか非対応形式の可能性があります。'));
     };
     img.src = url;
   });
@@ -2082,6 +2088,12 @@ async function handleReceiptFiles(files) {
 
 // readReceiptFile: 1ファイルから複数レシートの配列を返す
 async function readReceiptFile(file) {
+  // ドラッグ&ドロップ時にtypeが空になる場合があるので拡張子でも補完
+  if (!file.type && file.name) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const typeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', heic: 'image/heic', heif: 'image/heif' };
+    if (typeMap[ext]) file = new File([file], file.name, { type: typeMap[ext] });
+  }
   // HEIC/HEIFをJPEGに変換
   const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
     || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
