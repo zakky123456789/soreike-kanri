@@ -3250,7 +3250,7 @@ async function addSale() {
 function updateSalePreview() {
   const casterId = parseInt(document.getElementById('s-caster').value);
   const coinsVal = parseFloat(document.getElementById('s-coins').value);
-  if (!casterId || isNaN(coinsVal) || coinsVal <= 0) {
+  if (!casterId || isNaN(coinsVal) || coinsVal === 0) {
     document.getElementById('s-preview').style.display = 'none'; return;
   }
   const c = getCaster(casterId);
@@ -3791,11 +3791,12 @@ function renderSales() {
     const _rc = calcRefTotal(s.coins, reward, ref);
     const r1 = _rc.r1; const r2 = _rc.r2;
     const office = calcOfficeSales(s.coins, s.rate, reward, r1+r2);
-    return `<tr>
-      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:${dpIdxColors[(dayIdxMap[s.id]-1) % dpIdxColors.length]};color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}</td>
+    const isRefund = s.coins < 0;
+    return `<tr style="${isRefund ? 'background:rgba(248,113,113,0.08);border-left:3px solid var(--red)' : ''}">
+      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:${dpIdxColors[(dayIdxMap[s.id]-1) % dpIdxColors.length]};color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}${isRefund ? '<br><span style="font-size:10px;background:rgba(248,113,113,0.2);color:var(--red);border-radius:4px;padding:1px 5px;font-weight:700">返金</span>' : ''}</td>
       <td><strong>${c?.name||'?'}</strong></td>
       <td class="num"><span class="badge badge-blue">${c?.rate||0}%</span></td>
-      <td class="num"><span class="coin-badge">${coins(s.coins)}</span></td>
+      <td class="num"><span class="coin-badge" style="${isRefund ? 'background:rgba(248,113,113,0.15);color:var(--red)' : ''}">${coins(s.coins)}</span></td>
       <td class="num" style="color:var(--red)">${yen(reward)}</td>
       <td class="num" style="color:var(--yellow)">${yen(src)}</td>
       <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
