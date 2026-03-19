@@ -1688,6 +1688,7 @@ function sortIcon(key) {
 // ===== CALC =====
 const fmt = n => Math.round(n).toLocaleString('ja-JP');
 const yen = n => '¥' + fmt(n);
+const usd = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const coins = n => fmt(n) + 'C';
 const coinToYen = c => c * COIN_RATE;
 const CAT_BADGE_STYLE = {
@@ -2965,7 +2966,7 @@ function updateFxPreview() {
   }
   const rate = parseFloat(document.getElementById('fx-rate').value);
   if (isNaN(usd) || usd <= 0) { document.getElementById('fx-preview').style.display = 'none'; return; }
-  document.getElementById('fxp-usd').textContent  = '$' + usd.toFixed(2);
+  document.getElementById('fxp-usd').textContent  = usd(usd);
   document.getElementById('fxp-calc').textContent = !isNaN(rate) ? `1USD = ${rate}円` : 'レート未計算';
   document.getElementById('fxp-jpy').textContent  = !isNaN(jpy) && jpy > 0 ? yen(jpy) : '円額を入力してください';
   document.getElementById('fx-preview').style.display = 'block';
@@ -3103,7 +3104,7 @@ function renderFxRecords() {
     const mainRow = '<tr style="' + (isCross && r.usdFrom != null ? 'border-left:3px solid var(--accent)' : '') + '">'
       + '<td style="color:var(--muted);font-size:12px;padding:7px 14px;font-weight:' + (isCross && r.usdFrom != null ? '600' : 'normal') + '">' + period + '</td>'
       + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + r.date + '</td>'
-      + '<td class="num" style="font-family:var(--mono);padding:7px 14px">$' + r.usd.toFixed(2) + '</td>'
+      + '<td class="num" style="font-family:var(--mono);padding:7px 14px">' + usd(r.usd) + '</td>'
       + '<td class="num" style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.rate ? r.rate : '-') + '</td>'
       + '<td class="num" style="color:var(--green);font-weight:700;padding:7px 14px">' + yen(r.jpy) + '</td>'
       + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.note || '-') + '</td>'
@@ -3121,7 +3122,7 @@ function renderFxRecords() {
       subRows = '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
         + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + fromLabel + '</td>'
         + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
-        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">$' + r.usdFrom.toFixed(2) + '</td>'
+        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">' + usd(r.usdFrom) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyFrom) + '</td>'
         + '<td colspan="2" style="padding:5px 14px"></td>'
@@ -3129,7 +3130,7 @@ function renderFxRecords() {
         + '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
         + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + toLabel + '</td>'
         + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
-        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">$' + r.usdTo.toFixed(2) + '</td>'
+        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">' + usd(r.usdTo) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyTo) + '</td>'
         + '<td colspan="2" style="padding:5px 14px"></td>'
@@ -3142,7 +3143,7 @@ function renderFxRecords() {
     ? rowsHtml
       + '<tr style="background:var(--surface2);font-weight:700">'
       + '<td colspan="2">合計</td>'
-      + '<td class="num" style="font-family:var(--mono)">$' + totalUsd.toFixed(2) + '</td>'
+      + '<td class="num" style="font-family:var(--mono)">' + usd(totalUsd) + '</td>'
       + '<td></td>'
       + '<td class="num" style="color:var(--green)">' + yen(totalJpy) + '</td>'
       + '<td colspan="2"></td>'
@@ -3179,19 +3180,19 @@ function renderFxRecords() {
     if (months.length === 0) {
       summaryEl.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px;text-align:center">データがありません</div>';
     } else {
-      summaryEl.innerHTML = '<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
+      summaryEl.innerHTML = '<table style="width:auto;border-collapse:collapse">'
         + '<thead><tr>'
-        + '<th style="background:var(--surface2);padding:8px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;width:140px">対象月</th>'
-        + '<th style="background:var(--surface2);padding:8px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;width:160px">USD合計</th>'
-        + '<th style="background:var(--surface2);padding:8px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">円額合計（確定売上）</th>'
+        + '<th style="background:var(--surface2);padding:8px 20px 8px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap">対象月</th>'
+        + '<th style="background:var(--surface2);padding:8px 20px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap">USD合計</th>'
+        + '<th style="background:var(--surface2);padding:8px 14px 8px 20px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap">円額合計（確定売上）</th>'
         + '</tr></thead><tbody>'
         + months.map(mk => {
             const label = mk.replace('-', '年') + '月';
             const d = monthMap[mk];
             return '<tr>'
-              + '<td style="padding:7px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600">' + label + '</td>'
-              + '<td style="padding:7px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px">$' + d.usd.toFixed(2) + '</td>'
-              + '<td style="padding:7px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">' + yen(d.jpy) + '</td>'
+              + '<td style="padding:7px 20px 7px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600;white-space:nowrap">' + label + '</td>'
+              + '<td style="padding:7px 20px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px;white-space:nowrap">' + usd(d.usd) + '</td>'
+              + '<td style="padding:7px 14px 7px 20px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green);white-space:nowrap">' + yen(d.jpy) + '</td>'
               + '</tr>';
           }).join('')
         + '</tbody></table>';
