@@ -3085,35 +3085,63 @@ function renderFxRecords() {
 
   const tbl = document.getElementById('fx-table');
   if (!tbl) return;
+  // 行HTML生成（月跨ぎは親行＋内訳行に分割）
+  const rowsHtml = records.map(r => {
+    const period = r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-';
+    const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
+    const editBtns = '<td style="display:flex;gap:6px;padding:7px 14px">'
+      + '<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(' + r.id + ')">編集</button>'
+      + '<button class="btn btn-danger btn-sm" onclick="deleteFxRecord(' + r.id + ')">削除</button>'
+      + '</td>';
+
+    // 親行
+    const mainRow = '<tr style="' + (isCross && r.usdFrom != null ? 'border-left:3px solid var(--accent)' : '') + '">'
+      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px;font-weight:' + (isCross && r.usdFrom != null ? '600' : 'normal') + '">' + period + '</td>'
+      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + r.date + '</td>'
+      + '<td class="num" style="font-family:var(--mono);padding:7px 14px">$' + r.usd.toFixed(2) + '</td>'
+      + '<td class="num" style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.rate ? r.rate : '-') + '</td>'
+      + '<td class="num" style="color:var(--green);font-weight:700;padding:7px 14px">' + yen(r.jpy) + '</td>'
+      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.note || '-') + '</td>'
+      + editBtns
+      + '</tr>';
+
+    // 月跨ぎ内訳行
+    let subRows = '';
+    if (isCross && r.usdFrom != null && r.usdTo != null) {
+      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
+      const fromLabel = r.dateFrom.slice(0,7).replace('-','年') + '月分';
+      const toLabel   = r.dateTo.slice(0,7).replace('-','年') + '月分';
+      const jpyFrom = Math.round(r.usdFrom * rate);
+      const jpyTo   = Math.round(r.usdTo * rate);
+      subRows = '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
+        + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + fromLabel + '</td>'
+        + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
+        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">$' + r.usdFrom.toFixed(2) + '</td>'
+        + '<td style="padding:5px 14px"></td>'
+        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyFrom) + '</td>'
+        + '<td colspan="2" style="padding:5px 14px"></td>'
+        + '</tr>'
+        + '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
+        + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + toLabel + '</td>'
+        + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
+        + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">$' + r.usdTo.toFixed(2) + '</td>'
+        + '<td style="padding:5px 14px"></td>'
+        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyTo) + '</td>'
+        + '<td colspan="2" style="padding:5px 14px"></td>'
+        + '</tr>';
+    }
+    return mainRow + subRows;
+  }).join('');
+
   tbl.innerHTML = records.length > 0
-    ? records.map(r => `<tr>
-        <td style="color:var(--muted);font-size:12px;padding:7px 14px">${(() => {
-          const period = r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-';
-          const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
-          if (isCross && r.usdFrom != null && r.usdTo != null) {
-            const fromLabel = r.dateFrom.slice(0,7).replace('-','年') + '月';
-            const toLabel   = r.dateTo.slice(0,7).replace('-','年') + '月';
-            return period + '<br><span style="font-size:11px;color:var(--yellow)">⚡ ' + fromLabel + '分：$' + r.usdFrom.toFixed(2) + '　' + toLabel + '分：$' + r.usdTo.toFixed(2) + '</span>';
-          }
-          return period;
-        })()}</td>
-        <td style="color:var(--muted);font-size:12px;padding:7px 14px">${r.date}</td>
-        <td class="num" style="font-family:var(--mono);padding:7px 14px">$${r.usd.toFixed(2)}</td>
-        <td class="num" style="color:var(--muted);font-size:12px;padding:7px 14px">${r.rate ? r.rate : '-'}</td>
-        <td class="num" style="color:var(--green);font-weight:700;padding:7px 14px">${yen(r.jpy)}</td>
-        <td style="color:var(--muted);font-size:12px;padding:7px 14px">${r.note || '-'}</td>
-        <td style="display:flex;gap:6px;padding:7px 14px">
-          <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(${r.id})">編集</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteFxRecord(${r.id})">削除</button>
-        </td>
-      </tr>`).join('')
-      + `<tr style="background:var(--surface2);font-weight:700">
-          <td colspan="2">合計</td>
-          <td class="num" style="font-family:var(--mono)">$${totalUsd.toFixed(2)}</td>
-          <td></td>
-          <td class="num" style="color:var(--green)">${yen(totalJpy)}</td>
-          <td colspan="2"></td>
-        </tr>`
+    ? rowsHtml
+      + '<tr style="background:var(--surface2);font-weight:700">'
+      + '<td colspan="2">合計</td>'
+      + '<td class="num" style="font-family:var(--mono)">$' + totalUsd.toFixed(2) + '</td>'
+      + '<td></td>'
+      + '<td class="num" style="color:var(--green)">' + yen(totalJpy) + '</td>'
+      + '<td colspan="2"></td>'
+      + '</tr>'
     : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">この月の両替記録がありません</td></tr>';
 
   // 月別サマリー生成
@@ -3146,19 +3174,19 @@ function renderFxRecords() {
     if (months.length === 0) {
       summaryEl.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:13px;text-align:center">データがありません</div>';
     } else {
-      summaryEl.innerHTML = '<table style="width:100%;border-collapse:collapse">'
+      summaryEl.innerHTML = '<table style="width:100%;border-collapse:collapse;table-layout:fixed">'
         + '<thead><tr>'
-        + '<th style="background:var(--surface2);padding:10px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">対象月</th>'
-        + '<th style="background:var(--surface2);padding:10px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">USD合計</th>'
-        + '<th style="background:var(--surface2);padding:10px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">円額合計（確定売上）</th>'
+        + '<th style="background:var(--surface2);padding:8px 14px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;width:140px">対象月</th>'
+        + '<th style="background:var(--surface2);padding:8px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;width:160px">USD合計</th>'
+        + '<th style="background:var(--surface2);padding:8px 14px;text-align:right;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em">円額合計（確定売上）</th>'
         + '</tr></thead><tbody>'
         + months.map(mk => {
             const label = mk.replace('-', '年') + '月';
             const d = monthMap[mk];
             return '<tr>'
-              + '<td style="padding:9px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600">' + label + '</td>'
-              + '<td style="padding:9px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px">$' + d.usd.toFixed(2) + '</td>'
-              + '<td style="padding:9px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">' + yen(d.jpy) + '</td>'
+              + '<td style="padding:7px 14px;border-top:1px solid var(--border);font-size:13px;font-weight:600">' + label + '</td>'
+              + '<td style="padding:7px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px">$' + d.usd.toFixed(2) + '</td>'
+              + '<td style="padding:7px 14px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">' + yen(d.jpy) + '</td>'
               + '</tr>';
           }).join('')
         + '</tbody></table>';
