@@ -401,6 +401,26 @@
       </div>
     </div>
 
+    <!-- 両替編集モーダル -->
+<div id="fx-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:540px;max-width:95vw">
+    <div style="font-size:16px;font-weight:700;margin-bottom:20px">両替記録を編集</div>
+    <input type="hidden" id="fx-edit-id">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="form-group"><label>両替日</label><input id="fx-edit-date" type="date"></div>
+      <div class="form-group"><label>　</label></div>
+      <div class="form-group"><label>対象期間（開始）</label><input id="fx-edit-date-from" type="date"></div>
+      <div class="form-group"><label>対象期間（終了）</label><input id="fx-edit-date-to" type="date"></div>
+      <div class="form-group"><label>USD額</label><input id="fx-edit-usd" type="number" step="0.01"></div>
+      <div class="form-group"><label>円額（実際の受取額）</label><input id="fx-edit-jpy" type="number"></div>
+      <div class="form-group" style="grid-column:span 2"><label>メモ</label><input id="fx-edit-note" placeholder="例：1月分Stripchat入金分"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="closeFxEditModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveFxEdit()">保存する</button>
+    </div>
+  </div>
+</div>
     <!-- 前払い編集モーダル -->
     <div id="dp-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:560px;max-width:95vw">
@@ -1036,8 +1056,10 @@
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">両替入力</div></div>
         <div style="padding:16px">
-          <div style="display:grid;grid-template-columns:160px 160px 160px 160px 1fr auto;gap:14px;align-items:end">
+          <div style="display:grid;grid-template-columns:160px 160px 160px 160px 160px 160px 1fr auto;gap:14px;align-items:end">
             <div class="form-group"><label>両替日</label><input id="fx-date" type="date"></div>
+            <div class="form-group"><label>対象期間（開始）</label><input id="fx-date-from" type="date"></div>
+            <div class="form-group"><label>対象期間（終了）</label><input id="fx-date-to" type="date"></div>
             <div class="form-group"><label>USD額</label><input id="fx-usd" type="number" step="0.01" placeholder="例：2500.00" oninput="updateFxPreview()"></div>
             <div class="form-group"><label>円額（実際の受取額）</label><input id="fx-jpy" type="number" placeholder="例：387675" oninput="updateFxPreview()"></div>
             <div class="form-group">
@@ -1057,7 +1079,7 @@
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">両替記録（確定売上一覧）</div></div>
-        <table><thead><tr><th>両替日</th><th class="num">USD額</th><th class="num">レート</th><th class="num">円額（確定売上）</th><th>メモ</th><th></th></tr></thead>
+        <table><thead><tr><th>両替日</th><th>対象期間</th><th class="num">USD額</th><th class="num">レート</th><th class="num">円額（確定売上）</th><th>メモ</th><th></th></tr></thead>
         <tbody id="fx-table"></tbody></table>
       </div>
     </div>
@@ -1414,7 +1436,8 @@ async function loadFromDB() {
     if (fxR.data?.length > 0) {
       state.fxRecords = fxR.data.map(r => ({
         id: r.id, date: r.date, usd: Number(r.usd), rate: Number(r.rate),
-        jpy: Number(r.jpy), note: r.note, y: r.y, m: r.m
+        jpy: Number(r.jpy), note: r.note, y: r.y, m: r.m,
+        dateFrom: r.date_from || '', dateTo: r.date_to || ''
       }));
     }
     if (mgrR.data?.length > 0) {
@@ -2864,17 +2887,21 @@ async function fetchFxRate(date) {
 }
 
 async function addFxRecord() {
-  const date = document.getElementById('fx-date').value;
+  const date     = document.getElementById('fx-date').value;
+  const dateFrom = document.getElementById('fx-date-from').value;
+  const dateTo   = document.getElementById('fx-date-to').value;
   const usd  = parseFloat(document.getElementById('fx-usd').value);
   const rate = parseFloat(document.getElementById('fx-rate').value) || null;
   const jpy  = parseFloat(document.getElementById('fx-jpy').value);
   const note = document.getElementById('fx-note').value.trim();
   if (!date || isNaN(usd) || isNaN(jpy)) { alert('両替日・USD額・円額を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newFx = { id: state.nextId++, date, usd, rate, jpy, note, y, m };
+  const newFx = { id: state.nextId++, date, dateFrom, dateTo, usd, rate, jpy, note, y, m };
   state.fxRecords.push(newFx);
-  await dbSave('exchanges', { id: newFx.id, date, usd, rate, jpy, note, y, m });
+  await dbSave('exchanges', { id: newFx.id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m });
   document.getElementById('fx-usd').value  = '';
+  document.getElementById('fx-date-from').value = '';
+  document.getElementById('fx-date-to').value   = '';
   document.getElementById('fx-rate').value = '';
   document.getElementById('fx-jpy').value  = '';
   document.getElementById('fx-note').value = '';
@@ -2883,9 +2910,49 @@ async function addFxRecord() {
   renderAll();
 }
 
-function deleteFxRecord(id) {
+function openFxEditModal(id) {
   id = parseInt(id);
+  const r = state.fxRecords.find(r => r.id === id);
+  if (!r) return;
+  document.getElementById('fx-edit-id').value        = id;
+  document.getElementById('fx-edit-date').value      = r.date || '';
+  document.getElementById('fx-edit-date-from').value = r.dateFrom || '';
+  document.getElementById('fx-edit-date-to').value   = r.dateTo || '';
+  document.getElementById('fx-edit-usd').value       = r.usd || '';
+  document.getElementById('fx-edit-jpy').value       = r.jpy || '';
+  document.getElementById('fx-edit-note').value      = r.note || '';
+  document.getElementById('fx-edit-modal').style.display = 'flex';
+}
+
+function closeFxEditModal() {
+  document.getElementById('fx-edit-modal').style.display = 'none';
+}
+
+async function saveFxEdit() {
+  const id       = parseInt(document.getElementById('fx-edit-id').value);
+  const date     = document.getElementById('fx-edit-date').value;
+  const dateFrom = document.getElementById('fx-edit-date-from').value;
+  const dateTo   = document.getElementById('fx-edit-date-to').value;
+  const usd      = parseFloat(document.getElementById('fx-edit-usd').value);
+  const jpy      = parseFloat(document.getElementById('fx-edit-jpy').value);
+  const note     = document.getElementById('fx-edit-note').value.trim();
+  if (!date || isNaN(usd) || isNaN(jpy)) { alert('両替日・USD額・円額を入力してください'); return; }
+  const [y, m] = date.split('-').map(Number);
+  const rate = usd > 0 ? Math.round(jpy / usd * 100) / 100 : null;
+  const idx = state.fxRecords.findIndex(r => r.id === id);
+  if (idx !== -1) {
+    state.fxRecords[idx] = { ...state.fxRecords[idx], date, dateFrom, dateTo, usd, rate, jpy, note, y, m };
+    await dbSave('exchanges', { id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m });
+  }
+  closeFxEditModal();
+  renderAll();
+}
+
+async function deleteFxRecord(id) {
+  id = parseInt(id);
+  if (!confirm('この両替記録を削除しますか？')) return;
   state.fxRecords = state.fxRecords.filter(r => r.id !== id);
+  await dbDelete('exchanges', id);
   renderAll();
 }
 
@@ -2907,14 +2974,19 @@ function renderFxRecords() {
   tbl.innerHTML = records.length > 0
     ? records.map(r => `<tr>
         <td style="color:var(--muted);font-size:12px">${r.date}</td>
+        <td style="color:var(--muted);font-size:12px">${r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-'}</td>
         <td class="num" style="font-family:var(--mono)">$${r.usd.toFixed(2)}</td>
         <td class="num" style="color:var(--muted);font-size:12px">${r.rate ? r.rate : '-'}</td>
         <td class="num" style="color:var(--green);font-weight:700">${yen(r.jpy)}</td>
         <td style="color:var(--muted);font-size:12px">${r.note || '-'}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteFxRecord(${r.id})">削除</button></td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(${r.id})">編集</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFxRecord(${r.id})">削除</button>
+        </td>
       </tr>`).join('')
       + `<tr style="background:var(--surface2);font-weight:700">
           <td>合計</td>
+          <td></td>
           <td class="num" style="font-family:var(--mono)">$${totalUsd.toFixed(2)}</td>
           <td></td>
           <td class="num" style="color:var(--green)">${yen(totalJpy)}</td>
