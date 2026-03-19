@@ -5175,8 +5175,15 @@ function renderRefund() {
       expTaxCredit100 += base;
     }
   });
-  const totalNow = rewardCredit + refCredit + expTaxCredit;
-  const totalAll100 = rewardCredit100 + refCredit100 + expTaxCredit100;
+  // 管理人報酬：calcManagerRewardで計算、インボイス未登録→経過措置率
+  const mgrData = calcManagerReward(y, m);
+  const mgrRewardAmt = mgrData.mgrReward;
+  const mgrBase = Math.floor(mgrRewardAmt / 1.1 * 0.1);
+  const mgrCredit = Math.floor(mgrBase * transitRate);
+  const mgrCredit100 = mgrBase;
+
+  const totalNow = rewardCredit + refCredit + expTaxCredit + mgrCredit;
+  const totalAll100 = rewardCredit100 + refCredit100 + expTaxCredit100 + mgrCredit100;
 
   // 配信者のうち未登録の報酬合計（シミュレーション用）
   const rewardCredit80only = sales.reduce((s,x) => {
@@ -5199,6 +5206,7 @@ function renderRefund() {
             ${refBase80>0?`<div class="sim-row"><div class="sim-label">紹介料 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(refBase80)}</div></div>`:''}
             <div class="sim-row"><div class="sim-label">経費 控除額（100%）<br><span style="font-size:11px;color:var(--green)">✅ インボイス登録済</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(expTaxCredit - expTaxCreditTransit)}</div></div>
             ${expTaxCreditTransit>0?`<div class="sim-row"><div class="sim-label">経費 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(expTaxCreditTransit)}</div></div>`:''}
+            ${mgrCredit>0?`<div class="sim-row"><div class="sim-label">管理人報酬 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(mgrCredit)}</div></div>`:''}
             <div class="sim-row total"><div>💰 還付見込額</div><div style="font-family:var(--mono)">${yen(totalNow)}</div></div>
           </div>
         </div>
