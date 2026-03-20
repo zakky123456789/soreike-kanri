@@ -1867,6 +1867,16 @@ function renderReceiptList() {
       </div>`).join('');
 }
 
+// R2キー用にファイル名を安全な英数字のみに変換
+function safeR2Filename(filename) {
+  const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExt = ['jpg','jpeg','png','gif','webp','pdf','heic','heif'].includes(ext) ? ext : 'jpg';
+  // タイムスタンプ+ランダム文字列で一意なファイル名を生成
+  const ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${ts}_${rand}.${safeExt}`;
+}
+
 async function compressImage(file) {
   // ドラッグ&ドロップ時にtypeが空になる場合があるので拡張子でも補完
   if (!file.type && file.name) {
@@ -1925,8 +1935,7 @@ async function uploadReceipt(file) {
   document.getElementById('receipt-mgmt-loading').style.display = 'block';
   try {
     const { blob, contentType, filename } = await compressImage(file);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const r2Key = `expenses/${receiptMgmtExpenseId}/${timestamp}_${filename}`;
+    const r2Key = `expenses/${receiptMgmtExpenseId}/${safeR2Filename(filename)}`;
     // base64変換
     const base64 = await new Promise(res => {
       const reader = new FileReader();
@@ -2466,8 +2475,7 @@ async function addCheckedReceipts() {
     const { r, newExp } = item;
     if (!r._base64 || !r._contentType) return;
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const r2Key = `expenses/${newExp.id}/${timestamp}_${r._filename || 'receipt.jpg'}`;
+      const r2Key = `expenses/${newExp.id}/${safeR2Filename(r._filename || 'receipt.jpg')}`;
       const res = await fetch(R2_PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
@@ -4013,8 +4021,7 @@ async function addExpense() {
     try {
       const { blob, contentType, filename } = await compressImage(receiptFile);
       const base64 = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(blob); });
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const r2Key = `expenses/${newExp.id}/${timestamp}_${filename}`;
+      const r2Key = `expenses/${newExp.id}/${safeR2Filename(filename)}`;
       const res = await fetch(R2_PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
