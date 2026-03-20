@@ -2084,6 +2084,13 @@ async function handleReceiptFiles(files) {
   receiptResults = [...receiptResults, ...newResults];
   document.getElementById('receipt-loading').style.display = 'none';
   renderReceiptResults();
+  // インボイス確認ボタンの初期状態を設定
+  receiptResults.forEach(r => {
+    if (r._error) return;
+    if (r.invoiceNo && /^T\d{13}$/.test(r.invoiceNo)) {
+      setTimeout(() => setInvoiceConfirm(r._id, 'yes'), 0);
+    }
+  });
 }
 
 // readReceiptFile: 1ファイルから複数レシートの配列を返す
@@ -2324,8 +2331,27 @@ function renderReceiptResults() {
             </div>
           </div>
           <div style="margin-top:8px">
-            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">🧾 インボイス番号</label>
-            <input id="rc-invoice-${r._id}" value="${(r.invoiceNo||'').replace(/"/g,'&quot;')}" placeholder="例：T1234567890123" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);width:100%;box-sizing:border-box;font-family:var(--mono)">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <label style="font-size:12px;color:var(--muted)">🧾 インボイス番号</label>
+              <span style="font-size:11px;color:var(--yellow)">⚠️ 確認してください</span>
+            </div>
+            <div id="rc-inv-confirm-${r._id}" style="background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.3);border-radius:8px;padding:10px;margin-bottom:8px">
+              <div style="font-size:12px;color:var(--yellow);font-weight:600;margin-bottom:8px">このレシートにインボイス番号（T+13桁）はありますか？</div>
+              <div style="display:flex;gap:8px">
+                <button type="button" id="rc-inv-yes-${r._id}" onclick="setInvoiceConfirm(${r._id},'yes')"
+                  style="padding:6px 16px;border-radius:6px;border:2px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer">
+                  ✅ ある
+                </button>
+                <button type="button" id="rc-inv-no-${r._id}" onclick="setInvoiceConfirm(${r._id},'no')"
+                  style="padding:6px 16px;border-radius:6px;border:2px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer">
+                  ❌ ない
+                </button>
+              </div>
+            </div>
+            <div id="rc-inv-input-wrap-${r._id}" style="display:${r.invoiceNo && /^T\d{13}$/.test(r.invoiceNo) ? 'block' : 'none'}">
+              <input id="rc-invoice-${r._id}" value="${(r.invoiceNo||'').replace(/"/g,'&quot;')}" placeholder="T1234567890123" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);width:100%;box-sizing:border-box;font-family:var(--mono)" oninput="validateInvoiceInput(${r._id})">
+              <div id="rc-inv-err-${r._id}" style="font-size:11px;color:var(--red);margin-top:3px;display:none">T+13桁の数字で入力してください（例：T1234567890123）</div>
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -2381,7 +2407,14 @@ async function addCheckedReceipts() {
       name = `【分割${idx}/${r._totalInFile}】${name}`;
     }
     const [ey, em] = date.split('-').map(Number);
-    const invoiceNo = document.getElementById(`rc-invoice-${r._id}`)?.value.trim() || r.invoiceNo || '';
+    const invoiceNo = document.getElementById(`rc-invoice-${r._id}`)?.value.trim() || '';
+    // インボイス「ある」を選択したのに入力が不完全な場合はエラー
+    const invYesBtn = document.getElementById(`rc-inv-yes-${r._id}`);
+    const invSelected = invYesBtn && invYesBtn.style.color === 'var(--green)';
+    if (invSelected && invoiceNo && !/^T\d{13}$/.test(invoiceNo)) {
+      document.getElementById('receipt-add-msg').textContent = `⚠️ 「${name || r._filename}」のインボイス番号がT+13桁の形式ではありません`;
+      return;
+    }
     toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note, participants, purpose, invoiceNo });
   }
 
@@ -3859,6 +3892,42 @@ function toggleReceiptEntertainFields(id) {
   const cat = document.getElementById(`rc-cat-${id}`)?.value;
   const el = document.getElementById(`rc-entertain-${id}`);
   if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
+}
+
+function setInvoiceConfirm(id, choice) {
+  const confirmBox  = document.getElementById(`rc-inv-confirm-${id}`);
+  const inputWrap   = document.getElementById(`rc-inv-input-wrap-${id}`);
+  const yesBtn      = document.getElementById(`rc-inv-yes-${id}`);
+  const noBtn       = document.getElementById(`rc-inv-no-${id}`);
+  if (choice === 'yes') {
+    inputWrap.style.display = 'block';
+    yesBtn.style.background = 'rgba(52,211,153,0.15)';
+    yesBtn.style.borderColor = 'var(--green)';
+    yesBtn.style.color = 'var(--green)';
+    noBtn.style.background = 'var(--surface2)';
+    noBtn.style.borderColor = 'var(--border)';
+    noBtn.style.color = 'var(--text)';
+    document.getElementById(`rc-invoice-${id}`)?.focus();
+  } else {
+    inputWrap.style.display = 'none';
+    // インボイス番号をクリア
+    const inv = document.getElementById(`rc-invoice-${id}`);
+    if (inv) inv.value = '';
+    noBtn.style.background = 'rgba(248,113,113,0.1)';
+    noBtn.style.borderColor = 'var(--red)';
+    noBtn.style.color = 'var(--red)';
+    yesBtn.style.background = 'var(--surface2)';
+    yesBtn.style.borderColor = 'var(--border)';
+    yesBtn.style.color = 'var(--text)';
+  }
+}
+
+function validateInvoiceInput(id) {
+  const val = document.getElementById(`rc-invoice-${id}`)?.value.trim() || '';
+  const errEl = document.getElementById(`rc-inv-err-${id}`);
+  if (!errEl) return;
+  const valid = /^T\d{13}$/.test(val) || val === '';
+  errEl.style.display = valid ? 'none' : 'block';
 }
 
 function selectReceiptCat(id, cat, namePreset) {
