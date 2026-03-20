@@ -1879,6 +1879,10 @@ function safeR2Filename(filename) {
 
 async function compressImage(file) {
   // ドラッグ&ドロップ時にtypeが空になる場合があるので拡張子でも補完
+  // typeを小文字に正規化（大文字で来るブラウザ対策）＆ドラッグ時の空type補完
+  if (file.type && file.type !== file.type.toLowerCase()) {
+    file = new File([file], file.name, { type: file.type.toLowerCase() });
+  }
   if (!file.type && file.name) {
     const ext = file.name.split('.').pop().toLowerCase();
     const typeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', heic: 'image/heic', heif: 'image/heif' };
@@ -2107,7 +2111,10 @@ async function handleReceiptFiles(files) {
 
 // readReceiptFile: 1ファイルから複数レシートの配列を返す
 async function readReceiptFile(file) {
-  // ドラッグ&ドロップ時にtypeが空になる場合があるので拡張子でも補完
+  // typeを小文字に正規化（大文字で来るブラウザ対策）＆ドラッグ時の空type補完
+  if (file.type && file.type !== file.type.toLowerCase()) {
+    file = new File([file], file.name, { type: file.type.toLowerCase() });
+  }
   if (!file.type && file.name) {
     const ext = file.name.split('.').pop().toLowerCase();
     const typeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', heic: 'image/heic', heif: 'image/heif' };
