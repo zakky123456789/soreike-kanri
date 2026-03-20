@@ -2075,6 +2075,9 @@ async function handleReceiptFiles(files) {
         item._base64 = base64;               // 元画像データ（領収書保存用）
         item._contentType = contentType;     // 画像のMIMEタイプ
         item._filename = filename;           // ファイル名
+        // 会議費・接待交際費の場合は品名を自動セット
+        if (item.cat === '会議費') item.name = '会議飲食代';
+        else if (item.cat === '接待交際費') item.name = '接待飲食代';
         newResults.push(item);
       });
     } catch(e) {
@@ -2366,6 +2369,9 @@ function renderReceiptResults() {
 
 function removeReceiptItem(id) {
   receiptResults = receiptResults.filter(r => r._id !== id);
+  // ファイル入力をリセット（同じファイルを再選択できるよう）
+  const inp = document.getElementById('receipt-file-input');
+  if (inp) inp.value = '';
   renderReceiptResults();
 }
 
