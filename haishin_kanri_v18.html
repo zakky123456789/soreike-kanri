@@ -4141,20 +4141,54 @@ function renderExpenses() {
     if (k === 'note')      return d * (a.note||'').localeCompare(b.note||'', 'ja');
     return d * (a.date||'').localeCompare(b.date||''); // date (default)
   });
+  // 分割グループの検出（連続する【分割N/M】の行をグループ化）
+  const splitGroups = {};
+  let groupId = 0;
+  for (let i = 0; i < sortedExps.length; i++) {
+    const e = sortedExps[i];
+    const m = e.name && e.name.match(/^【分割(\d+)\/(\d+)】/);
+    if (!m) continue;
+    const idx = parseInt(m[1]), total = parseInt(m[2]);
+    if (idx === 1) {
+      // グループ開始：連続してtotalが続くか確認
+      let valid = true;
+      for (let j = 1; j < total; j++) {
+        const next = sortedExps[i + j];
+        const nm = next && next.name && next.name.match(/^【分割(\d+)\/(\d+)】/);
+        if (!nm || parseInt(nm[1]) !== j + 1 || parseInt(nm[2]) !== total) { valid = false; break; }
+      }
+      if (valid) {
+        groupId++;
+        for (let j = 0; j < total; j++) {
+          splitGroups[sortedExps[i + j].id] = { gid: groupId, idx: j + 1, total, isFirst: j === 0, isLast: j === total - 1 };
+        }
+      }
+    }
+  }
+
   document.getElementById('expenses-table').innerHTML = sortedExps.map(e => {
     const taxAmt = calcExpTax(e.amount, e.tax);
-    const entertainInfo = e.cat === '接待交際費' && (e.participants || e.purpose)
+    const entertainInfo = (e.cat === '接待交際費' || e.cat === '会議費') && (e.participants || e.purpose)
       ? `<span style="font-size:11px;color:var(--muted)">${[e.participants, e.purpose].filter(Boolean).join('　')}</span>` : '-';
     const invBadge = e.invoiceNo
       ? `<span style="font-size:11px;font-family:var(--mono);color:var(--accent)">${e.invoiceNo}</span>` : '-';
-    return `<tr>
+    const grp = splitGroups[e.id];
+    const grpStyle = grp
+      ? `border-left:3px solid var(--accent2);background:${grp.idx % 2 === 1 ? 'rgba(124,92,252,0.04)' : 'rgba(124,92,252,0.02)'}`
+      : '';
+    return `<tr style="${grpStyle}">
       <td data-label="日付" style="color:var(--muted);font-size:12px">${e.date}</td>
       <td data-label="品名">${(() => {
         const splitMatch = e.name && e.name.match(/^【分割(\d+)\/(\d+)】([\s\S]*)$/);
         let nameHtml;
         if (splitMatch) {
           const [, idx, total, dispName] = splitMatch;
-          nameHtml = `<span style="display:inline-flex;align-items:center;gap:5px"><span style="font-size:10px;background:rgba(124,92,252,0.18);color:var(--accent2);border:1px solid rgba(124,92,252,0.35);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔗${idx}/${total}</span>${dispName}</span>`;
+          const isFirst = grp && grp.isFirst;
+          nameHtml = `<span style="display:inline-flex;align-items:center;gap:5px">` +
+            (isFirst
+              ? `<span style="font-size:10px;background:rgba(124,92,252,0.18);color:var(--accent2);border:1px solid rgba(124,92,252,0.35);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔗 ${total}件分割</span>`
+              : `<span style="font-size:10px;color:var(--accent2);padding:1px 6px;white-space:nowrap">└ ${idx}/${total}</span>`) +
+            `${dispName}</span>`;
         } else {
           nameHtml = e.name;
         }
