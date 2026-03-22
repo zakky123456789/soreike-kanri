@@ -5076,16 +5076,25 @@ function renderRefReport() {
   const casters = state.casters.filter(c => c.refId === refId);
   if (casters.length === 0) { el.innerHTML = '<p style="color:var(--muted)">この紹介者に紐づく配信者がいません</p>'; return; }
 
-  let totalR1 = 0, totalR2 = 0;
+  let totalR1 = 0, totalR2 = 0, totalRefSum = 0;
   const rows = casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
     const totalCoins = cSales.reduce((s,x) => s + x.coins, 0);
     const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    const { r1, r2 } = calcRefTotal(totalCoins, totalReward, ref);
-    totalR1 += r1;
-    totalR2 += r2;
-    return { c, totalCoins, totalReward, r1, r2 };
+    // 1件ごとに計算してtotalを合計（スプシ方式）
+    let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
+    cSales.forEach(x => {
+      const rw = calcReward(coinToYen(x.coins), c.rate);
+      const rc = calcRefTotal(x.coins, rw, ref);
+      r1Sum += rc.r1;
+      r2Sum += rc.r2;
+      refTotalSum += rc.total;
+    });
+    totalR1 += r1Sum;
+    totalR2 += r2Sum;
+    totalRefSum += refTotalSum;
+    return { c, totalCoins, totalReward, r1: r1Sum, r2: r2Sum, refTotal: refTotalSum };
   }).filter(Boolean);
 
   if (rows.length === 0) { el.innerHTML = `<p style="color:var(--muted)">${y}年${m}月の売上データがありません</p>`; return; }
@@ -5107,11 +5116,11 @@ function renderRefReport() {
   const summaryHTML = rows.length > 1 ? `
     <div style="background:#f0f7ff;border:2px solid #4f9cf9;border-radius:6px;padding:16px 20px;font-size:13px;line-height:2;font-weight:600">
       ${isA ? `<div>${r2label}合計：${yen(totalR2)}</div><div>${r1label}合計：${yen(totalR1)}</div>` : `<div>${r2label}合計：${yen(totalR2)}</div>`}
-      <div style="font-size:15px;color:#2b6cb0">合計：${yen(totalR1 + totalR2)}</div>
+      <div style="font-size:15px;color:#2b6cb0">合計：${yen(totalRefSum)}</div>
     </div>
   ` : '';
 
-  const totalRef = totalR1 + totalR2;
+  const totalRef = totalRefSum;
   const officeName = document.getElementById('office-name')?.value || 'それいけ合同会社';
   const officeAddr = document.getElementById('office-address')?.value || '';
   const invDate = new Date().toISOString().split('T')[0];
