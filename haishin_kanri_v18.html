@@ -1723,12 +1723,16 @@ function calcRefTotal(coins, reward, ref) {
     return { r1: 0, r2: total, total };
   }
   // ① = コイン × 7 × r1pct
-  const r1 = Math.floor(coins * COIN_RATE * (ref.r1pct ?? 0.02));
   // ② = コイン × 7 × r2a × r2b
+  // ①+②を合計してから1回だけ切り捨て（スプシと同じ方式）
   const r2a = ref.r2a ?? 0.72;
   const r2b = ref.r2b ?? 0.08;
-  const r2 = Math.floor(coins * COIN_RATE * r2a * r2b);
-  return { r1, r2, r2a, r2b, total: r1 + r2 };
+  const r1raw = coins * COIN_RATE * (ref.r1pct ?? 0.02);
+  const r2raw = coins * COIN_RATE * r2a * r2b;
+  const total = Math.floor(r1raw + r2raw);
+  const r1 = Math.floor(r1raw);
+  const r2 = total - r1;
+  return { r1, r2, r2a, r2b, total };
 }
 const calcExpTax = (amt, rate) => rate <= 0 ? 0 : Math.floor(amt - amt / (1 + rate / 100)); // 切り捨て（非課税・対象外はゼロ）
 const getCaster = id => state.casters.find(c => c.id === id);
