@@ -1274,6 +1274,34 @@
         <button class="btn" id="report-tab-all" style="background:var(--accent);color:#fff" onclick="setReportTab('all')">全員サマリー</button>
         <div id="report-caster-tabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
+      <!-- 期間セレクター（常時表示・再生成しない） -->
+      <div id="report-period-selector" style="margin-bottom:20px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">📊 集計期間</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <button id="rp-btn-7d"   style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('7d')">過去7日</button>
+          <button id="rp-btn-28d"  style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('28d')">過去28日</button>
+          <button id="rp-btn-90d"  style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('90d')">過去90日</button>
+          <button id="rp-btn-365d" style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('365d')">過去365日</button>
+          <button id="rp-btn-all"  style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('all')">全期間</button>
+          <button id="rp-btn-year" style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('year')">年別</button>
+          <button id="rp-btn-month" style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('month')">月別</button>
+          <button id="rp-btn-custom" style="border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer" onclick="setReportPeriod('custom')">カスタム</button>
+          <span id="rp-year-sel" style="display:none;align-items:center;gap:6px;margin-left:4px">
+            <select id="rp-year-select" onchange="reportPeriodYear=parseInt(this.value);renderReportData()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px"></select>
+          </span>
+          <span id="rp-month-sel" style="display:none;align-items:center;gap:6px;margin-left:4px">
+            <select id="rp-month-select" onchange="const v=this.value.split('-');reportPeriodMonth={y:parseInt(v[0]),m:parseInt(v[1])};renderReportData()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px"></select>
+          </span>
+          <span id="rp-custom-sel" style="display:none;align-items:center;gap:6px;margin-left:4px">
+            <input type="date" id="rp-custom-from" onchange="reportCustomFrom=this.value;renderReportData()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
+            <span style="color:var(--muted);font-size:12px">〜</span>
+            <input type="date" id="rp-custom-to" onchange="reportCustomTo=this.value;renderReportData()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
+          </span>
+        </div>
+      </div>
+      <!-- 期間統計（軽量更新エリア） -->
+      <div id="report-period-stats"></div>
+      <!-- 月別詳細コンテンツ -->
       <div id="report-content"></div>
     </div>
 
@@ -4898,6 +4926,7 @@ let reportTab = 'all';
 function setReportTab(tab) {
   reportTab = tab;
   renderReport();
+  // 期間統計はrenderReport()の最後にrenderReportData()が呼ばれるので不要
 }
 
 // ===== 配信者レポート 期間管理 =====
@@ -4909,20 +4938,55 @@ let reportPeriodMonth = null;  // 月別選択用（{y,m}）
 
 function setReportPeriod(p) {
   reportPeriod = p;
-  // 年別・月別ドロップダウンの表示制御
+  updatePeriodSelectorUI();
+  renderReportData();
+}
+
+function updatePeriodSelectorUI() {
+  const p = reportPeriod;
+  // ドロップダウン表示制御
   const yearSel = document.getElementById('rp-year-sel');
   const monthSel = document.getElementById('rp-month-sel');
   const customSel = document.getElementById('rp-custom-sel');
   if (yearSel)   yearSel.style.display   = (p === 'year')   ? 'inline-flex' : 'none';
   if (monthSel)  monthSel.style.display  = (p === 'month')  ? 'inline-flex' : 'none';
   if (customSel) customSel.style.display = (p === 'custom') ? 'inline-flex' : 'none';
-  // ボタンのアクティブ状態更新
+  // ボタンのアクティブ状態
   ['7d','28d','90d','365d','all','year','month','custom'].forEach(k => {
     const btn = document.getElementById('rp-btn-' + k);
-    if (btn) btn.style.background = (k === p) ? 'var(--accent)' : 'var(--surface2)';
-    if (btn) btn.style.color = (k === p) ? '#fff' : 'var(--muted)';
+    if (!btn) return;
+    const active = (k === p);
+    btn.style.background = active ? 'var(--accent)' : 'var(--surface2)';
+    btn.style.color      = active ? '#fff' : 'var(--muted)';
+    btn.style.fontWeight = active ? '700' : '400';
   });
-  renderReport();
+  // 年別セレクトのオプション更新（初回のみ）
+  const yearSel2 = document.getElementById('rp-year-select');
+  if (yearSel2 && yearSel2.options.length === 0) {
+    const years = [...new Set(state.sales.map(s => s.y))].sort((a,b)=>b-a);
+    if (!reportPeriodYear && years.length > 0) reportPeriodYear = years[0];
+    years.forEach(y => {
+      const opt = document.createElement('option');
+      opt.value = y; opt.textContent = y + '年';
+      if (y === reportPeriodYear) opt.selected = true;
+      yearSel2.appendChild(opt);
+    });
+  }
+  // 月別セレクトのオプション更新（初回のみ）
+  const monthSel2 = document.getElementById('rp-month-select');
+  if (monthSel2 && monthSel2.options.length === 0) {
+    const now = new Date();
+    if (!reportPeriodMonth) reportPeriodMonth = { y: now.getFullYear(), m: now.getMonth()+1 };
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const oy = d.getFullYear(), om = d.getMonth()+1;
+      const opt = document.createElement('option');
+      opt.value = oy + '-' + om; opt.textContent = oy + '年' + om + '月';
+      const cur = reportPeriodMonth;
+      if (cur && oy === cur.y && om === cur.m) opt.selected = true;
+      monthSel2.appendChild(opt);
+    }
+  }
 }
 
 function getSalesForPeriod() {
@@ -5027,54 +5091,6 @@ function getPeriodLabel() {
   return '';
 }
 
-function buildPeriodSelectorHTML() {
-  // 年別セレクト用：salesのy一覧
-  const years = [...new Set(state.sales.map(s => s.y))].sort((a,b)=>b-a);
-  if (!reportPeriodYear && years.length > 0) reportPeriodYear = years[0];
-  // 月別セレクト用：直近24ヶ月
-  const monthOpts = [];
-  const now = new Date();
-  for (let i = 0; i < 24; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    monthOpts.push({ y: d.getFullYear(), m: d.getMonth()+1 });
-  }
-  if (!reportPeriodMonth) reportPeriodMonth = monthOpts[0];
-
-  const btnStyle = (k) => {
-    const active = reportPeriod === k;
-    return `background:${active?'var(--accent)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:${active?'700':'400'}`;
-  };
-
-  return `<div style="margin-bottom:20px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">📊 集計期間</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      ${['7d','28d','90d','365d','all','year','month','custom'].map(k => {
-        const labels = {'7d':'過去7日','28d':'過去28日','90d':'過去90日','365d':'過去365日','all':'全期間','year':'年別','month':'月別','custom':'カスタム'};
-        return `<button id="rp-btn-${k}" style="${btnStyle(k)}" onclick="setReportPeriod('${k}')">${labels[k]}</button>`;
-      }).join('')}
-      <span id="rp-year-sel" style="display:${reportPeriod==='year'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
-        <select onchange="reportPeriodYear=parseInt(this.value);renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
-          ${years.map(y=>`<option value="${y}" ${y===(reportPeriodYear||years[0])?'selected':''}>${y}年</option>`).join('')}
-        </select>
-      </span>
-      <span id="rp-month-sel" style="display:${reportPeriod==='month'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
-        <select onchange="const v=this.value.split('-');reportPeriodMonth={y:parseInt(v[0]),m:parseInt(v[1])};renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
-          ${monthOpts.map(o=>{
-            const curM = reportPeriodMonth || monthOpts[0];
-            const sel = (o.y===curM.y && o.m===curM.m) ? 'selected' : '';
-            return `<option value="${o.y}-${o.m}" ${sel}>${o.y}年${o.m}月</option>`;
-          }).join('')}
-        </select>
-      </span>
-      <span id="rp-custom-sel" style="display:${reportPeriod==='custom'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
-        <input type="date" value="${reportCustomFrom}" onchange="reportCustomFrom=this.value;renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
-        <span style="color:var(--muted);font-size:12px">〜</span>
-        <input type="date" value="${reportCustomTo}" onchange="reportCustomTo=this.value;renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
-      </span>
-    </div>
-  </div>`;
-}
-
 function buildPeriodStatsTableHTML(filteredSales, label) {
   // 期間統計テーブル（配信者×4指標）
   const rows = state.casters.map(c => {
@@ -5160,10 +5176,27 @@ function buildCasterPeriodStatsHTML(casterId) {
   </div>`;
 }
 
+// 期間統計部分のみ更新（高速）
+function renderReportData() {
+  const statsEl = document.getElementById('report-period-stats');
+  if (!statsEl) return;
+  const periodSales = getSalesForPeriod();
+  const periodLabel = getPeriodLabel();
+  if (reportTab === 'all') {
+    statsEl.innerHTML = buildPeriodStatsTableHTML(periodSales, periodLabel);
+  } else {
+    const casterId = parseInt(reportTab);
+    statsEl.innerHTML = buildCasterPeriodStatsHTML(casterId);
+  }
+}
+
 function renderReport() {
   const { y, m } = state;
   const sales = salesOfMonth(y, m);
   const dailyPays = dailyPaysOfMonth(y, m);
+
+  // 期間セレクターUI更新（DOM操作のみ・innerHTML書き換えなし）
+  updatePeriodSelectorUI();
 
   // タブボタン生成（全salesから配信者を抽出）
   const allSales = state.sales;
@@ -5208,12 +5241,8 @@ function renderReport() {
       return { c, totalCoins, totalReward, totalSrc, totalRef, dpTotal, dpSrc, remaining, remainingSrc, transfer, officeTotal, hasRate: ratesValid.length > 0 };
     }).filter(Boolean);
 
-    const periodSel = buildPeriodSelectorHTML();
-    const periodSales = getSalesForPeriod();
-    const periodLabel = getPeriodLabel();
-    const periodStatsTable = buildPeriodStatsTableHTML(periodSales, periodLabel);
-
-    el.innerHTML = periodSel + periodStatsTable + `
+    renderReportData();
+    el.innerHTML = `
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div></div>
         <table><thead><tr>
@@ -5251,10 +5280,8 @@ function renderReport() {
     const remaining = Math.max(0, totReward - dpAmt);
     const remSrc = calcSrcTax(remaining);
 
-    const pSel2 = buildPeriodSelectorHTML();
-    const casterPeriodStats = buildCasterPeriodStatsHTML(casterId);
-
-    el.innerHTML = pSel2 + casterPeriodStats + `
+    renderReportData();
+    el.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">📅 ${y}年${m}月の明細</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
         <div class="card"><div class="card-label">月間コイン</div><div class="card-value blue">${fmt(totCoins)}C</div></div>
@@ -5324,6 +5351,8 @@ function renderReport() {
         </div>
       </div>`;
   }
+  // 期間統計を更新
+  renderReportData();
 }
 
 
