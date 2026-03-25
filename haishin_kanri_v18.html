@@ -4900,16 +4900,276 @@ function setReportTab(tab) {
   renderReport();
 }
 
+// ===== 配信者レポート 期間管理 =====
+let reportPeriod = '28d'; // デフォルト：過去28日間
+let reportCustomFrom = '';
+let reportCustomTo = '';
+let reportPeriodYear = null;   // 年別選択用
+let reportPeriodMonth = null;  // 月別選択用（{y,m}）
+
+function setReportPeriod(p) {
+  reportPeriod = p;
+  // 年別・月別ドロップダウンの表示制御
+  const yearSel = document.getElementById('rp-year-sel');
+  const monthSel = document.getElementById('rp-month-sel');
+  const customSel = document.getElementById('rp-custom-sel');
+  if (yearSel)   yearSel.style.display   = (p === 'year')   ? 'inline-flex' : 'none';
+  if (monthSel)  monthSel.style.display  = (p === 'month')  ? 'inline-flex' : 'none';
+  if (customSel) customSel.style.display = (p === 'custom') ? 'inline-flex' : 'none';
+  // ボタンのアクティブ状態更新
+  ['7d','28d','90d','365d','all','year','month','custom'].forEach(k => {
+    const btn = document.getElementById('rp-btn-' + k);
+    if (btn) btn.style.background = (k === p) ? 'var(--accent)' : 'var(--surface2)';
+    if (btn) btn.style.color = (k === p) ? '#fff' : 'var(--muted)';
+  });
+  renderReport();
+}
+
+function getSalesForPeriod() {
+  const today = new Date();
+  today.setHours(23,59,59,999);
+  let filtered = state.sales;
+
+  if (reportPeriod === '7d') {
+    const from = new Date(today); from.setDate(from.getDate() - 6); from.setHours(0,0,0,0);
+    filtered = filtered.filter(s => new Date(s.date) >= from && new Date(s.date) <= today);
+  } else if (reportPeriod === '28d') {
+    const from = new Date(today); from.setDate(from.getDate() - 27); from.setHours(0,0,0,0);
+    filtered = filtered.filter(s => new Date(s.date) >= from && new Date(s.date) <= today);
+  } else if (reportPeriod === '90d') {
+    const from = new Date(today); from.setDate(from.getDate() - 89); from.setHours(0,0,0,0);
+    filtered = filtered.filter(s => new Date(s.date) >= from && new Date(s.date) <= today);
+  } else if (reportPeriod === '365d') {
+    const from = new Date(today); from.setDate(from.getDate() - 364); from.setHours(0,0,0,0);
+    filtered = filtered.filter(s => new Date(s.date) >= from && new Date(s.date) <= today);
+  } else if (reportPeriod === 'all') {
+    // 全件
+  } else if (reportPeriod === 'year') {
+    const y = reportPeriodYear || new Date().getFullYear();
+    filtered = filtered.filter(s => s.y === y);
+  } else if (reportPeriod === 'month') {
+    const pm = reportPeriodMonth || { y: new Date().getFullYear(), m: new Date().getMonth()+1 };
+    filtered = filtered.filter(s => s.y === pm.y && s.m === pm.m);
+  } else if (reportPeriod === 'custom') {
+    if (reportCustomFrom) {
+      const from = new Date(reportCustomFrom); from.setHours(0,0,0,0);
+      filtered = filtered.filter(s => new Date(s.date) >= from);
+    }
+    if (reportCustomTo) {
+      const to = new Date(reportCustomTo); to.setHours(23,59,59,999);
+      filtered = filtered.filter(s => new Date(s.date) <= to);
+    }
+  }
+  return filtered;
+}
+
+function getPeriodDays() {
+  // 期間の日数を返す（平均計算用）
+  if (reportPeriod === '7d')   return 7;
+  if (reportPeriod === '28d')  return 28;
+  if (reportPeriod === '90d')  return 90;
+  if (reportPeriod === '365d') return 365;
+  if (reportPeriod === 'all') {
+    if (state.sales.length === 0) return 1;
+    const dates = state.sales.map(s => s.date).sort();
+    const d0 = new Date(dates[0]); d0.setHours(0,0,0,0);
+    const d1 = new Date(dates[dates.length-1]); d1.setHours(0,0,0,0);
+    return Math.max(1, Math.round((d1-d0)/(1000*60*60*24)) + 1);
+  }
+  if (reportPeriod === 'year') {
+    const y = reportPeriodYear || new Date().getFullYear();
+    const now = new Date();
+    if (y === now.getFullYear()) {
+      const jan1 = new Date(y,0,1);
+      return Math.max(1, Math.round((now - jan1)/(1000*60*60*24)) + 1);
+    }
+    return (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0)) ? 366 : 365;
+  }
+  if (reportPeriod === 'month') {
+    const pm = reportPeriodMonth || { y: new Date().getFullYear(), m: new Date().getMonth()+1 };
+    return new Date(pm.y, pm.m, 0).getDate();
+  }
+  if (reportPeriod === 'custom') {
+    if (reportCustomFrom && reportCustomTo) {
+      const d0 = new Date(reportCustomFrom); d0.setHours(0,0,0,0);
+      const d1 = new Date(reportCustomTo); d1.setHours(0,0,0,0);
+      return Math.max(1, Math.round((d1-d0)/(1000*60*60*24)) + 1);
+    }
+    if (reportCustomFrom) {
+      const d0 = new Date(reportCustomFrom); d0.setHours(0,0,0,0);
+      const today = new Date(); today.setHours(0,0,0,0);
+      return Math.max(1, Math.round((today-d0)/(1000*60*60*24)) + 1);
+    }
+    return 1;
+  }
+  return 1;
+}
+
+function getPeriodLabel() {
+  if (reportPeriod === '7d')   return '過去7日間';
+  if (reportPeriod === '28d')  return '過去28日間';
+  if (reportPeriod === '90d')  return '過去90日間';
+  if (reportPeriod === '365d') return '過去365日間';
+  if (reportPeriod === 'all')  return '全期間';
+  if (reportPeriod === 'year') {
+    const y = reportPeriodYear || new Date().getFullYear();
+    return y + '年';
+  }
+  if (reportPeriod === 'month') {
+    const pm = reportPeriodMonth || { y: new Date().getFullYear(), m: new Date().getMonth()+1 };
+    return pm.y + '年' + pm.m + '月';
+  }
+  if (reportPeriod === 'custom') {
+    const f = reportCustomFrom || '?';
+    const t = reportCustomTo   || '?';
+    return f + ' 〜 ' + t;
+  }
+  return '';
+}
+
+function buildPeriodSelectorHTML() {
+  // 年別セレクト用：salesのy一覧
+  const years = [...new Set(state.sales.map(s => s.y))].sort((a,b)=>b-a);
+  if (!reportPeriodYear && years.length > 0) reportPeriodYear = years[0];
+  // 月別セレクト用：直近24ヶ月
+  const monthOpts = [];
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    monthOpts.push({ y: d.getFullYear(), m: d.getMonth()+1 });
+  }
+  if (!reportPeriodMonth) reportPeriodMonth = monthOpts[0];
+
+  const btnStyle = (k) => {
+    const active = reportPeriod === k;
+    return `background:${active?'var(--accent)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border);padding:5px 12px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:${active?'700':'400'}`;
+  };
+
+  return `<div style="margin-bottom:20px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">📊 集計期間</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${['7d','28d','90d','365d','all','year','month','custom'].map(k => {
+        const labels = {'7d':'過去7日','28d':'過去28日','90d':'過去90日','365d':'過去365日','all':'全期間','year':'年別','month':'月別','custom':'カスタム'};
+        return `<button id="rp-btn-${k}" style="${btnStyle(k)}" onclick="setReportPeriod('${k}')">${labels[k]}</button>`;
+      }).join('')}
+      <span id="rp-year-sel" style="display:${reportPeriod==='year'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
+        <select onchange="reportPeriodYear=parseInt(this.value);renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+          ${years.map(y=>`<option value="${y}" ${y===(reportPeriodYear||years[0])?'selected':''}>${y}年</option>`).join('')}
+        </select>
+      </span>
+      <span id="rp-month-sel" style="display:${reportPeriod==='month'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
+        <select onchange="const v=this.value.split('-');reportPeriodMonth={y:parseInt(v[0]),m:parseInt(v[1])};renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px">
+          ${monthOpts.map(o=>{
+            const curM = reportPeriodMonth || monthOpts[0];
+            const sel = (o.y===curM.y && o.m===curM.m) ? 'selected' : '';
+            return `<option value="${o.y}-${o.m}" ${sel}>${o.y}年${o.m}月</option>`;
+          }).join('')}
+        </select>
+      </span>
+      <span id="rp-custom-sel" style="display:${reportPeriod==='custom'?'inline-flex':'none'};align-items:center;gap:6px;margin-left:4px">
+        <input type="date" value="${reportCustomFrom}" onchange="reportCustomFrom=this.value;renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
+        <span style="color:var(--muted);font-size:12px">〜</span>
+        <input type="date" value="${reportCustomTo}" onchange="reportCustomTo=this.value;renderReport()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px">
+      </span>
+    </div>
+  </div>`;
+}
+
+function buildPeriodStatsTableHTML(filteredSales, label) {
+  // 期間統計テーブル（配信者×4指標）
+  const days = getPeriodDays();
+  const rows = state.casters.map(c => {
+    const cSales = filteredSales.filter(s => s.casterId === c.id);
+    if (cSales.length === 0) return null;
+    const totalCoins   = cSales.reduce((s,x) => s + x.coins, 0);
+    const totalReward  = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const avgCoinPerDay  = days > 0 ? Math.floor(totalCoins / days) : 0;
+    const avgCoinPerLive = cSales.length > 0 ? Math.floor(totalCoins / cSales.length) : 0;
+    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: cSales.length };
+  }).filter(Boolean);
+
+  if (rows.length === 0) return `<div style="color:var(--muted);padding:20px;text-align:center">この期間のデータはありません</div>`;
+
+  return `<div class="table-wrap" style="margin-bottom:24px">
+    <div class="table-header"><div class="table-title">📊 ${label}　配信者別パフォーマンス</div></div>
+    <table><thead><tr>
+      <th>配信者</th>
+      <th class="num">配信回数</th>
+      <th class="num">合計コイン</th>
+      <th class="num">合計金額（円）</th>
+      <th class="num">1日あたり<br>平均コイン</th>
+      <th class="num">1配信あたり<br>平均コイン</th>
+    </tr></thead><tbody>
+    ${rows.map(r => `<tr>
+      <td><strong>${r.c.name}</strong></td>
+      <td class="num" style="color:var(--muted)">${r.liveCount}回</td>
+      <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span></td>
+      <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
+      <td class="num" style="color:var(--accent)">${fmt(r.avgCoinPerDay)}C</td>
+      <td class="num" style="color:var(--accent2)">${fmt(r.avgCoinPerLive)}C</td>
+    </tr>`).join('')}
+    ${rows.length > 1 ? (() => {
+      const tot = rows.reduce((s,r)=>({
+        totalCoins: s.totalCoins+r.totalCoins,
+        totalReward: s.totalReward+r.totalReward,
+        liveCount: s.liveCount+r.liveCount
+      }), {totalCoins:0,totalReward:0,liveCount:0});
+      const avgDay  = days > 0 ? Math.floor(tot.totalCoins / days) : 0;
+      const avgLive = tot.liveCount > 0 ? Math.floor(tot.totalCoins / tot.liveCount) : 0;
+      return `<tr style="background:var(--surface2);font-weight:700">
+        <td>合計</td>
+        <td class="num" style="color:var(--muted)">${tot.liveCount}回</td>
+        <td class="num"><span class="coin-badge">${fmt(tot.totalCoins)}C</span></td>
+        <td class="num" style="color:var(--red)">${yen(tot.totalReward)}</td>
+        <td class="num" style="color:var(--accent)">${fmt(avgDay)}C</td>
+        <td class="num" style="color:var(--accent2)">${fmt(avgLive)}C</td>
+      </tr>`;
+    })() : ''}
+    </tbody></table>
+    <div style="font-size:11px;color:var(--muted);padding:8px 12px">
+      ※ 1日あたり平均コイン：集計期間 ${days} 日で除算　／　1配信あたり平均コイン：salesレコード数（${rows.reduce((s,r)=>s+r.liveCount,0)}件）で除算
+    </div>
+  </div>`;
+}
+
+function buildCasterPeriodStatsHTML(casterId) {
+  const c = getCaster(casterId);
+  if (!c) return '';
+  const filteredSales = getSalesForPeriod().filter(s => s.casterId === casterId);
+  const days = getPeriodDays();
+  const label = getPeriodLabel();
+  if (filteredSales.length === 0) return `<div style="color:var(--muted);padding:16px;background:var(--surface2);border-radius:8px;margin-bottom:20px;text-align:center">この期間のデータはありません（${label}）</div>`;
+  const totalCoins   = filteredSales.reduce((s,x) => s + x.coins, 0);
+  const totalReward  = filteredSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+  const avgCoinPerDay  = days > 0 ? Math.floor(totalCoins / days) : 0;
+  const avgCoinPerLive = filteredSales.length > 0 ? Math.floor(totalCoins / filteredSales.length) : 0;
+
+  return `<div style="margin-bottom:20px">
+    <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">📊 ${label} のパフォーマンス</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+      <div class="card"><div class="card-label">配信回数</div><div class="card-value" style="color:var(--muted)">${filteredSales.length}回</div></div>
+      <div class="card"><div class="card-label">合計コイン</div><div class="card-value blue">${fmt(totalCoins)}C</div></div>
+      <div class="card"><div class="card-label">合計金額</div><div class="card-value red">${yen(totalReward)}</div></div>
+      <div class="card" style="grid-column:span 1"><div class="card-label">1日あたり平均</div><div class="card-value" style="color:var(--accent)">${fmt(avgCoinPerDay)}C</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+      <div class="card"><div class="card-label">1配信あたり平均コイン</div><div class="card-value" style="color:var(--accent2)">${fmt(avgCoinPerLive)}C</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${filteredSales.length}配信の平均</div></div>
+      <div class="card"><div class="card-label">期間日数</div><div class="card-value" style="color:var(--muted)">${days}日</div></div>
+    </div>
+  </div>`;
+}
+
 function renderReport() {
   const { y, m } = state;
   const sales = salesOfMonth(y, m);
   const dailyPays = dailyPaysOfMonth(y, m);
 
-  // タブボタン生成
+  // タブボタン生成（全salesから配信者を抽出）
+  const allSales = state.sales;
   const tabsEl = document.getElementById('report-caster-tabs');
   if (tabsEl) {
     tabsEl.innerHTML = state.casters.map(c => {
-      const hasSales = sales.some(s => s.casterId === c.id);
+      const hasSales = allSales.some(s => s.casterId === c.id);
       if (!hasSales) return '';
       const active = reportTab === String(c.id);
       return `<button class="btn btn-sm" style="background:${active?'var(--accent2)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border)" onclick="setReportTab('${c.id}')">${c.name}</button>`;
@@ -4947,9 +5207,14 @@ function renderReport() {
       return { c, totalCoins, totalReward, totalSrc, totalRef, dpTotal, dpSrc, remaining, remainingSrc, transfer, officeTotal, hasRate: ratesValid.length > 0 };
     }).filter(Boolean);
 
-    el.innerHTML = `
+    const periodSel = buildPeriodSelectorHTML();
+    const periodSales = getSalesForPeriod();
+    const periodLabel = getPeriodLabel();
+    const periodStatsTable = buildPeriodStatsTableHTML(periodSales, periodLabel);
+
+    el.innerHTML = periodSel + periodStatsTable + `
       <div class="table-wrap">
-        <div class="table-header"><div class="table-title">${y}年${m}月　全員サマリー</div></div>
+        <div class="table-header"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div></div>
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
@@ -4985,7 +5250,11 @@ function renderReport() {
     const remaining = Math.max(0, totReward - dpAmt);
     const remSrc = calcSrcTax(remaining);
 
-    el.innerHTML = `
+    const pSel2 = buildPeriodSelectorHTML();
+    const casterPeriodStats = buildCasterPeriodStatsHTML(casterId);
+
+    el.innerHTML = pSel2 + casterPeriodStats + `
+      <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">📅 ${y}年${m}月の明細</div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
         <div class="card"><div class="card-label">月間コイン</div><div class="card-value blue">${fmt(totCoins)}C</div></div>
         <div class="card"><div class="card-label">月間報酬(税込)</div><div class="card-value red">${yen(totReward)}</div></div>
