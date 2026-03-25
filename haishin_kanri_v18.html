@@ -781,22 +781,25 @@
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">売上明細</div></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--muted)">並び順：</span>
+          <button id="sh-date-btn" onclick="setSalesSort('date')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:var(--accent);color:#fff"><span id="sh-date">日付 ▼</span></button>
+        </div>
         <table id="sales-main-table"><thead><tr>
-  <th style="cursor:pointer;user-select:none" onclick="setSalesSort('date')"><span id="sh-date">日付</span></th>
-  <th style="cursor:pointer;user-select:none" onclick="setSalesSort('name')"><span id="sh-name">配信者</span></th>
+  <th>日付 / 配信者</th>
   <th class="num">報酬率</th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('coins')"><span id="sh-coins">コイン</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('reward')"><span id="sh-reward">報酬額</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('src')"><span id="sh-src">源泉税</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('transfer')"><span id="sh-transfer">振込額</span></th>
-  <th style="cursor:pointer;user-select:none" onclick="setSalesSort('ref')"><span id="sh-ref">紹介者</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('ref1')"><span id="sh-ref1">紹介料①</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('ref2')"><span id="sh-ref2">紹介料②</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('refamt')"><span id="sh-refamt">紹介料計</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('rate')"><span id="sh-rate">レート</span></th>
+  <th class="num">コイン</th>
+  <th class="num">報酬額</th>
+  <th class="num">源泉税</th>
+  <th class="num">振込額</th>
+  <th>紹介者</th>
+  <th class="num">紹介料①</th>
+  <th class="num">紹介料②</th>
+  <th class="num">紹介料計</th>
+  <th class="num">レート</th>
   <th class="num">ドル換算</th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('jpy')"><span id="sh-jpy">円換算</span></th>
-  <th class="num" style="cursor:pointer;user-select:none" onclick="setSalesSort('office')"><span id="sh-office">事務所売上</span></th>
+  <th class="num">円換算</th>
+  <th class="num">事務所売上</th>
   <th></th>
 </tr></thead>
         <tbody id="sales-table"></tbody></table>
@@ -1697,6 +1700,8 @@ let dpSort = { key: 'date', dir: 1 };
 let expSort = { key: 'date', dir: 1 };
 
 function setSalesSort(key) {
+  // グループ表示のため日付ソートのみ対応
+  key = 'date';
   if (salesSort.key === key) {
     salesSort.dir *= -1;
   } else {
@@ -3903,57 +3908,117 @@ function renderSales() {
     }
     return 0;
   });
-  // 同日・同配信者の連番マップを生成（key: casterId_date）
-  const dayCountMap = {};   // 合計件数
-  const dpIdxColors = ['#6366f1','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6'];
-  const dayIdxMap   = {};   // 表示順インデックス（Map: saleId → 回目）
-  sortedSales.forEach(s => {
-    const key = `${s.casterId}_${s.date}`;
-    dayCountMap[key] = (dayCountMap[key] || 0) + 1;
-  });
-  const daySeq = {};
-  sortedSales.forEach(s => {
-    const key = `${s.casterId}_${s.date}`;
-    if (dayCountMap[key] > 1) {
-      daySeq[key] = (daySeq[key] || 0) + 1;
-      dayIdxMap[s.id] = daySeq[key];
+  // 日付順にソート（固定）
+  const dateSortDir = salesSort.key === 'date' ? salesSort.dir : 1;
+  const dateSortedSales = [...sales].sort((a,b) => dateSortDir * a.date.localeCompare(b.date));
+
+  // 日付＋配信者でグループ化
+  const groups = [];
+  const groupMap = {};
+  dateSortedSales.forEach(s => {
+    const key = `${s.date}_${s.casterId}`;
+    if (!groupMap[key]) {
+      groupMap[key] = { date: s.date, casterId: s.casterId, sales: [] };
+      groups.push(groupMap[key]);
     }
+    groupMap[key].sales.push(s);
   });
-  // ヘッダーアイコン更新
-  const shLabels = { date:'日付', name:'配信者', coins:'コイン', reward:'報酬額', src:'源泉税', transfer:'振込額', ref:'紹介者', ref1:'紹介料①', ref2:'紹介料②', refamt:'紹介料計', rate:'レート', jpy:'円換算', office:'事務所売上' };
-  Object.keys(shLabels).forEach(k => {
-    const el = document.getElementById('sh-' + k);
-    if (el) el.innerHTML = shLabels[k] + sortIcon(k);
-  });
-  document.getElementById('sales-table').innerHTML = sortedSales.map(s => {
-    const c = getCaster(s.casterId);
-    const salesAmt = coinToYen(s.coins);
-    const reward = c ? calcReward(salesAmt, c.rate) : 0;
-    const src = calcSrcTax(reward);
+
+  // ヘッダーの日付ボタン更新
+  const dateBtn = document.getElementById('sh-date');
+  if (dateBtn) dateBtn.textContent = '日付 ' + (dateSortDir === 1 ? '▲' : '▼');
+
+  const rows = [];
+  groups.forEach(g => {
+    const c = getCaster(g.casterId);
     const ref = c?.refId ? getReferrer(c.refId) : null;
-    const _rc = calcRefTotal(s.coins, reward, ref);
-    const r1 = _rc.r1; const r2 = _rc.r2; const rcTotal = _rc.total;
-    const office = calcOfficeSales(s.coins, s.rate, reward, rcTotal);
-    const isRefund = s.coins < 0;
-    return `<tr style="${isRefund ? 'background:rgba(248,113,113,0.08);border-left:3px solid var(--red)' : ''}">
-      <td style="color:var(--muted);font-size:12px">${s.date}${dayIdxMap[s.id] ? `<br><span style="font-size:10px;background:${dpIdxColors[(dayIdxMap[s.id]-1) % dpIdxColors.length]};color:#fff;border-radius:4px;padding:1px 5px">${dayIdxMap[s.id]}回目</span>` : ''}${isRefund ? '<br><span style="font-size:10px;background:rgba(248,113,113,0.2);color:var(--red);border-radius:4px;padding:1px 5px;font-weight:700">返金</span>' : ''}</td>
-      <td><strong>${c?.name||'?'}</strong></td>
-      <td class="num"><span class="badge badge-blue">${c?.rate||0}%</span></td>
-      <td class="num"><span class="coin-badge" style="${isRefund ? 'background:rgba(248,113,113,0.15);color:var(--red)' : ''}">${coins(s.coins)}</span></td>
-      <td class="num" style="color:var(--red)">${yen(reward)}</td>
-      <td class="num" style="color:var(--yellow)">${yen(src)}</td>
-      <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
-      <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '-'}</td>
-      <td class="num" style="color:var(--muted);font-size:12px">${r1>0?yen(r1):'-'}</td>
-      <td class="num" style="color:var(--muted);font-size:12px">${r2>0?yen(r2):'-'}</td>
-      <td class="num" style="color:#fb923c;font-weight:700">${rcTotal>0?yen(rcTotal):'-'}</td>
-      <td class="num" style="color:var(--muted);font-size:12px">${s.rate?s.rate:'-'}</td>
-      <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
-      <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
-      <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
-      <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="16" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
+    const isMulti = g.sales.length > 1;
+
+    // 合計行の計算
+    let sumCoins=0, sumReward=0, sumSrc=0, sumR1=0, sumR2=0, sumRcTotal=0, sumJpy=0, sumOffice=0;
+    let hasRate = false;
+    g.sales.forEach(s => {
+      const sa = coinToYen(s.coins);
+      const rw = c ? calcReward(sa, c.rate) : 0;
+      const src = calcSrcTax(rw);
+      const rc = calcRefTotal(s.coins, rw, ref);
+      const office = calcOfficeSales(s.coins, s.rate, rw, rc.total);
+      sumCoins   += s.coins;
+      sumReward  += rw;
+      sumSrc     += src;
+      sumR1      += rc.r1;
+      sumR2      += rc.r2;
+      sumRcTotal += rc.total;
+      if (office) { sumJpy += office.jpy; sumOffice += office.office; hasRate = true; }
+    });
+    const sumTransfer = sumReward - sumSrc;
+    const sumUsd = Math.floor(sumCoins * 0.05 * 100) / 100;
+
+    if (isMulti) {
+      // ▼ 合計行（折りたたみヘッダー）
+      rows.push(`<tr style="background:var(--surface2);border-left:3px solid var(--accent)">
+        <td colspan="2" style="font-weight:700;font-size:13px;padding:10px 12px">
+          <span style="color:var(--muted);font-size:12px;margin-right:8px">${g.date}</span>
+          <strong style="color:var(--text)">${c?.name||'?'}</strong>
+          <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 8px;margin-left:8px">${g.sales.length}回配信 合計</span>
+        </td>
+        <td class="num"><span class="coin-badge" style="font-weight:700">${coins(sumCoins)}</span></td>
+        <td class="num" style="color:var(--red);font-weight:700">${yen(sumReward)}</td>
+        <td class="num" style="color:var(--yellow);font-weight:700">${yen(sumSrc)}</td>
+        <td class="num" style="color:var(--green);font-weight:700">${yen(sumTransfer)}</td>
+        <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '-'}</td>
+        <td class="num" style="color:var(--muted);font-weight:700">${sumR1>0?yen(sumR1):'-'}</td>
+        <td class="num" style="color:var(--muted);font-weight:700">${sumR2>0?yen(sumR2):'-'}</td>
+        <td class="num" style="color:#fb923c;font-weight:700">${sumRcTotal>0?yen(sumRcTotal):'-'}</td>
+        <td class="num" style="color:var(--muted)">-</td>
+        <td class="num" style="color:var(--muted)">${hasRate?'$'+sumUsd.toFixed(2):'-'}</td>
+        <td class="num" style="color:var(--accent);font-weight:700">${hasRate?yen(sumJpy):'-'}</td>
+        <td class="num" style="color:var(--green);font-weight:700">${hasRate?yen(sumOffice):'-'}</td>
+        <td></td>
+      </tr>`);
+    }
+
+    // 明細行
+    g.sales.forEach((s, idx) => {
+      const sa = coinToYen(s.coins);
+      const reward = c ? calcReward(sa, c.rate) : 0;
+      const src = calcSrcTax(reward);
+      const rc = calcRefTotal(s.coins, reward, ref);
+      const r1=rc.r1, r2=rc.r2, rcTotal=rc.total;
+      const office = calcOfficeSales(s.coins, s.rate, reward, rcTotal);
+      const isRefund = s.coins < 0;
+      const indentStyle = isMulti ? 'padding-left:20px;' : '';
+
+      rows.push(`<tr style="${isRefund?'background:rgba(248,113,113,0.08);':''}${isMulti?'border-left:3px solid var(--border)':''}">
+        <td style="color:var(--muted);font-size:12px;${indentStyle}">
+          ${isMulti
+            ? `<span style="font-size:11px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-weight:600">${idx+1}回目</span>`
+            : `<span style="font-size:12px">${s.date}</span>`
+          }
+          ${isRefund?'<span style="font-size:10px;background:rgba(248,113,113,0.2);color:var(--red);border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">返金</span>':''}
+          ${s.note?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${s.note}</div>`:''}
+        </td>
+        <td>${isMulti?'':` <strong>${c?.name||'?'}</strong>`}
+          ${!isMulti?`<span class="badge badge-blue" style="margin-left:4px">${c?.rate||0}%</span>`:``}
+        </td>
+        <td class="num">${isMulti?`<span class="badge badge-blue">${c?.rate||0}%</span>`:''}<span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}${isMulti?'margin-left:4px':''}">${coins(s.coins)}</span></td>
+        <td class="num" style="color:var(--red)">${yen(reward)}</td>
+        <td class="num" style="color:var(--yellow)">${yen(src)}</td>
+        <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
+        <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
+        <td class="num" style="color:var(--muted);font-size:12px">${r1>0?yen(r1):'-'}</td>
+        <td class="num" style="color:var(--muted);font-size:12px">${r2>0?yen(r2):'-'}</td>
+        <td class="num" style="color:#fb923c;font-weight:700">${rcTotal>0?yen(rcTotal):'-'}</td>
+        <td class="num" style="color:var(--muted);font-size:12px">${s.rate?s.rate:'-'}</td>
+        <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
+        <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
+        <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
+        <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
+      </tr>`);
+    });
+  });
+
+  document.getElementById('sales-table').innerHTML = rows.join('') || '<tr><td colspan="15" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
 }
 
 // ===== EXPENSES =====
