@@ -5144,7 +5144,7 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     })() : ''}
     </tbody></table>
     <div style="font-size:11px;color:var(--muted);padding:8px 12px">
-      ※ 1日あたり平均コイン：配信実施日数で除算　／　1配信あたり平均コイン：salesレコード数（${rows.reduce((s,r)=>s+r.liveCount,0)}件）で除算
+      ※ 1日あたり平均コイン：配信した日の日数で割った値　／　1配信あたり平均コイン：1回の配信データで割った値
     </div>
   </div>`;
 }
