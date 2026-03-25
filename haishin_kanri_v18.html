@@ -5077,15 +5077,15 @@ function buildPeriodSelectorHTML() {
 
 function buildPeriodStatsTableHTML(filteredSales, label) {
   // 期間統計テーブル（配信者×4指標）
-  const days = getPeriodDays();
   const rows = state.casters.map(c => {
     const cSales = filteredSales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
     const totalCoins   = cSales.reduce((s,x) => s + x.coins, 0);
     const totalReward  = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    const avgCoinPerDay  = days > 0 ? Math.floor(totalCoins / days) : 0;
+    const activeDays   = new Set(cSales.map(s => s.date)).size;
+    const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
     const avgCoinPerLive = cSales.length > 0 ? Math.floor(totalCoins / cSales.length) : 0;
-    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: cSales.length };
+    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: cSales.length, activeDays };
   }).filter(Boolean);
 
   if (rows.length === 0) return `<div style="color:var(--muted);padding:20px;text-align:center">この期間のデータはありません</div>`;
@@ -5114,7 +5114,8 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
         totalReward: s.totalReward+r.totalReward,
         liveCount: s.liveCount+r.liveCount
       }), {totalCoins:0,totalReward:0,liveCount:0});
-      const avgDay  = days > 0 ? Math.floor(tot.totalCoins / days) : 0;
+      const totActiveDays = new Set(filteredSales.map(s => s.date)).size;
+      const avgDay  = totActiveDays > 0 ? Math.floor(tot.totalCoins / totActiveDays) : 0;
       const avgLive = tot.liveCount > 0 ? Math.floor(tot.totalCoins / tot.liveCount) : 0;
       return `<tr style="background:var(--surface2);font-weight:700">
         <td>合計</td>
@@ -5127,7 +5128,7 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     })() : ''}
     </tbody></table>
     <div style="font-size:11px;color:var(--muted);padding:8px 12px">
-      ※ 1日あたり平均コイン：集計期間 ${days} 日で除算　／　1配信あたり平均コイン：salesレコード数（${rows.reduce((s,r)=>s+r.liveCount,0)}件）で除算
+      ※ 1日あたり平均コイン：配信実施日数で除算　／　1配信あたり平均コイン：salesレコード数（${rows.reduce((s,r)=>s+r.liveCount,0)}件）で除算
     </div>
   </div>`;
 }
@@ -5136,12 +5137,12 @@ function buildCasterPeriodStatsHTML(casterId) {
   const c = getCaster(casterId);
   if (!c) return '';
   const filteredSales = getSalesForPeriod().filter(s => s.casterId === casterId);
-  const days = getPeriodDays();
   const label = getPeriodLabel();
   if (filteredSales.length === 0) return `<div style="color:var(--muted);padding:16px;background:var(--surface2);border-radius:8px;margin-bottom:20px;text-align:center">この期間のデータはありません（${label}）</div>`;
   const totalCoins   = filteredSales.reduce((s,x) => s + x.coins, 0);
   const totalReward  = filteredSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-  const avgCoinPerDay  = days > 0 ? Math.floor(totalCoins / days) : 0;
+  const activeDays   = new Set(filteredSales.map(s => s.date)).size;
+  const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
   const avgCoinPerLive = filteredSales.length > 0 ? Math.floor(totalCoins / filteredSales.length) : 0;
 
   return `<div style="margin-bottom:20px">
@@ -5154,7 +5155,7 @@ function buildCasterPeriodStatsHTML(casterId) {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
       <div class="card"><div class="card-label">1配信あたり平均コイン</div><div class="card-value" style="color:var(--accent2)">${fmt(avgCoinPerLive)}C</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${filteredSales.length}配信の平均</div></div>
-      <div class="card"><div class="card-label">期間日数</div><div class="card-value" style="color:var(--muted)">${days}日</div></div>
+      <div class="card"><div class="card-label">配信日数</div><div class="card-value" style="color:var(--muted)">${activeDays}日</div></div>
     </div>
   </div>`;
 }
