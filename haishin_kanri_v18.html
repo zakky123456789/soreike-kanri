@@ -3385,7 +3385,7 @@ async function fetchRate(date) {
     const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = `✅ 自動取得（前営業日終値）`;
+      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
       updateSalePreview();
     } else {
       if (el) el.textContent = '手動入力してください';
@@ -4177,9 +4177,9 @@ function renderSales() {
       <td class="num" style="color:var(--yellow);${fw}">${yen(sumSrc)}</td>
       <td class="num" style="color:var(--green);${fw}">${yen(sumTransfer)}</td>
       <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
-      <td class="num" style="color:var(--muted);${fw}">${sumR1>0?yen(sumR1):'-'}</td>
-      <td class="num" style="color:var(--muted);${fw}">${sumR2>0?yen(sumR2):'-'}</td>
-      <td class="num" style="color:#fb923c;${fw}">${sumRcTotal>0?yen(sumRcTotal):'-'}</td>
+      <td class="num" style="color:var(--muted);${fw}">${sumR1!==0?yen(sumR1):'-'}</td>
+      <td class="num" style="color:var(--muted);${fw}">${sumR2!==0?yen(sumR2):'-'}</td>
+      <td class="num" style="color:#fb923c;${fw}">${sumRcTotal!==0?yen(sumRcTotal):'-'}</td>
       <td class="num" style="color:var(--muted);font-size:11px">${(() => { const rates = [...new Set(g.sales.map(s=>s.rate).filter(Boolean))]; return rates.length>0 ? rates.join(', ') : '-'; })()}</td>
       <td class="num" style="color:var(--muted)">${hasRate?'$'+sumUsd.toFixed(2):'-'}</td>
       <td class="num" style="color:var(--accent);${fw}">${hasRate?yen(sumJpy):'-'}</td>
@@ -4213,9 +4213,9 @@ function renderSales() {
           <td class="num" style="color:var(--yellow)">${yen(src)}</td>
           <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
           <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
-          <td class="num" style="color:var(--muted);font-size:12px">${r1>0?yen(r1):'-'}</td>
-          <td class="num" style="color:var(--muted);font-size:12px">${r2>0?yen(r2):'-'}</td>
-          <td class="num" style="color:#fb923c;font-weight:700">${rcTotal>0?yen(rcTotal):'-'}</td>
+          <td class="num" style="color:var(--muted);font-size:12px">${r1!==0?yen(r1):'-'}</td>
+          <td class="num" style="color:var(--muted);font-size:12px">${r2!==0?yen(r2):'-'}</td>
+          <td class="num" style="color:#fb923c;font-weight:700">${rcTotal!==0?yen(rcTotal):'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${s.rate?s.rate:'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
