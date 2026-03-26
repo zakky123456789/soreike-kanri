@@ -3262,13 +3262,15 @@ function renderFxRecords() {
       + '</td>';
 
     // 親行
-    const mainRow = '<tr style="' + (isCross && r.usdFrom != null ? 'border-left:3px solid var(--accent)' : '') + '">'
-      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px;font-weight:' + (isCross && r.usdFrom != null ? '600' : 'normal') + '">' + period + '</td>'
-      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + r.date + '</td>'
-      + '<td class="num" style="font-family:var(--mono);padding:7px 14px">' + usd(r.usd) + '</td>'
-      + '<td class="num" style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.rate ? r.rate : '-') + '</td>'
-      + '<td class="num" style="color:var(--green);font-weight:700;padding:7px 14px">' + yen(r.jpy) + '</td>'
-      + '<td style="color:var(--muted);font-size:12px;padding:7px 14px">' + (r.note || '-') + '</td>'
+    // 月跨ぎ行は背景+ボーダーで強調
+    const crossBg = (isCross && r.usdFrom != null) ? 'background:rgba(79,156,249,0.08);border-left:3px solid var(--accent);' : '';
+    const mainRow = '<tr style="' + crossBg + '">'
+      + '<td style="font-size:12px;padding:8px 14px;font-weight:' + (isCross ? '700' : 'normal') + ';color:' + (isCross ? 'var(--text)' : 'var(--muted)') + '">' + period + '</td>'
+      + '<td style="color:var(--muted);font-size:12px;padding:8px 14px">' + r.date + '</td>'
+      + '<td class="num" style="font-family:var(--mono);padding:8px 14px;font-weight:' + (isCross ? '700' : 'normal') + '">' + usd(r.usd) + '</td>'
+      + '<td class="num" style="color:var(--muted);font-size:12px;padding:8px 14px">' + (r.rate ? r.rate : '-') + '</td>'
+      + '<td class="num" style="color:var(--green);font-weight:700;padding:8px 14px">' + yen(r.jpy) + '</td>'
+      + '<td style="color:var(--muted);font-size:12px;padding:8px 14px">' + (r.note || '-') + '</td>'
       + editBtns
       + '</tr>';
 
@@ -3281,21 +3283,21 @@ function renderFxRecords() {
       const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
       const jpyTo   = r.usd > 0 ? Math.round(r.jpy * r.usdTo / r.usd) : 0;
       const jpyFrom = r.jpy - jpyTo;
-      subRows = '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
-        + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + fromLabel + '</td>'
+      subRows = '<tr style="background:rgba(79,156,249,0.04);border-left:3px solid rgba(79,156,249,0.35);">'
+        + '<td style="padding:5px 14px 5px 32px;font-size:12px;color:var(--muted)">└ ' + fromLabel + '</td>'
         + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
         + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">' + usd(r.usdFrom) + '</td>'
         + '<td style="padding:5px 14px"></td>'
-        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyFrom) + '</td>'
+        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px;font-weight:600">' + yen(jpyFrom) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td style="padding:5px 14px"></td>'
         + '</tr>'
-        + '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
-        + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + toLabel + '</td>'
+        + '<tr style="background:rgba(79,156,249,0.04);border-left:3px solid rgba(79,156,249,0.35);border-bottom:2px solid rgba(79,156,249,0.2);">'
+        + '<td style="padding:5px 14px 8px 32px;font-size:12px;color:var(--muted)">└ ' + toLabel + '</td>'
         + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
         + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">' + usd(r.usdTo) + '</td>'
         + '<td style="padding:5px 14px"></td>'
-        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px">' + yen(jpyTo) + '</td>'
+        + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px;font-weight:600">' + yen(jpyTo) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td style="padding:5px 14px"></td>'
         + '</tr>';
