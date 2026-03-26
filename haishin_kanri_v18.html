@@ -771,7 +771,7 @@
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">売上入力</div></div>
         <div style="padding:16px">
-          <div style="display:grid;grid-template-columns:repeat(3,1fr) 160px 120px auto;gap:14px;margin-bottom:14px">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr) 160px 100px 120px auto;gap:14px;margin-bottom:14px">
             <div class="form-group"><label>配信者</label><select id="s-caster"></select></div>
             <div class="form-group"><label>獲得コイン数</label><input id="s-coins" type="number" placeholder="例：10000"></div>
             <div class="form-group"><label>日付</label><input id="s-date" type="date"></div>
@@ -779,6 +779,7 @@
               <label>レート（USD/JPY）<span id="s-rate-status" style="font-size:10px;color:var(--muted);margin-left:4px"></span></label>
               <input id="s-rate" type="number" step="0.01" placeholder="例：155.07">
             </div>
+            <div class="form-group"><label>種別</label><select id="s-type" onchange="updateSalePreview()" style="background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;width:100%"><option value="normal">通常配信</option><option value="adjust">調整</option></select></div>
             <div class="form-group"><label>備考</label><input id="s-note" placeholder="例：1月分"></div>
             <div class="form-group"><label>　</label><button class="btn btn-primary" style="width:100%" onclick="addSale()">＋ 追加</button></div>
           </div>
@@ -1468,7 +1469,8 @@ async function loadFromDB() {
     if (salesR.data?.length > 0) {
       state.sales = salesR.data.map(r => ({
         id: r.id, casterId: r.caster_id, coins: Number(r.coins),
-        date: r.date, note: r.note, y: r.y, m: r.m, rate: r.rate ? Number(r.rate) : null
+        date: r.date, note: r.note, y: r.y, m: r.m, rate: r.rate ? Number(r.rate) : null,
+        type: r.type || 'normal'
       }));
     }
     if (expensesR.data?.length > 0) {
@@ -3399,11 +3401,12 @@ async function addSale() {
   const date = document.getElementById('s-date').value;
   const rate = parseFloat(document.getElementById('s-rate').value) || null;
   const note = document.getElementById('s-note').value;
+  const type = document.getElementById('s-type')?.value || 'normal';
   if (!casterId || isNaN(coins) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newSale = { id: state.nextId++, casterId, coins, date, note, y, m, rate };
+  const newSale = { id: state.nextId++, casterId, coins, date, note, y, m, rate, type };
   state.sales.push(newSale);
-  await dbSave('sales', { id: newSale.id, caster_id: casterId, coins, date, note, y, m, rate: rate || null });
+  await dbSave('sales', { id: newSale.id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type });
   document.getElementById('s-coins').value = '';
   document.getElementById('s-note').value = '';
   document.getElementById('s-rate').value = '';
@@ -3483,7 +3486,7 @@ function sgeRenderRow(container, s, num) {
       <span style="font-size:12px;font-weight:700;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 10px">${num}回目</span>
       <button onclick="sgeRemoveRow(this)" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1" title="この回を削除">×</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">獲得コイン数 <span style="color:var(--red)">*</span></label>
         <input type="number" class="form-control sge-coins" value="${s.coins}" placeholder="例：3000" style="width:100%">
@@ -3491,6 +3494,13 @@ function sgeRenderRow(container, s, num) {
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">レート（USD/JPY）</label>
         <input type="number" class="form-control sge-rate" value="${s.rate||''}" step="0.01" placeholder="例：155.07" style="width:100%">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">種別</label>
+        <select class="form-control sge-type" style="width:100%">
+          <option value="normal" ${(s.type||'normal')==='normal'?'selected':''}>通常</option>
+          <option value="adjust" ${s.type==='adjust'?'selected':''}>調整</option>
+        </select>
       </div>
     </div>
     <div style="margin-top:8px">
@@ -3515,7 +3525,7 @@ function sgeAddRow() {
       <span style="font-size:12px;font-weight:700;background:var(--accent);color:#fff;border-radius:4px;padding:2px 10px">${count}回目（新規）</span>
       <button onclick="sgeRemoveRow(this)" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1" title="削除">×</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 120px;gap:10px">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">獲得コイン数 <span style="color:var(--red)">*</span></label>
         <input type="number" class="form-control sge-coins" placeholder="例：3000" style="width:100%">
@@ -3523,6 +3533,13 @@ function sgeAddRow() {
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">レート（USD/JPY）</label>
         <input type="number" class="form-control sge-rate" step="0.01" placeholder="例：155.07" style="width:100%" value="${(() => { const first = document.querySelector('#sge-rows .sge-rate'); return first ? first.value : ''; })()}">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">種別</label>
+        <select class="form-control sge-type" style="width:100%">
+          <option value="normal">通常</option>
+          <option value="adjust">調整</option>
+        </select>
       </div>
     </div>
     <div style="margin-top:8px">
@@ -3594,15 +3611,17 @@ async function saveSaleGroupEdit() {
 
     if (isNew) {
       const newId = state.nextId++;
-      const rec = { id: newId, casterId, coins, date, note, y, m, rate };
+      const type = row.querySelector('.sge-type')?.value || 'normal';
+      const rec = { id: newId, casterId, coins, date, note, y, m, rate, type };
       state.sales.push(rec);
-      await dbSaveAsync('sales', { id: newId, caster_id: casterId, coins, date, note, y, m, rate });
+      await dbSaveAsync('sales', { id: newId, caster_id: casterId, coins, date, note, y, m, rate, type });
     } else {
       const id = parseInt(row.dataset.saleId);
+      const type = row.querySelector('.sge-type')?.value || state.sales.find(s=>s.id===id)?.type || 'normal';
       const idx = state.sales.findIndex(s => s.id === id);
       if (idx !== -1) {
-        state.sales[idx] = { ...state.sales[idx], coins, rate, note };
-        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate });
+        state.sales[idx] = { ...state.sales[idx], coins, rate, note, type };
+        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type });
       }
     }
   }
@@ -3643,8 +3662,9 @@ async function saveSaleEdit() {
   const [y, m] = date.split('-').map(Number);
   const idx = state.sales.findIndex(s => s.id === id);
   if (idx !== -1) {
-    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m };
-    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate });
+    const type = state.sales[idx].type || 'normal';
+    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type };
+    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type });
   }
   closeSaleEditModal();
   renderAll();
@@ -4144,6 +4164,7 @@ function renderSales() {
       <td style="font-size:13px;padding:10px 12px;white-space:nowrap">
         <span style="color:var(--muted);font-size:12px;margin-right:6px">${g.date}</span>
         <strong>${c?.name||'?'}</strong>
+        ${g.sales.length===1 && g.sales[0].type==='adjust' ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">調整</span>` : ''}
       </td>
       <td>
         ${isMulti
@@ -4183,7 +4204,8 @@ function renderSales() {
         rows.push(`<tr style="${isRefund?'background:rgba(248,113,113,0.08);':''}border-left:3px solid var(--border)">
           <td style="padding-left:24px;font-size:12px;color:var(--muted)">
             <span style="font-size:11px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-weight:600">${idx+1}回目</span>
-            ${isRefund?'<span style="font-size:10px;background:rgba(248,113,113,0.2);color:var(--red);border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">返金</span>':''}
+
+            ${(s.type||'normal')==='adjust'?'<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">調整</span>':''}
           </td>
           <td><span class="badge badge-blue">${c?.rate||0}%</span></td>
           <td class="num"><span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}">${coins(s.coins)}</span></td>
@@ -5349,23 +5371,24 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     if (cSales.length === 0) return null;
     const totalCoins   = cSales.reduce((s,x) => s + x.coins, 0);
     const totalReward  = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    const activeDays   = new Set(cSales.map(s => s.date)).size;
+    const normalSales  = cSales.filter(s => (s.type||'normal') === 'normal');
+    const activeDays   = new Set(normalSales.map(s => s.date)).size;
     const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
-    const avgCoinPerLive = cSales.length > 0 ? Math.floor(totalCoins / cSales.length) : 0;
-    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: cSales.length, activeDays };
+    const avgCoinPerLive = normalSales.length > 0 ? Math.floor(totalCoins / normalSales.length) : 0;
+    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: normalSales.length, activeDays };
   }).filter(Boolean);
 
   if (rows.length === 0) return `<div style="color:var(--muted);padding:20px;text-align:center">この期間のデータはありません</div>`;
 
   return `<div class="table-wrap" style="margin-bottom:24px">
     <div class="table-header"><div class="table-title">📊 ${label}　配信者別パフォーマンス</div></div>
-    <table><thead><tr>
-      <th>配信者</th>
-      <th class="num">配信回数</th>
-      <th class="num">合計コイン</th>
-      <th class="num">合計金額（円）</th>
-      <th class="num">1日あたり<br>平均コイン</th>
-      <th class="num">1配信あたり<br>平均コイン</th>
+    <table style="table-layout:fixed;width:100%"><thead><tr>
+      <th style="width:10%">配信者</th>
+      <th class="num" style="width:10%">配信回数</th>
+      <th class="num" style="width:20%">合計コイン</th>
+      <th class="num" style="width:20%">合計金額（円）</th>
+      <th class="num" style="width:20%">1日あたり<br>平均コイン</th>
+      <th class="num" style="width:20%">1配信あたり<br>平均コイン</th>
     </tr></thead><tbody>
     ${rows.map(r => `<tr>
       <td><strong>${r.c.name}</strong></td>
@@ -5408,9 +5431,10 @@ function buildCasterPeriodStatsHTML(casterId) {
   if (filteredSales.length === 0) return `<div style="color:var(--muted);padding:16px;background:var(--surface2);border-radius:8px;margin-bottom:20px;text-align:center">この期間のデータはありません（${label}）</div>`;
   const totalCoins   = filteredSales.reduce((s,x) => s + x.coins, 0);
   const totalReward  = filteredSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-  const activeDays   = new Set(filteredSales.map(s => s.date)).size;
+  const normalSales  = filteredSales.filter(s => (s.type||'normal') === 'normal');
+  const activeDays   = new Set(normalSales.map(s => s.date)).size;
   const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
-  const avgCoinPerLive = filteredSales.length > 0 ? Math.floor(totalCoins / filteredSales.length) : 0;
+  const avgCoinPerLive = normalSales.length > 0 ? Math.floor(totalCoins / normalSales.length) : 0;
 
   return `<div style="margin-bottom:20px">
     <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">📊 ${label} のパフォーマンス</div>
