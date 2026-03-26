@@ -4132,31 +4132,36 @@ function renderSales() {
     const sumUsd = Math.floor(sumCoins * 0.05 * 100) / 100;
 
     // ── グループヘッダー行（1回・複数回共通） ──
-    const headerBg    = isMulti ? 'var(--surface2)' : 'var(--surface)';
-    const headerBorder= isMulti ? 'border-left:3px solid var(--accent);border-top:2px solid var(--border)' : 'border-left:3px solid var(--border);border-top:2px solid var(--border)';
+    const headerBg     = isMulti ? 'var(--surface2)' : 'var(--surface)';
+    const headerBorder = isMulti ? 'border-left:3px solid var(--accent);border-top:2px solid var(--border)' : 'border-left:3px solid var(--border);border-top:2px solid var(--border)';
+    const fw           = isMulti ? 'font-weight:700;' : '';
     rows.push(`<tr style="background:${headerBg};${headerBorder}">
-      <td colspan="2" style="font-weight:700;font-size:13px;padding:10px 12px">
-        <span style="color:var(--muted);font-size:12px;margin-right:8px">${g.date}</span>
-        <strong style="color:var(--text)">${c?.name||'?'}</strong>
+      <td style="font-size:13px;padding:10px 12px;white-space:nowrap">
+        <span style="color:var(--muted);font-size:12px;margin-right:6px">${g.date}</span>
+        <strong>${c?.name||'?'}</strong>
+      </td>
+      <td>
         ${isMulti
-          ? `<span style="font-size:11px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 8px;margin-left:8px">${g.sales.length}回配信 合計</span>`
-          : `<span style="font-size:11px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-left:8px">1回配信</span>`
+          ? `<span style="font-size:11px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 8px">${g.sales.length}回配信 合計</span>`
+          : `<span style="font-size:11px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 6px">1回配信</span>
+             <span class="badge badge-blue" style="margin-left:4px">${c?.rate||0}%</span>`
         }
       </td>
-      <td class="num"><span class="coin-badge" style="${isMulti?'font-weight:700':''}">${coins(sumCoins)}</span></td>
-      <td class="num" style="color:var(--red);${isMulti?'font-weight:700':''}">${yen(sumReward)}</td>
-      <td class="num" style="color:var(--yellow);${isMulti?'font-weight:700':''}">${yen(sumSrc)}</td>
-      <td class="num" style="color:var(--green);${isMulti?'font-weight:700':''}">${yen(sumTransfer)}</td>
+      <td class="num"><span class="coin-badge" style="${fw}">${coins(sumCoins)}</span></td>
+      <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}</td>
+      <td class="num" style="color:var(--yellow);${fw}">${yen(sumSrc)}</td>
+      <td class="num" style="color:var(--green);${fw}">${yen(sumTransfer)}</td>
       <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
-      <td class="num" style="color:var(--muted);${isMulti?'font-weight:700':''}">${sumR1>0?yen(sumR1):'-'}</td>
-      <td class="num" style="color:var(--muted);${isMulti?'font-weight:700':''}">${sumR2>0?yen(sumR2):'-'}</td>
-      <td class="num" style="color:#fb923c;${isMulti?'font-weight:700':''}">${sumRcTotal>0?yen(sumRcTotal):'-'}</td>
+      <td class="num" style="color:var(--muted);${fw}">${sumR1>0?yen(sumR1):'-'}</td>
+      <td class="num" style="color:var(--muted);${fw}">${sumR2>0?yen(sumR2):'-'}</td>
+      <td class="num" style="color:#fb923c;${fw}">${sumRcTotal>0?yen(sumRcTotal):'-'}</td>
       <td class="num" style="color:var(--muted)">-</td>
       <td class="num" style="color:var(--muted)">${hasRate?'$'+sumUsd.toFixed(2):'-'}</td>
-      <td class="num" style="color:var(--accent);${isMulti?'font-weight:700':''}">${hasRate?yen(sumJpy):'-'}</td>
-      <td class="num" style="color:var(--green);${isMulti?'font-weight:700':''}">${hasRate?yen(sumOffice):'-'}</td>
-      <td>
+      <td class="num" style="color:var(--accent);${fw}">${hasRate?yen(sumJpy):'-'}</td>
+      <td class="num" style="color:var(--green);${fw}">${hasRate?yen(sumOffice):'-'}</td>
+      <td style="display:flex;gap:6px;flex-wrap:nowrap">
         <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>
+        ${!isMulti ? `<button class="btn btn-danger btn-sm" onclick="deleteSale(${g.sales[0].id})">削除</button>` : ''}
       </td>
     </tr>`);
 
