@@ -3275,11 +3275,12 @@ function renderFxRecords() {
     // 月跨ぎ内訳行
     let subRows = '';
     if (isCross && r.usdFrom != null && r.usdTo != null) {
-      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
       const fromLabel = r.dateFrom.slice(0,7).replace('-','年') + '月分';
       const toLabel   = r.dateTo.slice(0,7).replace('-','年') + '月分';
-      const jpyFrom = Math.round(r.usdFrom * rate);
-      const jpyTo   = Math.round(r.usdTo * rate);
+      // 親行のr.jpyを按分（丸め誤差が出ないようにtoを先に計算してfromは差引）
+      const rate = r.rate || (r.usd > 0 ? r.jpy / r.usd : 0);
+      const jpyTo   = r.usd > 0 ? Math.round(r.jpy * r.usdTo / r.usd) : 0;
+      const jpyFrom = r.jpy - jpyTo;
       subRows = '<tr style="opacity:0.8;background:rgba(79,156,249,0.03)">'
         + '<td style="padding:5px 14px 5px 24px;font-size:12px;color:var(--muted)">└ ' + fromLabel + '</td>'
         + '<td style="padding:5px 14px;font-size:12px;color:var(--muted)">-</td>'
