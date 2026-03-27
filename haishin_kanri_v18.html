@@ -5218,6 +5218,7 @@ function printInvoice() {
 
 // ===== REPORT =====
 let reportTab = 'all';
+let mgrSalesMode = 'estimate'; // 'estimate'=推計売上 / 'confirmed'=確定売上
 function setReportTab(tab) {
   reportTab = tab;
   renderReport();
@@ -6092,7 +6093,10 @@ async function saveMgrInfo() {
 function calcManagerReward(y, m) {
   const sales = salesOfMonth(y, m);
   const exps  = expOfMonth(y, m);
-  const totalSales = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const fxData = fxSalesOfMonth(y, m);
+  const totalSalesConfirmed = fxData.totalJpy;
+  const totalSales = mgrSalesMode === 'confirmed' ? totalSalesConfirmed : totalSalesEstimate;
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
@@ -6125,7 +6129,7 @@ function calcManagerReward(y, m) {
   const replaceExps = exps.filter(e => replaceMethods.includes(e.method));
   const replaceTotal = replaceExps.reduce((s,e) => s + e.amount, 0);
 
-  return { totalSales, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, totalPayment: mgrReward + replaceTotal };
+  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, totalPayment: mgrReward + replaceTotal };
 }
 
 function renderManagerReward() {
@@ -6133,8 +6137,17 @@ function renderManagerReward() {
   const el = document.getElementById('mgr-reward-summary');
   if (!el) return;
   const r = calcManagerReward(y, m);
-  el.innerHTML = `<div class="sim-box">
-    <div class="sim-row"><div class="sim-label">売上高</div><div style="font-family:var(--mono);color:var(--accent)">${yen(r.totalSales)}</div></div>
+  const modeEstBtn = `<button onclick="mgrSalesMode='estimate';renderManagerReward()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:${mgrSalesMode==='estimate'?'var(--accent)':'var(--surface2)'};color:${mgrSalesMode==='estimate'?'#fff':'var(--muted)'}">推計売上</button>`;
+  const modeConfBtn = `<button onclick="mgrSalesMode='confirmed';renderManagerReward()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:${mgrSalesMode==='confirmed'?'var(--accent)':'var(--surface2)'};color:${mgrSalesMode==='confirmed'?'#fff':'var(--muted)'}">確定売上</button>`;
+  const salesSubLabel = mgrSalesMode === 'confirmed'
+    ? `<span style="font-size:10px;color:var(--muted);margin-left:6px">（両替記録ベース）</span>`
+    : `<span style="font-size:10px;color:var(--muted);margin-left:6px">（コイン×レート）</span>`;
+  el.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+    <span style="font-size:12px;color:var(--muted)">売上の計算方法：</span>
+    ${modeEstBtn}${modeConfBtn}
+  </div>
+  <div class="sim-box">
+    <div class="sim-row"><div class="sim-label">売上高${salesSubLabel}</div><div style="font-family:var(--mono);color:var(--accent)">${yen(r.totalSales)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 配信者報酬合計</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalReward)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 紹介料合計</div><div style="font-family:var(--mono);color:#fb923c">▲${yen(r.totalRef)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 経費合計（管理人対象分）</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalExpForMgr)}</div></div>
@@ -6169,7 +6182,11 @@ function renderManagerInvoice() {
   if (!el) return;
   const { y, m } = state;
   const mgr = state.manager;
+  // 請求書は確定売上で固定計算
+  const _prevMode = mgrSalesMode;
+  mgrSalesMode = 'confirmed';
   const r = calcManagerReward(y, m);
+  mgrSalesMode = _prevMode;
   const invDate = document.getElementById('mgr-inv-date')?.value || new Date().toISOString().split('T')[0];
   const note    = document.getElementById('mgr-inv-note')?.value || '';
   const officeName = document.getElementById('office-name')?.value || 'それいけ合同会社';
@@ -6179,9 +6196,10 @@ function renderManagerInvoice() {
 
   const fmtDate = d => { if(!d) return ''; const [fy,fm,fd]=d.split('-'); return `${fy}年${parseInt(fm)}月${parseInt(fd)}日`; };
 
-  // 支払期日：翌月22日
+  // 支払期日：翌月末日（末締め翌月末払い）
   const py = m+1>12?y+1:y; const pm2 = m+1>12?1:m+1;
-  const payDeadline = `${py}年${pm2}月22日`;
+  const lastDayOfNextMonth = new Date(py, pm2, 0).getDate();
+  const payDeadline = `${py}年${pm2}月${lastDayOfNextMonth}日`;
 
   const bankInfo = (mgr.bank && mgr.account)
     ? `${mgr.bank}　${mgr.branch}　${mgr.accountType||'普通'}　${mgr.account}　${mgr.holder||mgr.name}`
