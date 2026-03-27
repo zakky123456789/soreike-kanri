@@ -516,12 +516,13 @@
               <option value="家賃">家賃（事務所・マンション賃料など）</option>
               <option value="水道光熱費">水道光熱費（電気・ガス・水道など）</option>
               <option value="通信費">通信費（スマホ・ネット回線・郵送料など）</option>
-              <option value="交通費">交通費（電車・タクシー・ガソリンなど）</option>
+              <option value="旅費交通費">旅費交通費（電車・タクシー・ガソリンなど）</option>
               <option value="広告宣伝費">広告宣伝費（SNS広告・チラシ・PR費など）</option>
               <option value="衣装・美容費">衣装・美容費（衣装・コスメ・ヘアメイクなど）</option>
               <option value="機材・設備費">機材・設備費（PC・カメラ・照明・配信機材など）</option>
               <option value="新聞図書費">新聞図書費（書籍・雑誌・サブスクなど）</option>
               <option value="会議費">会議費 📋 打合せ・商談が主目的の飲食</option>
+              <option value="支払手数料">支払手数料</option>
               <option value="その他">その他（上記に当てはまらないもの）</option>
             </select>
           </div>
@@ -963,13 +964,14 @@
                 <option value="家賃">家賃（事務所・マンション賃料など）</option>
                 <option value="水道光熱費">水道光熱費（電気・ガス・水道など）</option>
                 <option value="通信費">通信費（スマホ・ネット回線・郵送料など）</option>
-                <option value="交通費">交通費（電車・タクシー・ガソリンなど）</option>
+                <option value="旅費交通費">旅費交通費（電車・タクシー・ガソリンなど）</option>
                 <option value="広告宣伝費">広告宣伝費（SNS広告・チラシ・PR費など）</option>
                 <option value="衣装・美容費">衣装・美容費（衣装・コスメ・ヘアメイクなど）</option>
                 <option value="機材・設備費">機材・設備費（PC・カメラ・照明・配信機材など）</option>
                 <option value="新聞図書費">新聞図書費（書籍・雑誌・サブスクなど）</option>
                 <option value="会議費">会議費 📋 打合せ・商談が主目的の飲食</option>
-                <option value="その他">その他（上記に当てはまらないもの）</option>
+                <option value="支払手数料">支払手数料</option>
+              <option value="その他">その他（上記に当てはまらないもの）</option>
               </select>
             </div>
           </div>
@@ -1747,7 +1749,8 @@ const CAT_BADGE_STYLE = {
   '家賃':       'background:rgba(248,113,113,0.15);color:var(--red)',
   '水道光熱費':     'background:rgba(245,158,11,0.15);color:#d97706',
   '通信費':     'background:rgba(34,211,238,0.15);color:#22d3ee',
-  '交通費':     'background:rgba(52,211,153,0.15);color:var(--green)',
+  '旅費交通費': 'background:rgba(52,211,153,0.15);color:var(--green)',
+  '支払手数料': 'background:rgba(148,163,184,0.15);color:#94a3b8',
   '広告宣伝費': 'background:rgba(244,114,182,0.15);color:#f472b6',
   '衣装・美容費':'background:rgba(124,92,252,0.15);color:var(--accent2)',
   '機材・設備費':'background:rgba(99,102,241,0.15);color:#818cf8',
@@ -2107,7 +2110,7 @@ function selectMonth(y, m) {
 
 
 // ===== AI レシート読み込み =====
-const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','その他'];
+const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','その他'];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
 const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
 let receiptResults = [];
@@ -2233,7 +2236,7 @@ async function readReceiptFile(file) {
    - レシートに記載されている**全ての商品名・品目名を「・」区切りで列挙**してください。
    - AIが独自に「ほか」「など」で省略しないでください。
    - 【略称補完ルール】以下の勘定科目に該当する場合のみ、略称を「略称（補完した正式名称）」の形式で補完し、複数個購入は末尾に「×N個」を付けてください。
-     対象科目：消耗品費・機材・設備費・衣装・美容費・新聞図書費・交通費・広告宣伝費
+     対象科目：消耗品費・機材・設備費・衣装・美容費・新聞図書費・旅費交通費・広告宣伝費
      例：「ジョキンウェット カエ（除菌ウェットシート詰め替え）×3個」
    - 【補完しない科目】水道光熱費・通信費・家賃・外注費・会議費・接待交際費はnameルールが別途固定されているため、略称補完・個数付記は行わないでください。
    - 例（良い）：「ジョキンウェット カエ（除菌ウェットシート詰め替え）×3個」「手巻おにぎり辛子明太子・コカーコーラ500ml」「50円切手（非課税・通信費）」
