@@ -6074,12 +6074,25 @@ function calcManagerReward(y, m) {
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
-  const totalRef = sales.reduce((s,x) => {
-    const c = getCaster(x.casterId); if (!c?.refId) return s;
-    const ref = getReferrer(c.refId);
-    const rw  = calcReward(coinToYen(x.coins), c.rate);
-    return s + calcRefTotal(x.coins, rw, ref).total;
-  }, 0);
+  // 紹介料：同日コイン合計→1回計算（紹介者報告書と同じ方式）
+  const totalRef = (() => {
+    // 配信者×日付でコインを合計
+    const groupMap = {};
+    sales.forEach(x => {
+      const c = getCaster(x.casterId);
+      if (!c?.refId) return;
+      const key = x.casterId + '_' + x.date;
+      if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
+      groupMap[key].coins += x.coins;
+    });
+    return Object.values(groupMap).reduce((s, g) => {
+      const c = getCaster(g.casterId);
+      if (!c?.refId) return s;
+      const ref = getReferrer(c.refId);
+      const rw = calcReward(coinToYen(g.coins), c.rate);
+      return s + calcRefTotal(g.coins, rw, ref).total;
+    }, 0);
+  })();
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
   const totalExpForMgr = exps.reduce((s,e) => e.excludeManager ? s : s + e.amount, 0);
   const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
