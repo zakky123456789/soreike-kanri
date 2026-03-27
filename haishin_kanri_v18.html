@@ -3986,9 +3986,9 @@ function renderSales() {
   const dailyPays = dailyPaysOfMonth(y, m);
   const nextM = m+1>12?1:m+1; const nextY = m+1>12?y+1:y;
   const nextNextM = nextM+1>12?1:nextM+1; const nextNextY = nextM+1>12?nextY+1:nextY;
-  document.getElementById('settlement-table').innerHTML = state.casters.map(c => {
+  const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
-    if (cSales.length === 0) return '';
+    if (cSales.length === 0) return null;
     const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
     const cDailyPays = dailyPays.filter(d => d.casterId === c.id);
     const totalDailyAmt = cDailyPays.reduce((s,d) => s + d.amount, 0);
@@ -3997,25 +3997,47 @@ function renderSales() {
     const remaining = totalReward - totalDailyAmt;
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
-    // 後払い登録済みか確認
     const existingMep = state.monthEndPays.find(p => p.casterId === c.id && p.targetY === y && p.targetM === m);
     const mepBtn = remaining > 0
       ? existingMep
         ? `<button class="btn btn-sm" style="background:var(--green);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">✏️ 編集</button>`
         : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 後払登録</button>`
       : '<span style="color:var(--muted);font-size:11px">-</span>';
-    return `<tr>
-      <td><strong>${c.name}</strong></td>
-      <td class="num" style="color:var(--red)">${yen(totalReward)}</td>
-      <td class="num" style="color:var(--yellow)">${totalDailyAmt>0?yen(totalDailyAmt):'-'}</td>
-      <td class="num" style="color:var(--green);font-weight:600">${totalDailyTransfer>0?yen(totalDailyTransfer):'-'}</td>
-      <td class="num" style="color:var(--yellow)">${totalDailySrc>0?yen(totalDailySrc):'-'}</td>
-      <td class="num" style="color:var(--accent)">${yen(remaining>0?remaining:0)}</td>
-      <td class="num" style="color:var(--yellow)">${yen(remainingSrc)}</td>
-      <td class="num" style="color:var(--green);font-weight:700">${yen(transfer>0?transfer:0)}</td>
-      <td style="text-align:center">${mepBtn}</td>
-    </tr>`;
-  }).filter(Boolean).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+    return { totalReward, totalDailyAmt, totalDailyTransfer, totalDailySrc, remaining, remainingSrc, transfer, mepBtn, name: c.name };
+  }).filter(Boolean);
+
+  // 合計行の計算
+  const sumReward       = settlementRows.reduce((s,r) => s + r.totalReward, 0);
+  const sumDailyAmt     = settlementRows.reduce((s,r) => s + r.totalDailyAmt, 0);
+  const sumDailyTransfer= settlementRows.reduce((s,r) => s + r.totalDailyTransfer, 0);
+  const sumDailySrc     = settlementRows.reduce((s,r) => s + r.totalDailySrc, 0);
+  const sumRemaining    = settlementRows.reduce((s,r) => s + (r.remaining > 0 ? r.remaining : 0), 0);
+  const sumRemainingSrc = settlementRows.reduce((s,r) => s + r.remainingSrc, 0);
+  const sumTransfer     = settlementRows.reduce((s,r) => s + (r.transfer > 0 ? r.transfer : 0), 0);
+
+  const totalRow = settlementRows.length > 1 ? `<tr style="background:var(--surface2);font-weight:700;border-top:2px solid var(--border)">
+    <td><strong>合計</strong></td>
+    <td class="num" style="color:var(--red)">${yen(sumReward)}</td>
+    <td class="num" style="color:var(--yellow)">${sumDailyAmt>0?yen(sumDailyAmt):'-'}</td>
+    <td class="num" style="color:var(--green)">${sumDailyTransfer>0?yen(sumDailyTransfer):'-'}</td>
+    <td class="num" style="color:var(--yellow)">${sumDailySrc>0?yen(sumDailySrc):'-'}</td>
+    <td class="num" style="color:var(--accent)">${yen(sumRemaining)}</td>
+    <td class="num" style="color:var(--yellow)">${yen(sumRemainingSrc)}</td>
+    <td class="num" style="color:var(--green)">${yen(sumTransfer)}</td>
+    <td></td>
+  </tr>` : '';
+
+  document.getElementById('settlement-table').innerHTML = settlementRows.map(r => `<tr>
+    <td><strong>${r.name}</strong></td>
+    <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
+    <td class="num" style="color:var(--yellow)">${r.totalDailyAmt>0?yen(r.totalDailyAmt):'-'}</td>
+    <td class="num" style="color:var(--green);font-weight:600">${r.totalDailyTransfer>0?yen(r.totalDailyTransfer):'-'}</td>
+    <td class="num" style="color:var(--yellow)">${r.totalDailySrc>0?yen(r.totalDailySrc):'-'}</td>
+    <td class="num" style="color:var(--accent)">${yen(r.remaining>0?r.remaining:0)}</td>
+    <td class="num" style="color:var(--yellow)">${yen(r.remainingSrc)}</td>
+    <td class="num" style="color:var(--green);font-weight:700">${yen(r.transfer>0?r.transfer:0)}</td>
+    <td style="text-align:center">${r.mepBtn}</td>
+  </tr>`).join('') + totalRow || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
 
   // 前払い明細：対象月が表示中の月に該当するものを表示
   const dpForTable = [...state.dailyPays]
