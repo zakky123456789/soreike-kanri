@@ -5660,30 +5660,20 @@ function renderRefReport() {
     const totalCoins = cSales.reduce((s,x) => s + x.coins, 0);
     // 報酬：1件ずつ計算して合計（配信者支払い用）
     const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    // 紹介料：2月以前は同日コイン合計→1回計算、3月以降はコイン合計→1回計算
-    // 調整レコードも含めて計算
+    // 紹介料：全期間で同日コイン合計→1回計算（調整レコードも含む）
     let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
-    if (y < 2026 || (y === 2026 && m <= 2)) {
-      // 1月・2月：同日ごとにコインを合計して1回計算（元々1日1レコードだった期間）
-      const dateMap = {};
-      cSales.forEach(x => {
-        if (!dateMap[x.date]) dateMap[x.date] = 0;
-        dateMap[x.date] += x.coins;
-      });
-      Object.values(dateMap).forEach(dayCoins => {
-        const rw = calcReward(coinToYen(dayCoins), c.rate);
-        const rc = calcRefTotal(dayCoins, rw, ref);
-        r1Sum += rc.r1;
-        r2Sum += rc.r2;
-        refTotalSum += rc.total;
-      });
-    } else {
-      // 3月以降：コイン合計に対して1回計算
-      const totalCoinsForRef = cSales.reduce((s,x) => s + x.coins, 0);
-      const totalRewardForRef = calcReward(coinToYen(totalCoinsForRef), c.rate);
-      const rcTotal = calcRefTotal(totalCoinsForRef, totalRewardForRef, ref);
-      r1Sum = rcTotal.r1; r2Sum = rcTotal.r2; refTotalSum = rcTotal.total;
-    }
+    const dateMap = {};
+    cSales.forEach(x => {
+      if (!dateMap[x.date]) dateMap[x.date] = 0;
+      dateMap[x.date] += x.coins;
+    });
+    Object.values(dateMap).forEach(dayCoins => {
+      const rw = calcReward(coinToYen(dayCoins), c.rate);
+      const rc = calcRefTotal(dayCoins, rw, ref);
+      r1Sum += rc.r1;
+      r2Sum += rc.r2;
+      refTotalSum += rc.total;
+    });
     totalR1 += r1Sum;
     totalR2 += r2Sum;
     totalRefSum += refTotalSum;
