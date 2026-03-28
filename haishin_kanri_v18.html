@@ -2695,20 +2695,27 @@ function renderDashboard() {
     const tSales = salesOfMonth(ty, tm);
     const tDailyPays = dailyPaysByPayMonth(ty, tm);
 
-    // 前払い分：支払月の翌月10日
-    const dailySrc = tDailyPays.reduce((s,d) => s + d.srcTax, 0);
-    if (dailySrc > 0) {
-      const dlM = tm+1>12?1:tm+1; const dlY = tm+1>12?ty+1:ty;
-      const deadline = new Date(dlY, dlM-1, 10);
-      // 納付期限が表示月内のものだけアラート
-      if (deadline.getFullYear() === y && deadline.getMonth()+1 === m) {
-        const key = `dp-${ty}-${String(tm).padStart(2,'0')}`;
-        const paid = state.taxPaid[key];
-        const days = Math.ceil((deadline - today) / 86400000);
-        if (paid) alerts += `<div class="alert alert-green">✅ ${ty}年${tm}月分【前払い】源泉税 納付済</div>`;
-        else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${ty}年${tm}月分【前払い】源泉税 ${yen(dailySrc)} 期限切れ！</div>`;
-        else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${ty}年${tm}月分【前払い】源泉税 ${yen(dailySrc)} 残り${days}日</div>`;
-      }
+    // 前払い分：支払月の翌月10日（対象月ごとに分割）
+    const dlM2 = tm+1>12?1:tm+1; const dlY2 = tm+1>12?ty+1:ty;
+    const deadline_dp = new Date(dlY2, dlM2-1, 10);
+    if (deadline_dp.getFullYear() === y && deadline_dp.getMonth()+1 === m) {
+      const dpByTarget2 = {};
+      tDailyPays.forEach(d => {
+        const tk = `${d.targetY ?? d.y}-${String(d.targetM ?? d.m).padStart(2,'0')}`;
+        if (!dpByTarget2[tk]) dpByTarget2[tk] = { targetY: d.targetY ?? d.y, targetM: d.targetM ?? d.m, srcTax: 0 };
+        dpByTarget2[tk].srcTax += d.srcTax;
+      });
+      Object.values(dpByTarget2).forEach(g => {
+        if (g.srcTax > 0) {
+          const key = `dp-${ty}-${String(tm).padStart(2,'0')}-t${g.targetY}-${String(g.targetM).padStart(2,'0')}`;
+          const paid = state.taxPaid[key];
+          const days = Math.ceil((deadline_dp - today) / 86400000);
+          const lbl = `${g.targetY}年${g.targetM}月配信分 前払い【${tm}月支払い】`;
+          if (paid) alerts += `<div class="alert alert-green">✅ ${lbl} 源泉税 納付済</div>`;
+          else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${lbl} 源泉税 ${yen(g.srcTax)} 期限切れ！</div>`;
+          else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${lbl} 源泉税 ${yen(g.srcTax)} 残り${days}日</div>`;
+        }
+      });
     }
 
     // 月末精算分：翌々月10日
@@ -2730,9 +2737,11 @@ function renderDashboard() {
         const key = `se-${ty}-${String(tm).padStart(2,'0')}`;
         const paid = state.taxPaid[key];
         const days = Math.ceil((deadline - today) / 86400000);
-        if (paid) alerts += `<div class="alert alert-green">✅ ${ty}年${tm}月分【月末精算】源泉税 納付済</div>`;
-        else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${ty}年${tm}月分【月末精算】源泉税 ${yen(settleSrc)} 期限切れ！</div>`;
-        else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${ty}年${tm}月分【月末精算】源泉税 ${yen(settleSrc)} 残り${days}日</div>`;
+        const pm = tm+1>12?1:tm+1; const py = tm+1>12?ty+1:ty;
+        const lbl2 = `${ty}年${tm}月配信分 月末精算【${pm}月支払い】`;
+        if (paid) alerts += `<div class="alert alert-green">✅ ${lbl2} 源泉税 納付済</div>`;
+        else if (days <= 0) alerts += `<div class="alert alert-red">🚨 ${lbl2} 源泉税 ${yen(settleSrc)} 期限切れ！</div>`;
+        else if (days <= 5) alerts += `<div class="alert alert-yellow">⚠️ ${lbl2} 源泉税 ${yen(settleSrc)} 残り${days}日</div>`;
       }
     }
   }
@@ -4926,15 +4935,22 @@ function renderTax() {
     const sales = salesOfMonth(y, m);
     const dailyPays = dailyPaysByPayMonth(y, m);
 
-    // 前払い分：支払月の翌月10日
-    const dailySrc = dailyPays.reduce((s,d) => s + d.srcTax, 0);
-    if (dailySrc > 0) {
-      const dlM = m+1>12?1:m+1; const dlY = m+1>12?y+1:y;
-      const key = `dp-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月分【前払い】`, dailySrc, new Date(dlY, dlM-1, 10), key, today));
-    }
+    // 前払い分：支払月の翌月10日（対象月ごとに分割表示）
+    const dlM = m+1>12?1:m+1; const dlY = m+1>12?y+1:y;
+    const dpByTarget = {};
+    dailyPays.forEach(d => {
+      const tk = `${d.targetY ?? d.y}-${String(d.targetM ?? d.m).padStart(2,'0')}`;
+      if (!dpByTarget[tk]) dpByTarget[tk] = { targetY: d.targetY ?? d.y, targetM: d.targetM ?? d.m, srcTax: 0 };
+      dpByTarget[tk].srcTax += d.srcTax;
+    });
+    Object.values(dpByTarget).forEach(g => {
+      if (g.srcTax > 0) {
+        const key = `dp-${y}-${String(m).padStart(2,'0')}-t${g.targetY}-${String(g.targetM).padStart(2,'0')}`;
+        rows.push(makeTaxRow(`${g.targetY}年${g.targetM}月配信分　前払い【${m}月支払い】`, g.srcTax, new Date(dlY, dlM-1, 10), key, today));
+      }
+    });
 
-    // 月末払い分：翌月22前払い→翌々月10日が納付期限
+    // 月末払い分：翌々月10日が納付期限
     // 配信者ごとに「月間報酬 − 前払い累計」の残額から源泉税を計算して合算（月末精算サマリーと同一ロジック）
     const dpOfMonth = dailyPaysOfMonth(y, m);
     let settleSrc = 0;
@@ -4950,7 +4966,7 @@ function renderTax() {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
       const key = `se-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月分【月末精算】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
+      rows.push(makeTaxRow(`${y}年${m}月配信分　月末精算【${pm}月支払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
     }
   }
 
