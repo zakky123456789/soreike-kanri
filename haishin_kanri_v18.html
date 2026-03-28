@@ -1502,7 +1502,8 @@ async function loadFromDB() {
       state.sales = salesR.data.map(r => ({
         id: r.id, casterId: r.caster_id, coins: Number(r.coins),
         date: r.date, note: r.note, y: r.y, m: r.m, rate: r.rate ? Number(r.rate) : null,
-        type: r.type || 'normal'
+        type: r.type || 'normal',
+        excludeReport: r.exclude_report || false
       }));
     }
     if (expensesR.data?.length > 0) {
@@ -3462,9 +3463,9 @@ async function addSale() {
   const type = document.getElementById('s-type')?.value || 'normal';
   if (!casterId || isNaN(coins) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newSale = { id: state.nextId++, casterId, coins, date, note, y, m, rate, type };
+  const newSale = { id: state.nextId++, casterId, coins, date, note, y, m, rate, type, excludeReport: false };
   state.sales.push(newSale);
-  await dbSave('sales', { id: newSale.id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type });
+  await dbSave('sales', { id: newSale.id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type, exclude_report: false });
   document.getElementById('s-coins').value = '';
   document.getElementById('s-note').value = '';
   document.getElementById('s-rate').value = '';
@@ -3564,6 +3565,12 @@ function sgeRenderRow(container, s, num) {
     <div style="margin-top:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
       <input type="text" class="form-control sge-note" value="${s.note||''}" placeholder="任意" style="width:100%">
+    </div>
+    <div style="margin-top:8px">
+      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
+        <input type="checkbox" class="sge-exclude-report" ${s.excludeReport?'checked':''} style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
+        <span>レポート除外（平均値の計算から除外）</span>
+      </label>
     </div>`;
   container.appendChild(div);
 }
@@ -3603,6 +3610,12 @@ function sgeAddRow() {
     <div style="margin-top:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
       <input type="text" class="form-control sge-note" placeholder="任意" style="width:100%">
+    </div>
+    <div style="margin-top:8px">
+      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
+        <input type="checkbox" class="sge-exclude-report" style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
+        <span>レポート除外（平均値の計算から除外）</span>
+      </label>
     </div>`;
   container.appendChild(div);
   // 回目ラベルを振り直す
@@ -3670,16 +3683,18 @@ async function saveSaleGroupEdit() {
     if (isNew) {
       const newId = state.nextId++;
       const type = row.querySelector('.sge-type')?.value || 'normal';
-      const rec = { id: newId, casterId, coins, date, note, y, m, rate, type };
+      const excludeReport = row.querySelector('.sge-exclude-report')?.checked || false;
+      const rec = { id: newId, casterId, coins, date, note, y, m, rate, type, excludeReport };
       state.sales.push(rec);
-      await dbSaveAsync('sales', { id: newId, caster_id: casterId, coins, date, note, y, m, rate, type });
+      await dbSaveAsync('sales', { id: newId, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport });
     } else {
       const id = parseInt(row.dataset.saleId);
       const type = row.querySelector('.sge-type')?.value || state.sales.find(s=>s.id===id)?.type || 'normal';
+      const excludeReport = row.querySelector('.sge-exclude-report')?.checked || false;
       const idx = state.sales.findIndex(s => s.id === id);
       if (idx !== -1) {
-        state.sales[idx] = { ...state.sales[idx], coins, rate, note, type };
-        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type });
+        state.sales[idx] = { ...state.sales[idx], coins, rate, note, type, excludeReport };
+        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport });
       }
     }
   }
@@ -3721,8 +3736,9 @@ async function saveSaleEdit() {
   const idx = state.sales.findIndex(s => s.id === id);
   if (idx !== -1) {
     const type = state.sales[idx].type || 'normal';
-    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type };
-    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type });
+    const excludeReport = state.sales[idx].excludeReport || false;
+    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type, excludeReport };
+    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type, exclude_report: excludeReport });
   }
   closeSaleEditModal();
   renderAll();
@@ -3731,6 +3747,15 @@ async function saveSaleEdit() {
 async function deleteSale(id) {
   state.sales = state.sales.filter(s => s.id !== id);
   await dbDelete('sales', id);
+  renderAll();
+}
+
+async function toggleExcludeReport(id) {
+  const idx = state.sales.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  const s = state.sales[idx];
+  s.excludeReport = !s.excludeReport;
+  await dbSave('sales', { id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport });
   renderAll();
 }
 
@@ -4245,6 +4270,7 @@ function renderSales() {
         <span style="color:var(--muted);font-size:12px;margin-right:6px">${g.date}</span>
         <strong>${c?.name||'?'}</strong>
         ${g.sales.length===1 && g.sales[0].type==='adjust' ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">調整</span>` : ''}
+        ${g.sales.length===1 && g.sales[0].excludeReport ? `<span style="font-size:10px;background:rgba(251,191,36,0.2);color:var(--yellow);border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">レポート除外</span>` : ''}
       </td>
       <td>
         ${isMulti
@@ -4266,6 +4292,7 @@ function renderSales() {
       <td class="num" style="color:var(--green);${fw}">${hasRate?yen(sumOffice):'-'}</td>
       <td style="display:flex;gap:6px;flex-wrap:nowrap">
         <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>
+        ${!isMulti ? `<button class="btn btn-sm" style="background:${g.sales[0].excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${g.sales[0].excludeReport?'var(--yellow)':'var(--border)'};color:${g.sales[0].excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${g.sales[0].id})" title="レポートの平均値計算から除外">${g.sales[0].excludeReport?'📊除外中':'📊'}</button>` : ''}
         ${!isMulti ? `<button class="btn btn-danger btn-sm" onclick="deleteSale(${g.sales[0].id})">削除</button>` : ''}
       </td>
     </tr>`);
@@ -4286,6 +4313,7 @@ function renderSales() {
             <span style="font-size:11px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-weight:600">${idx+1}回目</span>
 
             ${(s.type||'normal')==='adjust'?'<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">調整</span>':''}
+            ${s.excludeReport?'<span style="font-size:10px;background:rgba(251,191,36,0.2);color:var(--yellow);border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">レポート除外</span>':''}
           </td>
           <td><span class="badge badge-blue">${c?.rate||0}%</span></td>
           <td class="num"><span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}">${coins(s.coins)}</span></td>
@@ -5578,11 +5606,14 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     if (cSales.length === 0) return null;
     const totalCoins   = cSales.reduce((s,x) => s + x.coins, 0);
     const totalReward  = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    const normalSales  = cSales.filter(s => (s.type||'normal') === 'normal');
+    const normalSales  = cSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport);
     const activeDays   = new Set(normalSales.map(s => s.date)).size;
-    const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
-    const avgCoinPerLive = normalSales.length > 0 ? Math.floor(totalCoins / normalSales.length) : 0;
-    return { c, totalCoins, totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: normalSales.length, activeDays };
+    const normalCoins  = normalSales.reduce((s,x) => s + x.coins, 0);
+    const normalReward = normalSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const avgCoinPerDay  = activeDays > 0 ? Math.floor(normalCoins / activeDays) : 0;
+    const avgCoinPerLive = normalSales.length > 0 ? Math.floor(normalCoins / normalSales.length) : 0;
+    const allNormalCount = cSales.filter(s => (s.type||'normal') === 'normal').length;
+    return { c, totalCoins: normalCoins, totalReward: normalReward, allCoins: totalCoins, allReward: totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: normalSales.length, allCount: allNormalCount, activeDays };
   }).filter(Boolean);
 
   if (rows.length === 0) return `<div style="color:var(--muted);padding:20px;text-align:center">この期間のデータはありません</div>`;
@@ -5597,35 +5628,42 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
       <th class="num" style="width:20%">1日あたり<br>平均コイン</th>
       <th class="num" style="width:20%">1配信あたり<br>平均コイン</th>
     </tr></thead><tbody>
-    ${rows.map(r => `<tr>
+    ${rows.map(r => {
+      const hasExcl = r.allCount > r.liveCount;
+      return `<tr>
       <td><strong>${r.c.name}</strong></td>
-      <td class="num" style="color:var(--muted)">${r.liveCount}回</td>
-      <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span></td>
-      <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
+      <td class="num" style="color:var(--muted)">${r.liveCount}回${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${r.allCount}回)</span>`:''}</td>
+      <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span>${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${fmt(r.allCoins)}C)</span>`:''}</td>
+      <td class="num" style="color:var(--red)">${yen(r.totalReward)}${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${yen(r.allReward)})</span>`:''}</td>
       <td class="num" style="color:var(--accent)">${fmt(r.avgCoinPerDay)}C</td>
       <td class="num" style="color:var(--accent2)">${fmt(r.avgCoinPerLive)}C</td>
-    </tr>`).join('')}
+    </tr>`;}).join('')}
     ${rows.length > 1 ? (() => {
       const tot = rows.reduce((s,r)=>({
         totalCoins: s.totalCoins+r.totalCoins,
         totalReward: s.totalReward+r.totalReward,
-        liveCount: s.liveCount+r.liveCount
-      }), {totalCoins:0,totalReward:0,liveCount:0});
-      const totActiveDays = new Set(filteredSales.map(s => s.date)).size;
+        liveCount: s.liveCount+r.liveCount,
+        allCoins: s.allCoins+r.allCoins,
+        allReward: s.allReward+r.allReward,
+        allCount: s.allCount+r.allCount
+      }), {totalCoins:0,totalReward:0,liveCount:0,allCoins:0,allReward:0,allCount:0});
+      const hasExcl = tot.allCount > tot.liveCount;
+      const totActiveDays = new Set(filteredSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport).map(s => s.date)).size;
       const avgDay  = totActiveDays > 0 ? Math.floor(tot.totalCoins / totActiveDays) : 0;
       const avgLive = tot.liveCount > 0 ? Math.floor(tot.totalCoins / tot.liveCount) : 0;
       return `<tr style="background:var(--surface2);font-weight:700">
         <td>合計</td>
-        <td class="num" style="color:var(--muted)">${tot.liveCount}回</td>
-        <td class="num"><span class="coin-badge">${fmt(tot.totalCoins)}C</span></td>
-        <td class="num" style="color:var(--red)">${yen(tot.totalReward)}</td>
+        <td class="num" style="color:var(--muted)">${tot.liveCount}回${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${tot.allCount}回)</span>`:''}</td>
+        <td class="num"><span class="coin-badge">${fmt(tot.totalCoins)}C</span>${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${fmt(tot.allCoins)}C)</span>`:''}</td>
+        <td class="num" style="color:var(--red)">${yen(tot.totalReward)}${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${yen(tot.allReward)})</span>`:''}</td>
         <td class="num" style="color:var(--accent)">${fmt(avgDay)}C</td>
         <td class="num" style="color:var(--accent2)">${fmt(avgLive)}C</td>
       </tr>`;
     })() : ''}
     </tbody></table>
     <div style="font-size:11px;color:var(--muted);padding:8px 12px">
-      ※ 1日あたり平均コイン：配信した日の日数で割った値　／　1配信あたり平均コイン：1回の配信データで割った値
+      ※ 1日あたり平均コイン：配信した日の日数で割った値　／　1配信あたり平均コイン：1回の配信データで割った値<br>
+      ※ <span style="color:var(--yellow)">黄色の括弧内</span>はレポート除外分を含む元の値
     </div>
   </div>`;
 }
@@ -5638,21 +5676,23 @@ function buildCasterPeriodStatsHTML(casterId) {
   if (filteredSales.length === 0) return `<div style="color:var(--muted);padding:16px;background:var(--surface2);border-radius:8px;margin-bottom:20px;text-align:center">この期間のデータはありません（${label}）</div>`;
   const totalCoins   = filteredSales.reduce((s,x) => s + x.coins, 0);
   const totalReward  = filteredSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-  const normalSales  = filteredSales.filter(s => (s.type||'normal') === 'normal');
+  const normalSales  = filteredSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport);
   const activeDays   = new Set(normalSales.map(s => s.date)).size;
-  const avgCoinPerDay  = activeDays > 0 ? Math.floor(totalCoins / activeDays) : 0;
-  const avgCoinPerLive = normalSales.length > 0 ? Math.floor(totalCoins / normalSales.length) : 0;
+  const normalCoins  = normalSales.reduce((s,x) => s + x.coins, 0);
+  const normalReward = normalSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+  const avgCoinPerDay  = activeDays > 0 ? Math.floor(normalCoins / activeDays) : 0;
+  const avgCoinPerLive = normalSales.length > 0 ? Math.floor(normalCoins / normalSales.length) : 0;
 
   return `<div style="margin-bottom:20px">
     <div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:10px">📊 ${label} のパフォーマンス</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
-      <div class="card"><div class="card-label">配信回数</div><div class="card-value" style="color:var(--muted)">${filteredSales.length}回</div></div>
-      <div class="card"><div class="card-label">合計コイン</div><div class="card-value blue">${fmt(totalCoins)}C</div></div>
-      <div class="card"><div class="card-label">合計金額</div><div class="card-value red">${yen(totalReward)}</div></div>
+      <div class="card"><div class="card-label">配信回数</div><div class="card-value" style="color:var(--muted)">${normalSales.length}回</div></div>
+      <div class="card"><div class="card-label">合計コイン</div><div class="card-value blue">${fmt(normalCoins)}C</div></div>
+      <div class="card"><div class="card-label">合計金額</div><div class="card-value red">${yen(normalReward)}</div></div>
       <div class="card" style="grid-column:span 1"><div class="card-label">1日あたり平均</div><div class="card-value" style="color:var(--accent)">${fmt(avgCoinPerDay)}C</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-      <div class="card"><div class="card-label">1配信あたり平均コイン</div><div class="card-value" style="color:var(--accent2)">${fmt(avgCoinPerLive)}C</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${filteredSales.length}配信の平均</div></div>
+      <div class="card"><div class="card-label">1配信あたり平均コイン</div><div class="card-value" style="color:var(--accent2)">${fmt(avgCoinPerLive)}C</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${normalSales.length}配信の平均</div></div>
       <div class="card"><div class="card-label">配信日数</div><div class="card-value" style="color:var(--muted)">${activeDays}日</div></div>
     </div>
   </div>`;
