@@ -1053,6 +1053,35 @@
         </div>
         <div id="furikae-summary"></div>
       </div>
+
+      <!-- 小口現金管理 -->
+      <div class="table-wrap" style="margin-top:16px">
+        <div class="table-header" style="cursor:pointer" onclick="toggleForm('petty-cash-section', this)">
+          <div class="table-title">💰 小口現金管理</div>
+          <span id="petty-cash-section-icon" style="color:var(--muted);font-size:12px">▼ 開く</span>
+        </div>
+        <div id="petty-cash-section" style="display:none">
+          <div style="padding:16px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:600;color:var(--text)">現在の残高：<span id="pc-balance" style="font-size:18px;font-weight:700;color:var(--green)">¥0</span></div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">補充 / 初期残高登録</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label>日付</label><input id="pc-date" type="date"></div>
+              <div class="form-group"><label>金額</label><input id="pc-amount" type="number" placeholder="例：50000"></div>
+              <div class="form-group"><label>種別</label>
+                <select id="pc-type">
+                  <option value="replenish">補充（法人口座→管理人振込）</option>
+                  <option value="initial">初期残高</option>
+                </select>
+              </div>
+              <div class="form-group"><label>メモ</label><input id="pc-note" placeholder="例：3月分補充"></div>
+            </div>
+            <button class="btn btn-primary" onclick="addPettyCash()" style="margin-top:8px">＋ 登録</button>
+          </div>
+          <div id="pc-history"></div>
+        </div>
+      </div>
     </div>
 
     <!-- PL -->
@@ -1437,7 +1466,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1448,6 +1477,7 @@ async function loadFromDB() {
       sb.from('manager').select('*').limit(1),
       fetchAll('receipts', 'id'),
       fetchAll('month_end_pays', 'id'),
+      fetchAll('petty_cash', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1526,6 +1556,12 @@ async function loadFromDB() {
         targetY: r.target_y, targetM: r.target_m, note: r.note||''
       }));
     }
+    if (pcR.data?.length > 0) {
+      state.pettyCash = pcR.data.map(r => ({
+        id: r.id, date: r.date, amount: Number(r.amount),
+        type: r.type || 'replenish', note: r.note || '', y: r.y, m: r.m
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -1536,6 +1572,7 @@ async function loadFromDB() {
       ...state.fxRecords.map(r => r.id),
       ...state.receipts.map(r => r.id),
       ...state.monthEndPays.map(r => r.id),
+      ...state.pettyCash.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -1641,6 +1678,7 @@ let state = {
   monthEndPays: [], // 後払いデータ
   fxRecords: [], // 両替記録
   receipts: [], // 領収書
+  pettyCash: [], // 小口現金
   nextId: 300,
 };
 
@@ -2579,7 +2617,7 @@ async function addCheckedReceipts() {
 
 // ===== RENDER ALL =====
 function renderAll() {
-  renderDashboard(); renderCasters(); renderReferrers(); renderManager();
+  renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
   renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects();
 }
 
@@ -2622,6 +2660,7 @@ function renderDashboard() {
     <div class="card"><div class="card-label">紹介料合計</div><div class="card-value red">${yen(totalRef)}</div></div>
     <div class="card"><div class="card-label">経費合計</div><div class="card-value red">${yen(totalExp)}</div></div>
     <div class="card"><div class="card-label">営業利益（概算）</div><div class="card-value ${profit>=0?'green':'red'}">${yen(profit)}</div></div>
+    <div class="card"><div class="card-label">💰 小口現金残高</div><div class="card-value ${getPettyCashBalance()>=0?'green':'red'}">${yen(getPettyCashBalance())}</div></div>
   `;
 
   // 配信者ごとにコイン・売上を合算してからTOP5
@@ -4473,6 +4512,108 @@ function setExpSort(key) {
   if (expSort.key === key) { expSort.dir *= -1; } else { expSort.key = key; expSort.dir = 1; }
   renderExpenses();
 }
+
+// ===== 小口現金管理 =====
+function getPettyCashBalance() {
+  const totalReplenish = state.pettyCash.reduce((s, p) => s + p.amount, 0);
+  const totalSpent = state.expenses
+    .filter(e => e.method === '小口現金')
+    .reduce((s, e) => s + e.amount, 0);
+  return totalReplenish - totalSpent;
+}
+
+async function addPettyCash() {
+  const date = document.getElementById('pc-date').value;
+  const amount = parseInt(document.getElementById('pc-amount').value);
+  const type = document.getElementById('pc-type').value;
+  const note = document.getElementById('pc-note').value;
+  if (!date || isNaN(amount) || amount <= 0) { alert('日付と金額を入力してください'); return; }
+  const [y, m] = date.split('-').map(Number);
+  const newPc = { id: state.nextId++, date, amount, type, note, y, m };
+  state.pettyCash.push(newPc);
+  await dbSave('petty_cash', { id: newPc.id, date, amount, type, note, y, m });
+  document.getElementById('pc-date').value = '';
+  document.getElementById('pc-amount').value = '';
+  document.getElementById('pc-note').value = '';
+  document.getElementById('pc-type').value = 'replenish';
+  renderAll();
+}
+
+async function deletePettyCash(id) {
+  if (!confirm('この記録を削除しますか？')) return;
+  await dbDelete('petty_cash', id);
+  state.pettyCash = state.pettyCash.filter(p => p.id !== id);
+  renderAll();
+}
+
+function renderPettyCash() {
+  const balanceEl = document.getElementById('pc-balance');
+  const historyEl = document.getElementById('pc-history');
+  if (!balanceEl || !historyEl) return;
+
+  const balance = getPettyCashBalance();
+  balanceEl.textContent = yen(balance);
+  balanceEl.style.color = balance >= 0 ? 'var(--green)' : 'var(--red)';
+
+  // 履歴を作成：補充 + 小口現金経費を日付順に統合表示
+  const entries = [];
+
+  // 補充・初期残高
+  state.pettyCash.forEach(p => {
+    entries.push({
+      date: p.date, label: p.type === 'initial' ? '初期残高' : '補充',
+      amount: p.amount, isIncome: true, note: p.note, id: p.id, canDelete: true,
+      badge: p.type === 'initial' ? 'initial' : 'replenish'
+    });
+  });
+
+  // 小口現金で支払った経費
+  state.expenses.filter(e => e.method === '小口現金').forEach(e => {
+    entries.push({
+      date: e.date, label: `${e.cat}：${e.name}`,
+      amount: e.amount, isIncome: false, note: e.payee || '', id: e.id, canDelete: false,
+      badge: 'expense'
+    });
+  });
+
+  // 日付降順
+  entries.sort((a, b) => b.date.localeCompare(a.date));
+
+  if (entries.length === 0) {
+    historyEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">小口現金の履歴はありません</div>';
+    return;
+  }
+
+  // 残高推移を計算（日付昇順で積算して、各エントリに残高を紐づける）
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  let running = 0;
+  sorted.forEach(e => {
+    if (e.isIncome) running += e.amount;
+    else running -= e.amount;
+    e.runningBalance = running;
+  });
+
+  historyEl.innerHTML = `<table><thead><tr>
+    <th>日付</th><th>内容</th><th class="num">入金</th><th class="num">出金</th><th class="num">残高</th><th>メモ</th><th></th>
+  </tr></thead><tbody>${entries.map(e => {
+    const badgeStyle = e.badge === 'initial'
+      ? 'background:rgba(96,165,250,0.15);color:var(--blue);border:1px solid rgba(96,165,250,0.3)'
+      : e.badge === 'replenish'
+      ? 'background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3)'
+      : 'background:rgba(251,191,36,0.15);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)';
+    const badgeLabel = e.badge === 'initial' ? '初期残高' : e.badge === 'replenish' ? '補充' : '支出';
+    return `<tr>
+      <td>${e.date}</td>
+      <td><span style="font-size:11px;padding:1px 6px;border-radius:4px;${badgeStyle};margin-right:6px">${badgeLabel}</span>${e.label}</td>
+      <td class="num" style="color:var(--green)">${e.isIncome ? yen(e.amount) : ''}</td>
+      <td class="num" style="color:var(--red)">${!e.isIncome ? yen(e.amount) : ''}</td>
+      <td class="num" style="color:${e.runningBalance >= 0 ? 'var(--accent)' : 'var(--red)'}; font-weight:600">${yen(e.runningBalance)}</td>
+      <td style="font-size:12px;color:var(--muted)">${e.note || '-'}</td>
+      <td>${e.canDelete ? `<button class="btn btn-danger btn-sm" onclick="deletePettyCash(${e.id})">削除</button>` : ''}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
 
 function renderExpenses() {
   const { y, m } = state;
@@ -6849,6 +6990,9 @@ updateLabels();
 initTheme();
 // Supabase DBからデータロード（ロード完了後にrenderAll）
 loadFromDB();
+// 小口現金の日付デフォルト
+const pcDateEl = document.getElementById('pc-date');
+if (pcDateEl) pcDateEl.value = new Date().toISOString().slice(0, 10);
 </script>
 </body>
 </html>
