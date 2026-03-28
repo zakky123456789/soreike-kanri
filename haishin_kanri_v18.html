@@ -2712,9 +2712,16 @@ function renderDashboard() {
     }
 
     // 月末精算分：翌々月10日
-    const totalRewardSrc = tSales.reduce((s,x) => { const c=getCaster(x.casterId); return s+(c?calcSrcTax(calcReward(coinToYen(x.coins),c.rate)):0); }, 0);
-    const cDailySrc = tDailyPays.reduce((s,d) => s + d.srcTax, 0);
-    const settleSrc = Math.max(0, totalRewardSrc - cDailySrc);
+    const tDpOfMonth = dailyPaysOfMonth(ty, tm);
+    let settleSrc = 0;
+    state.casters.forEach(c => {
+      const cSales = tSales.filter(s => s.casterId === c.id);
+      if (cSales.length === 0) return;
+      const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+      const totalDailyAmt = tDpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
+      const remaining = totalReward - totalDailyAmt;
+      if (remaining > 0) settleSrc += calcSrcTax(remaining);
+    });
     if (settleSrc > 0) {
       const pm = tm+1>12?1:tm+1; const py = tm+1>12?ty+1:ty;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
@@ -4928,9 +4935,17 @@ function renderTax() {
     }
 
     // 月末払い分：翌月22前払い→翌々月10日が納付期限
-    const totalRewardSrc = sales.reduce((s,x) => { const c=getCaster(x.casterId); return s+(c?calcSrcTax(calcReward(coinToYen(x.coins),c.rate)):0); }, 0);
-    const cDailySrc = dailyPays.reduce((s,d) => s + d.srcTax, 0);
-    const settleSrc = Math.max(0, totalRewardSrc - cDailySrc);
+    // 配信者ごとに「月間報酬 − 前払い累計」の残額から源泉税を計算して合算（月末精算サマリーと同一ロジック）
+    const dpOfMonth = dailyPaysOfMonth(y, m);
+    let settleSrc = 0;
+    state.casters.forEach(c => {
+      const cSales = sales.filter(s => s.casterId === c.id);
+      if (cSales.length === 0) return;
+      const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+      const totalDailyAmt = dpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
+      const remaining = totalReward - totalDailyAmt;
+      if (remaining > 0) settleSrc += calcSrcTax(remaining);
+    });
     if (settleSrc > 0) {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
