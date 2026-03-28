@@ -4328,7 +4328,7 @@ function renderSales() {
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
           <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
-          <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
+          <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button><button class="btn btn-sm" style="background:${s.excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${s.excludeReport?'var(--yellow)':'var(--border)'};color:${s.excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${s.id})" title="レポートの平均値計算から除外">${s.excludeReport?'📊除外中':'📊'}</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
         </tr>`);
       });
     }
