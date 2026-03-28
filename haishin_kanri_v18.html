@@ -1058,13 +1058,13 @@
       <div class="table-wrap" style="margin-top:16px">
         <div class="table-header" style="cursor:pointer" onclick="toggleForm('petty-cash-section', this)">
           <div class="table-title">💰 小口現金管理</div>
-          <span id="petty-cash-section-icon" style="color:var(--muted);font-size:12px">▼ 開く</span>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:13px;font-weight:600;color:var(--text)">残高：<span id="pc-balance" style="font-size:16px;font-weight:700;color:var(--green)">¥0</span></span>
+            <span id="petty-cash-section-icon" style="color:var(--muted);font-size:12px">▼ 開く</span>
+          </div>
         </div>
         <div id="petty-cash-section" style="display:none">
           <div style="padding:16px;border-bottom:1px solid var(--border)">
-            <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-              <div style="font-size:13px;font-weight:600;color:var(--text)">現在の残高：<span id="pc-balance" style="font-size:18px;font-weight:700;color:var(--green)">¥0</span></div>
-            </div>
             <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">補充 / 初期残高登録</div>
             <div class="form-grid form-grid-4">
               <div class="form-group"><label>日付</label><input id="pc-date" type="date"></div>
