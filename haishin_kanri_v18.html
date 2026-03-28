@@ -1056,7 +1056,7 @@
 
       <!-- 小口現金管理 -->
       <div class="table-wrap" style="margin-top:16px">
-        <div class="table-header" style="cursor:pointer" onclick="toggleForm('petty-cash-section', this)">
+        <div class="table-header" style="cursor:pointer" onclick="togglePettyCashSection()">
           <div class="table-title">💰 小口現金管理</div>
           <div style="display:flex;align-items:center;gap:12px">
             <span style="font-size:13px;font-weight:600;color:var(--text)">残高：<span id="pc-balance" style="font-size:16px;font-weight:700;color:var(--green)">¥0</span></span>
@@ -4544,6 +4544,15 @@ async function deletePettyCash(id) {
   await dbDelete('petty_cash', id);
   state.pettyCash = state.pettyCash.filter(p => p.id !== id);
   renderAll();
+}
+
+function togglePettyCashSection() {
+  const el = document.getElementById('petty-cash-section');
+  const icon = document.getElementById('petty-cash-section-icon');
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (icon) icon.textContent = isOpen ? '▼ 開く' : '▲ 閉じる';
 }
 
 function renderPettyCash() {
