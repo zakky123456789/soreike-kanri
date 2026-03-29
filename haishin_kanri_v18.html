@@ -5612,8 +5612,9 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     const normalReward = normalSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
     const avgCoinPerDay  = activeDays > 0 ? Math.floor(normalCoins / activeDays) : 0;
     const avgCoinPerLive = normalSales.length > 0 ? Math.floor(normalCoins / normalSales.length) : 0;
+    const hasExcludedRecs = cSales.some(s => s.excludeReport);
     const allNormalCount = cSales.filter(s => (s.type||'normal') === 'normal').length;
-    return { c, totalCoins: normalCoins, totalReward: normalReward, allCoins: totalCoins, allReward: totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: normalSales.length, allCount: allNormalCount, activeDays };
+    return { c, totalCoins: normalCoins, totalReward: normalReward, allCoins: totalCoins, allReward: totalReward, avgCoinPerDay, avgCoinPerLive, liveCount: normalSales.length, allCount: allNormalCount, activeDays, hasExcludedRecs };
   }).filter(Boolean);
 
   if (rows.length === 0) return `<div style="color:var(--muted);padding:20px;text-align:center">この期間のデータはありません</div>`;
@@ -5629,10 +5630,11 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
       <th class="num" style="width:20%">1配信あたり<br>平均コイン</th>
     </tr></thead><tbody>
     ${rows.map(r => {
-      const hasExcl = r.allCount > r.liveCount;
+      const hasExcl = r.hasExcludedRecs || r.allCount > r.liveCount;
+      const countDiff = r.allCount > r.liveCount;
       return `<tr>
       <td><strong>${r.c.name}</strong></td>
-      <td class="num" style="color:var(--muted)">${r.liveCount}回${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${r.allCount}回)</span>`:''}</td>
+      <td class="num" style="color:var(--muted)">${r.liveCount}回${countDiff?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${r.allCount}回)</span>`:''}</td>
       <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span>${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${fmt(r.allCoins)}C)</span>`:''}</td>
       <td class="num" style="color:var(--red)">${yen(r.totalReward)}${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${yen(r.allReward)})</span>`:''}</td>
       <td class="num" style="color:var(--accent)">${fmt(r.avgCoinPerDay)}C</td>
@@ -5647,13 +5649,14 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
         allReward: s.allReward+r.allReward,
         allCount: s.allCount+r.allCount
       }), {totalCoins:0,totalReward:0,liveCount:0,allCoins:0,allReward:0,allCount:0});
-      const hasExcl = tot.allCount > tot.liveCount;
+      const hasExcl = rows.some(r => r.hasExcludedRecs) || tot.allCount > tot.liveCount;
+      const countDiff = tot.allCount > tot.liveCount;
       const totActiveDays = new Set(filteredSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport).map(s => s.date)).size;
       const avgDay  = totActiveDays > 0 ? Math.floor(tot.totalCoins / totActiveDays) : 0;
       const avgLive = tot.liveCount > 0 ? Math.floor(tot.totalCoins / tot.liveCount) : 0;
       return `<tr style="background:var(--surface2);font-weight:700">
         <td>合計</td>
-        <td class="num" style="color:var(--muted)">${tot.liveCount}回${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${tot.allCount}回)</span>`:''}</td>
+        <td class="num" style="color:var(--muted)">${tot.liveCount}回${countDiff?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${tot.allCount}回)</span>`:''}</td>
         <td class="num"><span class="coin-badge">${fmt(tot.totalCoins)}C</span>${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${fmt(tot.allCoins)}C)</span>`:''}</td>
         <td class="num" style="color:var(--red)">${yen(tot.totalReward)}${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${yen(tot.allReward)})</span>`:''}</td>
         <td class="num" style="color:var(--accent)">${fmt(avgDay)}C</td>
