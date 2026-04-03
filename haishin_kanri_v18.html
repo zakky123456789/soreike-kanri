@@ -864,7 +864,7 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num">2月22日振込</th><th>後払登録</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
       </div>
 
@@ -4069,6 +4069,8 @@ function renderSales() {
   const dailyPays = dailyPaysOfMonth(y, m);
   const nextM = m+1>12?1:m+1; const nextY = m+1>12?y+1:y;
   const nextNextM = nextM+1>12?1:nextM+1; const nextNextY = nextM+1>12?nextY+1:nextY;
+  const settleHeader = document.getElementById('settle-transfer-header');
+  if (settleHeader) settleHeader.textContent = `${nextM}月22日振込`;
   const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
