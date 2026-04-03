@@ -5124,9 +5124,30 @@ function updateDailySelect() {
   const sel = document.getElementById('inv-daily-sel');
   if (!sel || !casterId) return;
   const pays = state.dailyPays.filter(d => d.casterId === casterId);
-  sel.innerHTML = pays.length > 0
-    ? pays.map(d => `<option value="${d.id}">${d.date}　${yen(d.amount)}${d.salesLabel ? '　（'+d.salesLabel+'）' : ''}</option>`).join('')
-    : '<option value="">前払いデータなし</option>';
+  if (pays.length === 0) {
+    sel.innerHTML = '<option value="">前払いデータなし</option>';
+    sel.onchange = updateInvoicePreview;
+    return;
+  }
+  // 対象月（配信月）でグループ化、新しい月が上
+  const groups = {};
+  pays.forEach(d => {
+    const ty = d.targetY ?? d.y;
+    const tm = d.targetM ?? d.m;
+    const key = `${ty}-${String(tm).padStart(2,'0')}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(d);
+  });
+  const sortedKeys = Object.keys(groups).sort().reverse();
+  sel.innerHTML = sortedKeys.map(key => {
+    const [gy, gm] = key.split('-').map(Number);
+    const label = `${gy}年${gm}月配信分`;
+    const opts = groups[key]
+      .sort((a,b) => b.date.localeCompare(a.date))
+      .map(d => `<option value="${d.id}">${d.date}　${yen(d.amount)}${d.salesLabel ? '　（'+d.salesLabel+'）' : ''}</option>`)
+      .join('');
+    return `<optgroup label="${label}">${opts}</optgroup>`;
+  }).join('');
   sel.onchange = updateInvoicePreview;
 }
 
@@ -5225,7 +5246,7 @@ function updateInvoicePreview() {
     sales.forEach(s => {
       const rw = calcReward(coinToYen(s.coins), c.rate);
       const paid = prepaidBySaleId[s.id] || 0;
-      if (rw - paid > 0) dateCounts[s.date] = (dateCounts[s.date] || 0) + 1;
+      if ((s.type||'normal') !== 'adjust' && rw - paid > 0) dateCounts[s.date] = (dateCounts[s.date] || 0) + 1;
     });
     const dateIdx = {};
     sales.forEach(s => {
@@ -5234,7 +5255,9 @@ function updateInvoicePreview() {
       const remaining = rw - paid;
       if (remaining <= 0) return; // 全額前払い済みは非表示
       let label;
-      if (dateCounts[s.date] > 1) {
+      if ((s.type||'normal') === 'adjust') {
+        label = `ライブ配信出演報酬　調整分（${s.date}）`;
+      } else if (dateCounts[s.date] > 1) {
         dateIdx[s.date] = (dateIdx[s.date] || 0) + 1;
         label = `ライブ配信出演報酬　${s.date} 配信分（${dateIdx[s.date]}回目）`;
       } else {
