@@ -4947,10 +4947,10 @@ function renderPL() {
 }
 
 // ===== TAX =====
-function makeTaxRow(label, srcTax, deadlineDate, key, today) {
+function makeTaxRow(label, srcTax, deadlineDate, key, today, extra) {
   const daysLeft = Math.ceil((deadlineDate - today) / 86400000);
   const paid = !!state.taxPaid[key];
-  return { label, srcTax, deadline: deadlineDate, daysLeft, paid, key };
+  return { label, srcTax, deadline: deadlineDate, daysLeft, paid, key, ...(extra||{}) };
 }
 
 function renderTax() {
@@ -4968,13 +4968,15 @@ function renderTax() {
     const dpByTarget = {};
     dailyPays.forEach(d => {
       const tk = `${d.targetY ?? d.y}-${String(d.targetM ?? d.m).padStart(2,'0')}`;
-      if (!dpByTarget[tk]) dpByTarget[tk] = { targetY: d.targetY ?? d.y, targetM: d.targetM ?? d.m, srcTax: 0 };
+      if (!dpByTarget[tk]) dpByTarget[tk] = { targetY: d.targetY ?? d.y, targetM: d.targetM ?? d.m, srcTax: 0, casterIds: new Set(), payAmount: 0 };
       dpByTarget[tk].srcTax += d.srcTax;
+      dpByTarget[tk].casterIds.add(d.casterId);
+      dpByTarget[tk].payAmount += d.amount;
     });
     Object.values(dpByTarget).forEach(g => {
       if (g.srcTax > 0) {
         const key = `dp-${y}-${String(m).padStart(2,'0')}-t${g.targetY}-${String(g.targetM).padStart(2,'0')}`;
-        rows.push(makeTaxRow(`${g.targetY}年${g.targetM}月配信分　前払い【${m}月支払い】`, g.srcTax, new Date(dlY, dlM-1, 10), key, today));
+        rows.push(makeTaxRow(`${g.targetY}年${g.targetM}月配信分　前払い【${m}月支払い】`, g.srcTax, new Date(dlY, dlM-1, 10), key, today, { payMonth: m, payYear: y, persons: g.casterIds.size, payAmount: g.payAmount, payType: 'daily' }));
       }
     });
 
@@ -4982,19 +4984,25 @@ function renderTax() {
     // 配信者ごとに「月間報酬 − 前払い累計」の残額から源泉税を計算して合算（月末精算サマリーと同一ロジック）
     const dpOfMonth = dailyPaysOfMonth(y, m);
     let settleSrc = 0;
+    let settlePersons = 0;
+    let settlePayAmount = 0;
     state.casters.forEach(c => {
       const cSales = sales.filter(s => s.casterId === c.id);
       if (cSales.length === 0) return;
       const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
       const totalDailyAmt = dpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
       const remaining = totalReward - totalDailyAmt;
-      if (remaining > 0) settleSrc += calcSrcTax(remaining);
+      if (remaining > 0) {
+        settleSrc += calcSrcTax(remaining);
+        settlePersons++;
+        settlePayAmount += remaining;
+      }
     });
     if (settleSrc > 0) {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
       const key = `se-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月配信分　月末精算【${pm}月支払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today));
+      rows.push(makeTaxRow(`${y}年${m}月配信分　月末精算【${pm}月支払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today, { payMonth: pm, payYear: py, persons: settlePersons, payAmount: settlePayAmount, payType: 'settle' }));
     }
   }
 
@@ -5056,6 +5064,52 @@ function renderTax() {
         }</td>
       </tr>`;
     });
+
+    // 納付書記入ガイド（支払月ごとに集約）
+    if (!allPaid) {
+      const payMonthMap = {};
+      group.forEach(x => {
+        if (x.payMonth == null) return;
+        const pmk = `${x.payYear}-${String(x.payMonth).padStart(2,'0')}`;
+        if (!payMonthMap[pmk]) payMonthMap[pmk] = { payYear: x.payYear, payMonth: x.payMonth, persons: 0, payAmount: 0, srcTax: 0, casterIds: new Set() };
+        payMonthMap[pmk].payAmount += x.payAmount || 0;
+        payMonthMap[pmk].srcTax += x.srcTax;
+        // persons: 同じ支払月の実人数はSetで管理が必要だが、ここでは加算
+        payMonthMap[pmk].persons += x.persons || 0;
+      });
+      const pmKeys = Object.keys(payMonthMap).sort();
+      if (pmKeys.length > 0) {
+        // 会計年度を計算（4月〜翌3月）
+        const calcFiscalYear = (y, m) => m >= 4 ? y : y - 1;
+        const toReiwa = y => y - 2018;
+        const guideRows = pmKeys.map(pmk => {
+          const g = payMonthMap[pmk];
+          const fy = calcFiscalYear(g.payYear, g.payMonth);
+          const reiwa = toReiwa(fy);
+          return `<div style="display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:12px;padding:4px 0">
+            <span style="color:var(--muted)">年度</span><span>令和${reiwa}年（${fy}年度）</span>
+            <span style="color:var(--muted)">納期等の区分</span><span>令和${toReiwa(g.payYear)}年${g.payMonth}月</span>
+            <span style="color:var(--muted)">区分</span><span>06（映画、演劇の俳優等の報酬・料金）</span>
+            <span style="color:var(--muted)">人員</span><span>${g.persons}人</span>
+            <span style="color:var(--muted)">支払額</span><span style="font-family:var(--mono)">${fmt(g.payAmount)}円</span>
+            <span style="color:var(--muted)">税額</span><span style="font-family:var(--mono)">${fmt(g.srcTax)}円</span>
+            <span style="color:var(--muted)">本税</span><span style="font-family:var(--mono)">${fmt(g.srcTax)}円</span>
+            <span style="color:var(--muted)">合計額</span><span style="font-family:var(--mono);font-weight:700">￥${fmt(g.srcTax)}</span>
+          </div>`;
+        }).join('<hr style="border:none;border-top:1px dashed var(--border);margin:4px 0">');
+        html += `<tr><td colspan="6" style="padding:8px 20px">
+          <details style="cursor:pointer">
+            <summary style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">📝 納付書記入ガイド（報酬・料金等の所得税徴収高計算書）</summary>
+            <div style="background:var(--surface2);border-radius:8px;padding:12px 16px;border:1px solid var(--border)">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+                税務署名：湯沢税務署　／　徴収義務者：それいけ合同会社　〒012-0055 秋田県湯沢市山田字荻生田26-2
+              </div>
+              ${guideRows}
+            </div>
+          </details>
+        </td></tr>`;
+      }
+    }
   });
   document.getElementById('tax-table').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">対象データがありません</td></tr>';
 }
