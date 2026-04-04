@@ -3436,21 +3436,27 @@ const calcOfficeSales = (coins, rate, reward, refTotal) => {
 };
 
 async function fetchRate(date) {
-  const el = document.getElementById('s-rate-status');
-  if (el) el.textContent = '取得中...';
-  try {
-    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
-    const data = await res.json();
-    const rate = data.rates?.JPY;
-    if (rate) {
-      document.getElementById('s-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
-      updateSalePreview();
-    } else {
-      if (el) el.textContent = '手動入力してください';
-    }
-  } catch(e) {
-    if (el) el.textContent = '取得失敗・手動入力';
+    const el = document.getElementById('s-rate-status');
+    if (el) el.textContent = '取得中...';
+    try {
+      const res = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/fx-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: date || null })
+      });
+      if (!res.ok) throw new Error('FX proxy error');
+      const data = await res.json();
+      const rate = data.rates?.JPY;
+      if (rate) {
+        document.getElementById('s-rate').value = Number(rate).toFixed(2);
+        if (el) el.textContent = '✅ 自動取得（前営業日終値）';
+        updateSalePreview();
+      } else {
+        if (el) el.textContent = '手動入力してください';
+      }
+    } catch(e) {
+      console.error('為替レート取得エラー:', e);
+      if (el) el.textContent = '取得失敗・手動入力';
   }
 }
 
