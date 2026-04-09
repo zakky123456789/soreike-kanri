@@ -3198,12 +3198,12 @@ async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
     const data = await res.json();
     const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('fx-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（現在レート）';
+      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
       updateFxPreview();
     } else {
       if (el) el.textContent = '手動入力';
@@ -3439,12 +3439,12 @@ async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
     const data = await res.json();
     const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（現在レート）';
+      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
       updateSalePreview();
     } else {
       if (el) el.textContent = '手動入力してください';
@@ -4345,13 +4345,31 @@ function renderSales() {
 function toggleEntertainFields() {
   const cat = document.getElementById('e-cat')?.value;
   const el = document.getElementById('e-entertain-fields');
-  if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
+  if (!el) return;
+  const show = cat === '接待交際費' || cat === '会議費';
+  el.style.display = show ? 'block' : 'none';
+  if (show) {
+    const purposeEl = document.getElementById('e-purpose');
+    if (purposeEl && !purposeEl.value) {
+      if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
+      else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
+    }
+  }
 }
 
 function toggleReceiptEntertainFields(id) {
   const cat = document.getElementById(`rc-cat-${id}`)?.value;
   const el = document.getElementById(`rc-entertain-${id}`);
-  if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
+  if (!el) return;
+  const show = cat === '接待交際費' || cat === '会議費';
+  el.style.display = show ? 'block' : 'none';
+  if (show) {
+    const purposeEl = document.getElementById(`rc-purpose-${id}`);
+    if (purposeEl && !purposeEl.value) {
+      if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
+      else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
+    }
+  }
 }
 
 function setInvoiceConfirm(id, choice) {
