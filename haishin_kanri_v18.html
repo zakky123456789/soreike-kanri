@@ -864,8 +864,9 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">月末源泉税<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
+        <div id="settle-note"></div>
       </div>
 
       <!-- 前払い明細 -->
@@ -2261,14 +2262,12 @@ async function readReceiptFile(file) {
 1. 1枚の画像に複数のレシートが含まれている場合は、それぞれを別の要素として配列に含めてください。
 2. 分割ルール（重要）：1枚のレシートでも以下のいずれかに該当する場合は、該当ごとに別の要素に分割してください。
    a) 税率が混在（8%と10%）→ 税率ごとに分割
-      【金額の読み取り方（最重要）】amountには必ず**税込金額（本体価格＋消費税）**を使用してください。
-      - 「本体価格〇円 消費税〇円」と分けて書かれている場合：本体価格＋消費税を足した数値がamount
-        例：本体価格3,846円 消費税384円 → amount=4230（3846+384）
-        例：本体価格602円 消費税48円 → amount=650（602+48）
-      - 「税抜金額対象」「税率別小計（税抜）」欄の数値は使わない（本体価格のみをamountにしない）
-      - 「消費税額」欄の数値を必ず足してからamountにする
+      【金額の読み取り方（最重要）】レシートに「税抜金額」と「税込金額」の両方が記載されている場合は、必ず**税込金額**を使用してください。
+      - 「税抜金額対象」「税率別小計（税抜）」欄の数値は使わない
+      - 「消費税額」欄の数値を足した後の合計（税込）を使う
       - 例：税抜¥438・消費税¥35 → amountは¥473（税込）
-      - 各税率のamount合計がレシート全体の合計金額と一致することを必ず確認すること
+      - 例：税抜¥6・消費税¥0 → amountは¥6（税込）
+      - レシート全体の「合計」と各税率の税込金額の合計が一致することを確認してください
    b) 勘定科目が異なる商品が混在（例：食料品＋文房具＋交通費）→ 科目ごとに分割
    c) aとbが重複する場合は「税率×科目」の組み合わせごとに分割
    例：コンビニで食品（8%・消耗品費）＋切手（非課税・通信費）＋ネイル（10%・消耗品費）→ 3要素に分割
@@ -3200,12 +3199,12 @@ async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
     const data = await res.json();
     const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('fx-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（現在レート）';
+      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
       updateFxPreview();
     } else {
       if (el) el.textContent = '手動入力';
@@ -3441,12 +3440,12 @@ async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
     const data = await res.json();
     const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（現在レート）';
+      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
       updateSalePreview();
     } else {
       if (el) el.textContent = '手動入力してください';
@@ -4072,7 +4071,7 @@ function renderSales() {
   const nextM = m+1>12?1:m+1; const nextY = m+1>12?y+1:y;
   const nextNextM = nextM+1>12?1:nextM+1; const nextNextY = nextM+1>12?nextY+1:nextY;
   const settleHeader = document.getElementById('settle-transfer-header');
-  if (settleHeader) settleHeader.textContent = `${nextM}月22日振込`;
+  if (settleHeader) settleHeader.innerHTML = `${nextM}月22日振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span>`;
   const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
@@ -4125,6 +4124,14 @@ function renderSales() {
     <td class="num" style="color:var(--green);font-weight:700">${yen(r.transfer>0?r.transfer:0)}</td>
     <td style="text-align:center">${r.mepBtn}</td>
   </tr>`).join('') + totalRow || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
+
+  // 参考値注記をテーブル下に追加
+  const settleNote = document.getElementById('settle-note');
+  if (settleNote) settleNote.innerHTML = `
+    <div style="margin-top:8px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:11px;color:var(--yellow);line-height:1.7">
+      ⚠️ <strong>月末請求額・月末源泉税・振込額は参考値です。</strong><br>
+      複数回の前払いにより端数誤差が生じる場合があります。<strong>正確な振込金額は請求書をご確認ください。</strong>
+    </div>`;
 
   // 前払い明細：対象月が表示中の月に該当するものを表示
   const dpForTable = [...state.dailyPays]
@@ -4347,31 +4354,13 @@ function renderSales() {
 function toggleEntertainFields() {
   const cat = document.getElementById('e-cat')?.value;
   const el = document.getElementById('e-entertain-fields');
-  if (!el) return;
-  const show = cat === '接待交際費' || cat === '会議費';
-  el.style.display = show ? 'block' : 'none';
-  if (show) {
-    const purposeEl = document.getElementById('e-purpose');
-    if (purposeEl && !purposeEl.value) {
-      if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
-      else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
-    }
-  }
+  if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
 }
 
 function toggleReceiptEntertainFields(id) {
   const cat = document.getElementById(`rc-cat-${id}`)?.value;
   const el = document.getElementById(`rc-entertain-${id}`);
-  if (!el) return;
-  const show = cat === '接待交際費' || cat === '会議費';
-  el.style.display = show ? 'block' : 'none';
-  if (show) {
-    const purposeEl = document.getElementById(`rc-purpose-${id}`);
-    if (purposeEl && !purposeEl.value) {
-      if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
-      else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
-    }
-  }
+  if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
 }
 
 function setInvoiceConfirm(id, choice) {
@@ -5881,7 +5870,7 @@ function renderReport() {
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
-          <th class="num">月末振込</th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
+          <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
           <td><strong>${r.c.name}</strong></td>
@@ -5894,7 +5883,10 @@ function renderReport() {
           <td class="num" style="color:var(--green)">${r.hasRate?yen(r.officeTotal):'レートなし'}</td>
         </tr>`).join('')}
         </tbody></table>
-      </div>`;
+      <div style="margin-top:8px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:11px;color:var(--yellow);line-height:1.7">
+        ⚠️ <strong>月末振込は参考値です。</strong>複数回の前払いにより端数誤差が生じる場合があります。<strong>正確な振込金額は請求書をご確認ください。</strong>
+      </div>
+      </div>\`;
   } else {
     // 個人レポート
     const casterId = parseInt(reportTab);
