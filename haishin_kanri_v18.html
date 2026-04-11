@@ -1314,10 +1314,6 @@
       <div class="page-header">
         <div class="page-title">配信者レポート</div>
       </div>
-      <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
-        <button class="btn" id="report-tab-all" style="background:var(--accent);color:#fff" onclick="setReportTab('all')">全員サマリー</button>
-        <div id="report-caster-tabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-      </div>
       <!-- 期間セレクター（常時表示・再生成しない） -->
       <div id="report-period-selector" style="margin-bottom:20px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
         <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-weight:600">📊 集計期間</div>
@@ -1345,6 +1341,10 @@
       </div>
       <!-- 期間統計（軽量更新エリア） -->
       <div id="report-period-stats"></div>
+      <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+        <button class="btn" id="report-tab-all" style="background:var(--accent);color:#fff" onclick="setReportTab('all')">全員サマリー</button>
+        <div id="report-caster-tabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
       <!-- 月別詳細コンテンツ -->
       <div id="report-content"></div>
     </div>
@@ -5851,7 +5851,7 @@ function renderReport() {
     renderReportData();
     el.innerHTML = `
       <div class="table-wrap">
-        <div class="table-header" style="display:flex;align-items:center;justify-content:space-between"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div><div class="month-nav" style="padding:0"><button onclick="changeMonth(-1)">◀</button><div class="month-label" onclick="openMonthPicker()" id="ml-report" style="font-size:13px;padding:4px 10px">${y}年${m}月</div><button onclick="changeMonth(1)">▶</button></div></div>
+        <div class="table-header"><div style="display:flex;align-items:center;gap:16px"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div><div class="month-nav" style="padding:0"><button onclick="changeMonth(-1)">◀</button><div class="month-label" onclick="openMonthPicker()" id="ml-report" style="font-size:13px;padding:4px 10px">${y}年${m}月</div><button onclick="changeMonth(1)">▶</button></div></div></div>
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
