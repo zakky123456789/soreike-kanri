@@ -864,9 +864,8 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">月末源泉税<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
-        <div id="settle-note"></div>
       </div>
 
       <!-- 前払い明細 -->
@@ -1314,11 +1313,6 @@
     <div class="page" id="page-report">
       <div class="page-header">
         <div class="page-title">配信者レポート</div>
-        <div class="month-nav">
-          <button onclick="changeMonth(-1)">◀</button>
-          <div class="month-label" onclick="openMonthPicker()" id="ml-report"></div>
-          <button onclick="changeMonth(1)">▶</button>
-        </div>
       </div>
       <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
         <button class="btn" id="report-tab-all" style="background:var(--accent);color:#fff" onclick="setReportTab('all')">全員サマリー</button>
@@ -1860,7 +1854,7 @@ function changeMonth(d) {
 
 function updateLabels() {
   const lbl = `${state.y}年${state.m}月`;
-  ['dash','sales','exp','pl','ref','report','refReport','fx','tax','manager'].forEach(id => {
+  ['dash','sales','exp','pl','ref','refReport','fx','tax','manager'].forEach(id => {
     const el = document.getElementById('ml-' + id);
     if (el) el.textContent = lbl;
   });
@@ -4071,7 +4065,7 @@ function renderSales() {
   const nextM = m+1>12?1:m+1; const nextY = m+1>12?y+1:y;
   const nextNextM = nextM+1>12?1:nextM+1; const nextNextY = nextM+1>12?nextY+1:nextY;
   const settleHeader = document.getElementById('settle-transfer-header');
-  if (settleHeader) settleHeader.innerHTML = `${nextM}月22日振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span>`;
+  if (settleHeader) settleHeader.textContent = `${nextM}月22日振込`;
   const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
@@ -4124,14 +4118,6 @@ function renderSales() {
     <td class="num" style="color:var(--green);font-weight:700">${yen(r.transfer>0?r.transfer:0)}</td>
     <td style="text-align:center">${r.mepBtn}</td>
   </tr>`).join('') + totalRow || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">データなし</td></tr>';
-
-  // 参考値注記をテーブル下に追加
-  const settleNote = document.getElementById('settle-note');
-  if (settleNote) settleNote.innerHTML = `
-    <div style="margin-top:8px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:11px;color:var(--yellow);line-height:1.7">
-      ⚠️ <strong>月末請求額・月末源泉税・振込額は参考値です。</strong><br>
-      複数回の前払いにより端数誤差が生じる場合があります。<strong>正確な振込金額は請求書をご確認ください。</strong>
-    </div>`;
 
   // 前払い明細：対象月が表示中の月に該当するものを表示
   const dpForTable = [...state.dailyPays]
@@ -5820,12 +5806,11 @@ function renderReport() {
   // 期間セレクターUI更新（DOM操作のみ・innerHTML書き換えなし）
   updatePeriodSelectorUI();
 
-  // タブボタン生成（全salesから配信者を抽出）
-  const allSales = state.sales;
+  // タブボタン生成（対象月に売上がある配信者のみ表示）
   const tabsEl = document.getElementById('report-caster-tabs');
   if (tabsEl) {
     tabsEl.innerHTML = state.casters.map(c => {
-      const hasSales = allSales.some(s => s.casterId === c.id);
+      const hasSales = sales.some(s => s.casterId === c.id);
       if (!hasSales) return '';
       const active = reportTab === String(c.id);
       return `<button class="btn btn-sm" style="background:${active?'var(--accent2)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border)" onclick="setReportTab('${c.id}')">${c.name}</button>`;
@@ -5866,11 +5851,11 @@ function renderReport() {
     renderReportData();
     el.innerHTML = `
       <div class="table-wrap">
-        <div class="table-header"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div></div>
+        <div class="table-header" style="display:flex;align-items:center;justify-content:space-between"><div class="table-title">${y}年${m}月　全員サマリー（月別詳細）</div><div class="month-nav" style="padding:0"><button onclick="changeMonth(-1)">◀</button><div class="month-label" onclick="openMonthPicker()" id="ml-report" style="font-size:13px;padding:4px 10px">${y}年${m}月</div><button onclick="changeMonth(1)">▶</button></div></div>
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
-          <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
+          <th class="num">月末振込</th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
           <td><strong>${r.c.name}</strong></td>
@@ -5883,10 +5868,7 @@ function renderReport() {
           <td class="num" style="color:var(--green)">${r.hasRate?yen(r.officeTotal):'レートなし'}</td>
         </tr>`).join('')}
         </tbody></table>
-      <div style="margin-top:8px;padding:8px 12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:11px;color:var(--yellow);line-height:1.7">
-        ⚠️ <strong>月末振込は参考値です。</strong>複数回の前払いにより端数誤差が生じる場合があります。<strong>正確な振込金額は請求書をご確認ください。</strong>
-      </div>
-      </div>\`;
+      </div>`;
   } else {
     // 個人レポート
     const casterId = parseInt(reportTab);
