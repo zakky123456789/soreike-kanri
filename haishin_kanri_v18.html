@@ -864,8 +864,9 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）</th><th class="num">月末源泉税</th><th class="num" id="settle-transfer-header">振込</th><th>後払登録</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">月末源泉税<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num" id="settle-transfer-header">振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th>後払登録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
+        <div style="padding:8px 12px;font-size:11px;color:var(--yellow);border-top:1px solid var(--border)">※参考値：複数回前払いによる端数誤差が生じる場合があります。正確な振込金額は請求書をご確認ください。</div>
       </div>
 
       <!-- 前払い明細 -->
@@ -4065,7 +4066,7 @@ function renderSales() {
   const nextM = m+1>12?1:m+1; const nextY = m+1>12?y+1:y;
   const nextNextM = nextM+1>12?1:nextM+1; const nextNextY = nextM+1>12?nextY+1:nextY;
   const settleHeader = document.getElementById('settle-transfer-header');
-  if (settleHeader) settleHeader.textContent = `${nextM}月22日振込`;
+  if (settleHeader) settleHeader.innerHTML = `${nextM}月22日振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span>`;
   const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
@@ -5855,7 +5856,7 @@ function renderReport() {
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
-          <th class="num">月末振込</th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
+          <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
           <td><strong>${r.c.name}</strong></td>
@@ -5868,6 +5869,7 @@ function renderReport() {
           <td class="num" style="color:var(--green)">${r.hasRate?yen(r.officeTotal):'レートなし'}</td>
         </tr>`).join('')}
         </tbody></table>
+        <div style="padding:8px 12px;font-size:11px;color:var(--yellow);border-top:1px solid var(--border)">※参考値：複数回前払いによる端数誤差が生じる場合があります。正確な振込金額は請求書をご確認ください。</div>
       </div>`;
   } else {
     // 個人レポート
