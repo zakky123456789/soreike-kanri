@@ -4407,6 +4407,12 @@ function toggleReceiptEntertainFields(id) {
   const cat = document.getElementById(`rc-cat-${id}`)?.value;
   const el = document.getElementById(`rc-entertain-${id}`);
   if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
+  // 目的・事由デフォルト値の自動入力（未入力時のみ）
+  const purposeEl = document.getElementById(`rc-purpose-${id}`);
+  if (purposeEl && !purposeEl.value) {
+    if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
+    else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
+  }
 }
 
 
