@@ -994,7 +994,10 @@
         </div>
       </div>
       <div class="table-wrap" id="exp-table-wrap">
-        <div class="table-header"><div class="table-title">経費明細</div></div>
+        <div class="table-header">
+          <div class="table-title">経費明細</div>
+          <button class="btn" onclick="downloadAuditLog()" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">📥 操作ログをDL</button>
+        </div>
         <table><thead><tr>
           <th style="cursor:pointer;user-select:none" onclick="setExpSort('date')"><span id="eh-date">日付</span></th>
           <th style="cursor:pointer;user-select:none" onclick="setExpSort('name')"><span id="eh-name">品名</span></th>
@@ -1886,6 +1889,39 @@ async function dbSaveAsync(table, row) {
   } catch(e) { console.error('dbSaveAsync exception:', e); return false; }
 }
 
+// ===== 監査ログ =====
+async function writeAuditLog(action, recordId, before, after) {
+  try {
+    await sb.from('audit_log').insert({
+      action,
+      table_name: 'expenses',
+      record_id: recordId,
+      before: before || null,
+      after: after || null
+    });
+  } catch(e) {
+    console.warn('audit_log書き込み失敗:', e);
+  }
+}
+
+function expToLogObj(e) {
+  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note };
+}
+
+async function downloadAuditLog() {
+  const { data, error } = await sb.from('audit_log').select('*').order('created_at', { ascending: false });
+  if (error) { alert('ログ取得失敗: ' + error.message); return; }
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `audit_log_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+
 // ===== 領収書管理 =====
 const R2_PROXY = 'https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/r2-proxy';
 
@@ -2437,7 +2473,7 @@ function renderReceiptResults() {
             <div style="font-size:11px;color:#fb923c;font-weight:600;margin-bottom:8px">⚠️ 接待交際費は参加者・目的の入力が必須です</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div class="form-group"><label style="font-size:12px">参加者 <span style="color:var(--red)">*</span></label><input id="rc-participants-${r._id}" value="${(r.participants||'').replace(/"/g,'&quot;')}" placeholder="例：ラム、ゆの、代表者" style="background:var(--surface2);font-size:12px"></div>
-              <div class="form-group"><label style="font-size:12px">目的・事由 <span style="color:var(--red)">*</span></label><input id="rc-purpose-${r._id}" value="${(r.purpose||(r.cat==='会議費'?'今後の配信方針に関する打合せ（配信者とのミーティング）':r.cat==='接待交際費'?'配信者との関係構築および活動方針に関する意見交換':'')).replace(/"/g,'&quot;')}" placeholder="例：キャスト慰労会" style="background:var(--surface2);font-size:12px"></div>
+              <div class="form-group"><label style="font-size:12px">目的・事由 <span style="color:var(--red)">*</span></label><input id="rc-purpose-${r._id}" value="${(r.purpose||'').replace(/"/g,'&quot;')}" placeholder="例：キャスト慰労会" style="background:var(--surface2);font-size:12px"></div>
             </div>
           </div>
           <div style="margin-top:8px">
@@ -4407,12 +4443,6 @@ function toggleReceiptEntertainFields(id) {
   const cat = document.getElementById(`rc-cat-${id}`)?.value;
   const el = document.getElementById(`rc-entertain-${id}`);
   if (el) el.style.display = (cat === '接待交際費' || cat === '会議費') ? 'block' : 'none';
-  // 目的・事由デフォルト値の自動入力（未入力時のみ）
-  const purposeEl = document.getElementById(`rc-purpose-${id}`);
-  if (purposeEl && !purposeEl.value) {
-    if (cat === '会議費') purposeEl.value = '今後の配信方針に関する打合せ（配信者とのミーティング）';
-    else if (cat === '接待交際費') purposeEl.value = '配信者との関係構築および活動方針に関する意見交換';
-  }
 }
 
 
@@ -4517,10 +4547,10 @@ async function addExpense() {
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const displayName = rows.length > 1 ? `【分割${i + 1}/${rows.length}】${r.name}` : r.name;
-    const newExp = { id: state.nextId++, date, name: displayName, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants, purpose: r.purpose, y, m, excludeManager, note };
+    const newExp = { id: state.nextId++, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants, purpose: r.purpose, y, m, excludeManager, note };
     state.expenses.push(newExp);
-    await dbSaveAsync('expenses', { id: newExp.id, date, name: displayName, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants, purpose: r.purpose, y, m, exclude_manager: excludeManager, note });
+    await dbSaveAsync('expenses', { id: newExp.id, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants, purpose: r.purpose, y, m, exclude_manager: excludeManager, note });
+    await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
 
     // 領収書は先頭行にのみ添付
     if (i === 0 && receiptFile) {
@@ -4612,8 +4642,10 @@ async function saveExpEdit() {
   const [y, m] = date.split('-').map(Number);
   const idx = state.expenses.findIndex(x => x.id === id);
   if (idx !== -1) {
+    const before = expToLogObj(state.expenses[idx]);
     state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note };
     await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note });
+    await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   }
   closeExpEditModal();
   renderAll();
@@ -4626,6 +4658,8 @@ function settleExpense(id) {
 }
 
 async function deleteExpense(id) {
+  const target = state.expenses.find(e => e.id === id);
+  if (target) await writeAuditLog('delete', id, expToLogObj(target), null);
   state.expenses = state.expenses.filter(e => e.id !== id);
   await dbDelete('expenses', id);
   renderAll();
