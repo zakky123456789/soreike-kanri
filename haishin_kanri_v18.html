@@ -4517,9 +4517,10 @@ async function addExpense() {
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const newExp = { id: state.nextId++, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants, purpose: r.purpose, y, m, excludeManager, note };
+    const displayName = rows.length > 1 ? `【分割${i + 1}/${rows.length}】${r.name}` : r.name;
+    const newExp = { id: state.nextId++, date, name: displayName, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants, purpose: r.purpose, y, m, excludeManager, note };
     state.expenses.push(newExp);
-    await dbSaveAsync('expenses', { id: newExp.id, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants, purpose: r.purpose, y, m, exclude_manager: excludeManager, note });
+    await dbSaveAsync('expenses', { id: newExp.id, date, name: displayName, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants, purpose: r.purpose, y, m, exclude_manager: excludeManager, note });
 
     // 領収書は先頭行にのみ添付
     if (i === 0 && receiptFile) {
