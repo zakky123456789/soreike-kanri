@@ -2437,7 +2437,7 @@ function renderReceiptResults() {
             <div style="font-size:11px;color:#fb923c;font-weight:600;margin-bottom:8px">⚠️ 接待交際費は参加者・目的の入力が必須です</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div class="form-group"><label style="font-size:12px">参加者 <span style="color:var(--red)">*</span></label><input id="rc-participants-${r._id}" value="${(r.participants||'').replace(/"/g,'&quot;')}" placeholder="例：ラム、ゆの、代表者" style="background:var(--surface2);font-size:12px"></div>
-              <div class="form-group"><label style="font-size:12px">目的・事由 <span style="color:var(--red)">*</span></label><input id="rc-purpose-${r._id}" value="${(r.purpose||'').replace(/"/g,'&quot;')}" placeholder="例：キャスト慰労会" style="background:var(--surface2);font-size:12px"></div>
+              <div class="form-group"><label style="font-size:12px">目的・事由 <span style="color:var(--red)">*</span></label><input id="rc-purpose-${r._id}" value="${(r.purpose||(r.cat==='会議費'?'今後の配信方針に関する打合せ（配信者とのミーティング）':r.cat==='接待交際費'?'配信者との関係構築および活動方針に関する意見交換':'')).replace(/"/g,'&quot;')}" placeholder="例：キャスト慰労会" style="background:var(--surface2);font-size:12px"></div>
             </div>
           </div>
           <div style="margin-top:8px">
