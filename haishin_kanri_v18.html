@@ -3205,10 +3205,16 @@ function updateFxPreview() {
 async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
-  try {
-    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
+  const tryFetch = async (d) => {
+    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${d}/v1/currencies/usd.json`);
+    if (!res.ok) throw new Error('not ok');
     const data = await res.json();
-    const rate = data.usd?.jpy;
+    return data.usd?.jpy;
+  };
+  try {
+    let rate = null;
+    try { rate = await tryFetch(date); } catch(e) {}
+    if (!rate) { rate = await tryFetch('latest'); }
     if (rate) {
       document.getElementById('fx-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
@@ -3446,10 +3452,16 @@ const calcOfficeSales = (coins, rate, reward, refTotal) => {
 async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
-  try {
-    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
+  const tryFetch = async (d) => {
+    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${d}/v1/currencies/usd.json`);
+    if (!res.ok) throw new Error('not ok');
     const data = await res.json();
-    const rate = data.usd?.jpy;
+    return data.usd?.jpy;
+  };
+  try {
+    let rate = null;
+    try { rate = await tryFetch(date); } catch(e) {}
+    if (!rate) { rate = await tryFetch('latest'); }
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
