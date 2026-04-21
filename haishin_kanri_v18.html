@@ -3206,9 +3206,9 @@ async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
+    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
     const data = await res.json();
-    const rate = data.rates?.JPY;
+    const rate = data.usd?.jpy;
     if (rate) {
       document.getElementById('fx-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
@@ -3447,9 +3447,9 @@ async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
   try {
-    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
+    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
     const data = await res.json();
-    const rate = data.rates?.JPY;
+    const rate = data.usd?.jpy;
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
