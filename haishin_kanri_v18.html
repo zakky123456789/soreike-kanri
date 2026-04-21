@@ -2927,7 +2927,6 @@ async function addReferrer() {
   const refType = document.getElementById('r-type').value;
   if (!name) { alert('紹介者名を入力してください'); return; }
   const invDesc = document.getElementById('r-inv-desc').value.trim();
-  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('r-inv-desc').focus(); return; }
   let r1pct, r2pct;
   let r2a = 0, r2b = 0;
   if (refType === 'A') {
@@ -2943,6 +2942,7 @@ async function addReferrer() {
   }
   const invoiceNo = document.getElementById('r-invoiceno').value.trim();
   const createInvoice = document.getElementById('r-createInvoice').value === 'true';
+  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('r-inv-desc').focus(); return; }
   const zip     = document.getElementById('r-zip').value.trim();
   const address = document.getElementById('r-address').value.trim();
   const tel     = document.getElementById('r-tel').value.trim();
