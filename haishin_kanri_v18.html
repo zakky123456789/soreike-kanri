@@ -2927,6 +2927,7 @@ async function addReferrer() {
   const refType = document.getElementById('r-type').value;
   if (!name) { alert('紹介者名を入力してください'); return; }
   const invDesc = document.getElementById('r-inv-desc').value.trim();
+  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('r-inv-desc').focus(); return; }
   let r1pct, r2pct;
   let r2a = 0, r2b = 0;
   if (refType === 'A') {
@@ -2942,7 +2943,6 @@ async function addReferrer() {
   }
   const invoiceNo = document.getElementById('r-invoiceno').value.trim();
   const createInvoice = document.getElementById('r-createInvoice').value === 'true';
-  if (createInvoice && !invDesc) { alert('請求書作成「する」の場合、請求書摘要は必須です'); document.getElementById('r-inv-desc').focus(); return; }
   const zip     = document.getElementById('r-zip').value.trim();
   const address = document.getElementById('r-address').value.trim();
   const tel     = document.getElementById('r-tel').value.trim();
@@ -3205,16 +3205,10 @@ function updateFxPreview() {
 async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
-  const tryFetch = async (d) => {
-    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${d}/v1/currencies/usd.json`);
-    if (!res.ok) throw new Error('not ok');
-    const data = await res.json();
-    return data.usd?.jpy;
-  };
   try {
-    let rate = null;
-    try { rate = await tryFetch(date); } catch(e) {}
-    if (!rate) { rate = await tryFetch('latest'); }
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
+    const data = await res.json();
+    const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('fx-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
@@ -3452,16 +3446,10 @@ const calcOfficeSales = (coins, rate, reward, refTotal) => {
 async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
-  const tryFetch = async (d) => {
-    const res = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${d}/v1/currencies/usd.json`);
-    if (!res.ok) throw new Error('not ok');
-    const data = await res.json();
-    return data.usd?.jpy;
-  };
   try {
-    let rate = null;
-    try { rate = await tryFetch(date); } catch(e) {}
-    if (!rate) { rate = await tryFetch('latest'); }
+    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
+    const data = await res.json();
+    const rate = data.rates?.JPY;
     if (rate) {
       document.getElementById('s-rate').value = Number(rate).toFixed(2);
       if (el) el.textContent = '✅ 自動取得（前営業日終値）';
@@ -6367,8 +6355,9 @@ function printRefReport() {
 // ===== REFUND =====
 function renderRefund() {
   const { y, m } = state;
-  const sales = salesOfMonth(y, m);
-  const exps = expOfMonth(y, m);
+  const START_DATE = '2026-04-29';
+  const sales = salesOfMonth(y, m).filter(x => x.date >= START_DATE);
+  const exps = expOfMonth(y, m).filter(e => e.date >= START_DATE);
 
   // 経過措置：令和8年9月末（2026-09-30）まで80%、令和11年9月末（2029-09-30）まで50%、以降0%
   const today = new Date();
@@ -6438,9 +6427,31 @@ function renderRefund() {
       expTaxCredit100 += base;
     }
   });
-  // 管理人報酬：calcManagerRewardで計算、インボイス未登録→経過措置率
-  const mgrData = calcManagerReward(y, m);
-  const mgrRewardAmt = mgrData.mgrReward;
+  // 管理人報酬：開始日フィルター済みのsales/expsで計算、インボイス未登録→経過措置率
+  const mgrRewardAmt = (() => {
+    const totalReward = sales.reduce((s,x) => {
+      const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
+    }, 0);
+    const groupMap = {};
+    sales.forEach(x => {
+      const c = getCaster(x.casterId);
+      if (!c?.refId) return;
+      const key = x.casterId + '_' + x.date;
+      if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
+      groupMap[key].coins += x.coins;
+    });
+    const totalRef = Object.values(groupMap).reduce((s, g) => {
+      const c = getCaster(g.casterId);
+      if (!c?.refId) return s;
+      const ref = getReferrer(c.refId);
+      const rw = calcReward(coinToYen(g.coins), c.rate);
+      return s + calcRefTotal(g.coins, rw, ref).total;
+    }, 0);
+    const totalExpForMgr = exps.reduce((s,e) => e.excludeManager ? s : s + e.amount, 0);
+    const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+    const opProfit = totalSalesEstimate - totalReward - totalRef - totalExpForMgr;
+    return Math.floor(Math.max(0, opProfit) * 0.5);
+  })();
   const mgrBase = Math.floor(mgrRewardAmt / 1.1 * 0.1);
   const mgrCredit = Math.floor(mgrBase * transitRate);
   const mgrCredit100 = mgrBase;
