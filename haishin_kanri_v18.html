@@ -3205,19 +3205,36 @@ function updateFxPreview() {
 async function fetchFxRate(date) {
   const el = document.getElementById('fx-rate-status');
   if (el) el.textContent = '取得中...';
-  try {
-    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
-    const data = await res.json();
-    const rate = data.rates?.JPY;
-    if (rate) {
-      document.getElementById('fx-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
-      updateFxPreview();
-    } else {
-      if (el) el.textContent = '手動入力';
+  const tryApis = async (date) => {
+    const apis = [
+      async () => {
+        const r = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.usd?.jpy;
+      },
+      async () => {
+        const r = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.usd?.jpy;
+      },
+      async () => {
+        const r = await fetch(`https://open.er-api.com/v6/latest/USD`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.rates?.JPY;
+      }
+    ];
+    for (const api of apis) {
+      try { const rate = await api(); if (rate) return rate; } catch(e) {}
     }
-  } catch(e) {
-    if (el) el.textContent = '取得失敗';
+    return null;
+  };
+  const rate = await tryApis(date);
+  if (rate) {
+    document.getElementById('fx-rate').value = Number(rate).toFixed(2);
+    if (el) el.textContent = '✅ 自動取得（前営業日終値）';
+    updateFxPreview();
+  } else {
+    if (el) el.textContent = '取得失敗・手動入力';
   }
 }
 
@@ -3446,18 +3463,35 @@ const calcOfficeSales = (coins, rate, reward, refTotal) => {
 async function fetchRate(date) {
   const el = document.getElementById('s-rate-status');
   if (el) el.textContent = '取得中...';
-  try {
-    const res = await fetch(`https://api.frankfurter.app/${date}?from=USD&to=JPY`);
-    const data = await res.json();
-    const rate = data.rates?.JPY;
-    if (rate) {
-      document.getElementById('s-rate').value = Number(rate).toFixed(2);
-      if (el) el.textContent = '✅ 自動取得（前営業日終値）';
-      updateSalePreview();
-    } else {
-      if (el) el.textContent = '手動入力してください';
+  const tryApis = async (date) => {
+    const apis = [
+      async () => {
+        const r = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${date}/v1/currencies/usd.json`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.usd?.jpy;
+      },
+      async () => {
+        const r = await fetch(`https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.usd?.jpy;
+      },
+      async () => {
+        const r = await fetch(`https://open.er-api.com/v6/latest/USD`);
+        if (!r.ok) throw new Error();
+        const d = await r.json(); return d.rates?.JPY;
+      }
+    ];
+    for (const api of apis) {
+      try { const rate = await api(); if (rate) return rate; } catch(e) {}
     }
-  } catch(e) {
+    return null;
+  };
+  const rate = await tryApis(date);
+  if (rate) {
+    document.getElementById('s-rate').value = Number(rate).toFixed(2);
+    if (el) el.textContent = '✅ 自動取得（前営業日終値）';
+    updateSalePreview();
+  } else {
     if (el) el.textContent = '取得失敗・手動入力';
   }
 }
