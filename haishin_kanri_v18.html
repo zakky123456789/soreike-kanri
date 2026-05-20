@@ -6393,13 +6393,19 @@ function renderRefund() {
   const sales = salesOfMonth(y, m).filter(x => x.date >= START_DATE);
   const exps = expOfMonth(y, m).filter(e => e.date >= START_DATE);
 
-  // 経過措置：令和8年9月末（2026-09-30）まで80%、令和11年9月末（2029-09-30）まで50%、以降0%
+  // 経過措置（令和8年税制改正後）
+  // R5.10.1〜R8.9.30：80%、R8.10.1〜R10.9.30：70%、R10.10.1〜R12.9.30：50%
+  // R12.10.1〜R13.9.30：30%、R13.10.1〜：0%
   const today = new Date();
   const transitRate = today <= new Date('2026-09-30') ? 0.8
-                    : today <= new Date('2029-09-30') ? 0.5
+                    : today <= new Date('2028-09-30') ? 0.7
+                    : today <= new Date('2030-09-30') ? 0.5
+                    : today <= new Date('2031-09-30') ? 0.3
                     : 0;
   const transitLabel = today <= new Date('2026-09-30') ? '80%（R8.9月まで経過措置）'
-                     : today <= new Date('2029-09-30') ? '50%（R11.9月まで経過措置）'
+                     : today <= new Date('2028-09-30') ? '70%（R10.9月まで経過措置）'
+                     : today <= new Date('2030-09-30') ? '50%（R12.9月まで経過措置）'
+                     : today <= new Date('2031-09-30') ? '30%（R13.9月まで経過措置）'
                      : '0%（経過措置終了）';
   const transitPct = Math.round(transitRate * 100);
 
