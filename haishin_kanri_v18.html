@@ -1458,6 +1458,35 @@
       <div id="prepaid-list"></div>
     </div>
 
+    <!-- 未来分再生成モーダル -->
+    <div id="rebuild-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border-radius:12px;padding:28px;width:460px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+        <div style="font-size:16px;font-weight:700;margin-bottom:6px">🔄 未来分振替仕訳を再生成</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:20px">計上済の仕訳はそのまま。未来分を削除して新しい条件で再生成します。</div>
+        <input type="hidden" id="rebuild-master-id">
+        <div id="rebuild-remaining" style="font-size:13px;font-weight:600;color:var(--yellow);margin-bottom:16px;background:rgba(251,191,36,0.1);border-radius:6px;padding:8px 12px"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+          <div class="form-group">
+            <label>開始月（最初の振替月）</label>
+            <input type="month" id="rebuild-start" onchange="calcRebuildPreview()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;width:100%">
+          </div>
+          <div class="form-group">
+            <label>回数</label>
+            <input type="number" id="rebuild-months" min="1" max="120" onchange="calcRebuildPreview()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;width:100%">
+          </div>
+          <div class="form-group">
+            <label>費用化日（毎月何日）</label>
+            <input type="number" id="rebuild-day" min="1" max="28" value="1" onchange="calcRebuildPreview()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;width:100%">
+          </div>
+        </div>
+        <div id="rebuild-preview" style="font-size:12px;color:var(--muted);background:var(--surface2);border-radius:6px;padding:10px 12px;margin-bottom:20px;min-height:32px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn" onclick="closeRebuildModal()" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)">キャンセル</button>
+          <button class="btn btn-primary" onclick="execRebuild()">🔄 再生成する</button>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -7679,7 +7708,6 @@ function renderPrepaid() {
   const today = new Date().toISOString().slice(0, 10);
 
   el.innerHTML = state.prepaidExpenses.map(p => {
-    // この按分マスターに紐づく振替仕訳を取得
     const amorts = state.expenses.filter(e => e.prepaidId === p.id && e.entryType === 'amortization')
       .sort((a, b) => a.date.localeCompare(b.date));
     const doneAmorts = amorts.filter(e => e.date <= today);
@@ -7687,15 +7715,38 @@ function renderPrepaid() {
     const amortized = doneAmorts.reduce((s, e) => s + e.amount, 0);
     const remaining = p.totalAmount - amortized;
     const nextAmort = pendingAmorts[0];
-
-    // 支払元経費
     const payExp = state.expenses.find(e => e.id === p.paymentExpenseId);
+    const progressPct = p.totalAmount > 0 ? Math.round(amortized / p.totalAmount * 100) : 0;
 
     const statusBadge = p.status === 'cancelled'
       ? `<span style="font-size:11px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 8px;font-weight:700">❌ キャンセル済</span>`
       : `<span style="font-size:11px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:2px 8px;font-weight:700">✅ 運用中</span>`;
 
-    const progressPct = p.totalAmount > 0 ? Math.round(amortized / p.totalAmount * 100) : 0;
+    // 振替仕訳テーブル（編集・削除ボタン付き）
+    const amortsTable = amorts.map(a => {
+      const isDone = a.date <= today;
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:6px 8px">
+          <input type="date" value="${a.date}" id="pa-date-${a.id}"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:12px;font-family:var(--mono);color:var(--text);width:130px"
+            ${isDone ? 'disabled title="計上済のため編集不可"' : ''}>
+        </td>
+        <td style="padding:6px 8px;font-size:12px;color:var(--muted)">${a.name.replace(/^【前払費用按分 \d+\/\d+】/, '')}</td>
+        <td style="padding:6px 8px">
+          <input type="number" value="${a.amount}" id="pa-amt-${a.id}"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 6px;font-size:12px;font-family:var(--mono);color:var(--text);width:90px;text-align:right"
+            ${isDone ? 'disabled title="計上済のため編集不可"' : ''}>
+        </td>
+        <td style="padding:6px 8px;text-align:center">
+          ${isDone
+            ? '<span style="font-size:10px;color:var(--green)">✅ 計上済</span>'
+            : `<div style="display:flex;gap:4px;justify-content:center">
+                <button class="btn btn-sm" style="font-size:11px;background:var(--accent);color:#fff;border:none;padding:3px 8px" onclick="saveAmorRow(${a.id},${p.id})">保存</button>
+                <button class="btn btn-sm btn-danger" style="font-size:11px;padding:3px 8px" onclick="deleteAmorRow(${a.id},${p.id})">削除</button>
+               </div>`}
+        </td>
+      </tr>`;
+    }).join('');
 
     return `<div class="table-wrap" style="margin-bottom:20px">
       <div class="table-header" style="justify-content:space-between">
@@ -7704,15 +7755,18 @@ function renderPrepaid() {
           ${statusBadge}
         </div>
         <div style="display:flex;gap:8px">
-          ${p.status === 'active' ? `<button class="btn btn-sm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:11px" onclick="cancelPrepaid(${p.id})">キャンセル</button>` : ''}
+          ${p.status === 'active' && pendingAmorts.length > 0
+            ? `<button class="btn btn-sm" style="background:rgba(79,156,249,0.1);border:1px solid rgba(79,156,249,0.3);color:var(--accent);font-size:11px" onclick="openRebuildModal(${p.id})">🔄 未来分を再生成</button>` : ''}
+          ${p.status === 'active'
+            ? `<button class="btn btn-sm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:11px" onclick="cancelPrepaid(${p.id})">全削除</button>` : ''}
         </div>
       </div>
       <div style="padding:16px">
-        <!-- 基本情報 -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+        <!-- KPIカード -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
           <div style="background:var(--surface2);border-radius:8px;padding:12px">
             <div style="font-size:11px;color:var(--muted);margin-bottom:4px">支払総額</div>
-            <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text)">${yen(p.totalAmount)}</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--mono)">${yen(p.totalAmount)}</div>
           </div>
           <div style="background:var(--surface2);border-radius:8px;padding:12px">
             <div style="font-size:11px;color:var(--muted);margin-bottom:4px">累計費用化額</div>
@@ -7734,10 +7788,10 @@ function renderPrepaid() {
             <span>${doneAmorts.length} / ${amorts.length} 回完了（${progressPct}%）</span>
           </div>
           <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
-            <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#34d399,#10b981);border-radius:4px;transition:width 0.3s"></div>
+            <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#34d399,#10b981);border-radius:4px"></div>
           </div>
         </div>
-        <!-- 詳細情報 -->
+        <!-- 詳細 -->
         <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px">
           <span>📂 資産科目：<strong style="color:var(--text)">${p.assetAccount}</strong></span>
           <span>📤 費用化科目：<strong style="color:var(--text)">${p.expenseAccount}</strong></span>
@@ -7746,29 +7800,20 @@ function renderPrepaid() {
           <span>📆 費用化日：<strong style="color:var(--text)">毎月${p.amortizationDay}日</strong></span>
           ${payExp ? `<span>💳 支払方法：<strong style="color:var(--text)">${payExp.method}</strong></span>` : ''}
         </div>
-        <!-- 振替仕訳一覧（折りたたみ） -->
-        <details style="margin-top:8px">
-          <summary style="cursor:pointer;font-size:12px;color:var(--accent);user-select:none;padding:6px 0">▶ 振替仕訳一覧（全${amorts.length}件）</summary>
-          <div style="margin-top:8px;max-height:280px;overflow-y:auto">
+        <!-- 振替仕訳テーブル -->
+        <details open style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--accent);user-select:none;padding:6px 0">▶ 振替仕訳一覧（全${amorts.length}件・未来分は日付・金額を直接編集可）</summary>
+          <div style="margin-top:8px;max-height:360px;overflow-y:auto">
             <table style="width:100%;font-size:12px;border-collapse:collapse">
               <thead>
                 <tr style="border-bottom:1px solid var(--border)">
                   <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:600">日付</th>
                   <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:600">摘要</th>
                   <th style="text-align:right;padding:4px 8px;color:var(--muted);font-weight:600">金額</th>
-                  <th style="text-align:center;padding:4px 8px;color:var(--muted);font-weight:600">状態</th>
+                  <th style="text-align:center;padding:4px 8px;color:var(--muted);font-weight:600">操作</th>
                 </tr>
               </thead>
-              <tbody>
-                ${amorts.map(a => `<tr style="border-bottom:1px solid var(--border);${a.date <= today ? 'opacity:0.6' : ''}">
-                  <td style="padding:4px 8px;font-family:var(--mono)">${a.date}</td>
-                  <td style="padding:4px 8px">${a.name.replace(/^【前払費用按分 \d+\/\d+】/, '')}</td>
-                  <td style="padding:4px 8px;text-align:right;font-family:var(--mono)">${yen(a.amount)}</td>
-                  <td style="padding:4px 8px;text-align:center">${a.date <= today
-                    ? '<span style="font-size:10px;color:var(--green)">✅ 計上済</span>'
-                    : '<span style="font-size:10px;color:var(--muted)">⏳ 予定</span>'}</td>
-                </tr>`).join('')}
-              </tbody>
+              <tbody>${amortsTable}</tbody>
             </table>
           </div>
         </details>
@@ -7777,17 +7822,154 @@ function renderPrepaid() {
   }).join('');
 }
 
-async function cancelPrepaid(masterId) {
-  if (!confirm('この前払費用をキャンセルしますか？\n未来の振替仕訳は削除されます。')) return;
+// 振替仕訳1件保存
+async function saveAmorRow(expId, masterId) {
+  const newDate = document.getElementById(`pa-date-${expId}`)?.value;
+  const newAmt = parseFloat(document.getElementById(`pa-amt-${expId}`)?.value);
+  if (!newDate || isNaN(newAmt) || newAmt < 0) { alert('日付と金額を正しく入力してください'); return; }
+  const [y, m] = newDate.split('-').map(Number);
+  const idx = state.expenses.findIndex(e => e.id === expId);
+  if (idx === -1) return;
+  const before = expToLogObj(state.expenses[idx]);
+  state.expenses[idx] = { ...state.expenses[idx], date: newDate, amount: newAmt, y, m };
+  await dbSaveAsync('expenses', { id: expId, date: newDate, amount: newAmt, y, m,
+    name: state.expenses[idx].name, payee: state.expenses[idx].payee||'',
+    cat: state.expenses[idx].cat, tax: state.expenses[idx].tax,
+    method: state.expenses[idx].method, invoice_no: '', participants: '', purpose: '',
+    exclude_manager: false, note: state.expenses[idx].note||'',
+    entry_type: 'amortization', prepaid_id: masterId });
+  await writeAuditLog('edit', expId, before, expToLogObj(state.expenses[idx]));
+  renderPrepaid();
+}
+
+// 振替仕訳1件削除
+async function deleteAmorRow(expId, masterId) {
+  if (!confirm('この振替仕訳を削除しますか？')) return;
+  const target = state.expenses.find(e => e.id === expId);
+  if (target) await writeAuditLog('delete', expId, expToLogObj(target), null);
+  state.expenses = state.expenses.filter(e => e.id !== expId);
+  await dbDelete('expenses', expId);
+  renderPrepaid();
+}
+
+// 未来分再生成モーダルを開く
+function openRebuildModal(masterId) {
+  const p = state.prepaidExpenses.find(x => x.id === masterId);
+  if (!p) return;
   const today = new Date().toISOString().slice(0, 10);
-  // 未来の振替仕訳を削除
+  const pendingAmorts = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const doneAmorts = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date <= today);
+  const amortized = doneAmorts.reduce((s, e) => s + e.amount, 0);
+  const remaining = p.totalAmount - amortized;
+
+  document.getElementById('rebuild-master-id').value = masterId;
+  document.getElementById('rebuild-months').value = pendingAmorts.length;
+  document.getElementById('rebuild-day').value = p.amortizationDay;
+  document.getElementById('rebuild-start').value = pendingAmorts.length > 0 ? pendingAmorts[0].date.slice(0, 7) + '-01' : '';
+  document.getElementById('rebuild-remaining').textContent = `未費用化残高：${yen(remaining)}（${pendingAmorts.length}件分）`;
+  document.getElementById('rebuild-modal').style.display = 'flex';
+  calcRebuildPreview();
+}
+
+function calcRebuildPreview() {
+  const months = parseInt(document.getElementById('rebuild-months')?.value || '0');
+  const day = parseInt(document.getElementById('rebuild-day')?.value || '1');
+  const startStr = document.getElementById('rebuild-start')?.value;
+  const masterId = parseInt(document.getElementById('rebuild-master-id')?.value);
+  const p = state.prepaidExpenses.find(x => x.id === masterId);
+  const today = new Date().toISOString().slice(0, 10);
+  const doneAmorts = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date <= today);
+  const amortized = doneAmorts.reduce((s, e) => s + e.amount, 0);
+  const remaining = p ? p.totalAmount - amortized : 0;
+  const el = document.getElementById('rebuild-preview');
+  if (!el || !months || !startStr) { if(el) el.innerHTML = ''; return; }
+  const monthly = Math.floor(remaining / months);
+  const final = remaining - monthly * (months - 1);
+  el.innerHTML = `毎月 <strong>¥${monthly.toLocaleString()}</strong> ×${months-1}回 ＋最終 <strong style="color:var(--accent)">¥${final.toLocaleString()}</strong>　費用化日：毎月${day}日`;
+}
+
+function closeRebuildModal() {
+  document.getElementById('rebuild-modal').style.display = 'none';
+}
+
+async function execRebuild() {
+  const masterId = parseInt(document.getElementById('rebuild-master-id').value);
+  const months = parseInt(document.getElementById('rebuild-months').value);
+  const day = parseInt(document.getElementById('rebuild-day').value);
+  const startStr = document.getElementById('rebuild-start').value;
+  if (!months || months < 1 || !startStr) { alert('開始月・回数・費用化日を入力してください'); return; }
+
+  const p = state.prepaidExpenses.find(x => x.id === masterId);
+  if (!p) return;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // 既存の未来分振替を全削除
   const toDelete = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today);
   for (const e of toDelete) {
     await writeAuditLog('delete', e.id, expToLogObj(e), null);
     await dbDelete('expenses', e.id);
   }
   state.expenses = state.expenses.filter(e => !(e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today));
-  // マスターをcancelledに更新
+
+  // 残額を再按分して生成
+  const doneAmorts = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date <= today);
+  const amortized = doneAmorts.reduce((s, e) => s + e.amount, 0);
+  const remaining = p.totalAmount - amortized;
+  const monthly = Math.floor(remaining / months);
+  const final = remaining - monthly * (months - 1);
+
+  const payExp = state.expenses.find(e => e.id === p.paymentExpenseId);
+  const baseName = payExp ? payExp.name : '前払費用';
+  const totalNew = doneAmorts.length + months;
+
+  const [startY, startM] = startStr.slice(0, 7).split('-').map(Number);
+  let curY = startY, curM = startM;
+  for (let i = 0; i < months; i++) {
+    const isLast = i === months - 1;
+    const amt = isLast ? final : monthly;
+    const maxDay = new Date(curY, curM, 0).getDate();
+    const d = Math.min(day, maxDay);
+    const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const seqNo = doneAmorts.length + i + 1;
+    const amorName = `【前払費用按分 ${seqNo}/${totalNew}】${baseName}`;
+    const amorId = state.nextId++;
+    const amorExp = {
+      id: amorId, date: amorDate, name: amorName, payee: payExp?.payee||'',
+      cat: p.expenseAccount, amount: amt, tax: -1, method: '振替',
+      invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
+      excludeManager: false, note: `前払費用按分（${p.startDate}〜${p.endDate}）${seqNo}回目/${totalNew}回`,
+      entryType: 'amortization', prepaidId: masterId
+    };
+    state.expenses.push(amorExp);
+    await dbSaveAsync('expenses', {
+      id: amorId, date: amorDate, name: amorName, payee: payExp?.payee||'',
+      cat: p.expenseAccount, amount: amt, tax: -1, method: '振替',
+      invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+      exclude_manager: false, note: amorExp.note,
+      entry_type: 'amortization', prepaid_id: masterId
+    });
+    curM++; if (curM > 12) { curM = 1; curY++; }
+  }
+  // マスターの費用化日を更新
+  const pidx = state.prepaidExpenses.findIndex(x => x.id === masterId);
+  if (pidx !== -1) state.prepaidExpenses[pidx].amortizationDay = day;
+  await sb.from('prepaid_expenses').update({ amortization_day: day }).eq('id', masterId);
+
+  closeRebuildModal();
+  renderAll();
+  alert(`✅ 未来分 ${months}件を再生成しました`);
+}
+
+async function cancelPrepaid(masterId) {
+  if (!confirm('この前払費用の未来の振替仕訳を全て削除しますか？\n（計上済の仕訳はそのまま残ります）')) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const toDelete = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today);
+  for (const e of toDelete) {
+    await writeAuditLog('delete', e.id, expToLogObj(e), null);
+    await dbDelete('expenses', e.id);
+  }
+  state.expenses = state.expenses.filter(e => !(e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today));
   const idx = state.prepaidExpenses.findIndex(p => p.id === masterId);
   if (idx !== -1) state.prepaidExpenses[idx].status = 'cancelled';
   await sb.from('prepaid_expenses').update({ status: 'cancelled' }).eq('id', masterId);
