@@ -7757,8 +7757,9 @@ function renderPrepaid() {
         <div style="display:flex;gap:8px">
           ${p.status === 'active' && pendingAmorts.length > 0
             ? `<button class="btn btn-sm" style="background:rgba(79,156,249,0.1);border:1px solid rgba(79,156,249,0.3);color:var(--accent);font-size:11px" onclick="openRebuildModal(${p.id})">🔄 未来分を再生成</button>` : ''}
-          ${p.status === 'active'
-            ? `<button class="btn btn-sm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:11px" onclick="cancelPrepaid(${p.id})">全削除</button>` : ''}
+          ${p.status === 'active' && pendingAmorts.length > 0
+            ? `<button class="btn btn-sm" style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);color:#fb923c;font-size:11px" onclick="cancelPrepaid(${p.id})">⏭️ 未来分削除</button>` : ''}
+          <button class="btn btn-sm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:11px" onclick="deletePrepaidAll(${p.id})">🗑️ 全件完全削除</button>
         </div>
       </div>
       <div style="padding:16px">
@@ -7959,6 +7960,41 @@ async function execRebuild() {
   closeRebuildModal();
   renderAll();
   alert(`✅ 未来分 ${months}件を再生成しました`);
+}
+
+async function deletePrepaidAll(masterId) {
+  const p = state.prepaidExpenses.find(x => x.id === masterId);
+  if (!p) return;
+  const allAmorts = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization');
+  const payExp = state.expenses.find(e => e.id === p.paymentExpenseId);
+  const msg = `【完全削除の確認】\n\n` +
+    `・振替仕訳 ${allAmorts.length}件（計上済含む）\n` +
+    `・前払費用マスター 1件\n` +
+    (payExp ? `・支払元経費「${payExp.name}」も削除しますか？` : '') +
+    `\n\n全て削除してよろしいですか？`;
+  if (!confirm(msg)) return;
+
+  const deletePayment = payExp ? confirm(`支払元経費「${payExp.name}」(${yen(p.totalAmount)}) も削除しますか？\n\n「キャンセル」を押すと振替仕訳のみ削除します。`) : false;
+
+  // 振替仕訳を全件削除
+  for (const e of allAmorts) {
+    await writeAuditLog('delete', e.id, expToLogObj(e), null);
+    await dbDelete('expenses', e.id);
+  }
+  state.expenses = state.expenses.filter(e => !(e.prepaidId === masterId && e.entryType === 'amortization'));
+
+  // 支払元経費の削除（選択時）
+  if (deletePayment && payExp) {
+    await writeAuditLog('delete', payExp.id, expToLogObj(payExp), null);
+    await dbDelete('expenses', payExp.id);
+    state.expenses = state.expenses.filter(e => e.id !== payExp.id);
+  }
+
+  // マスター削除
+  state.prepaidExpenses = state.prepaidExpenses.filter(x => x.id !== masterId);
+  await sb.from('prepaid_expenses').delete().eq('id', masterId);
+
+  renderAll();
 }
 
 async function cancelPrepaid(masterId) {
