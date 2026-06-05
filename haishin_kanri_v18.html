@@ -200,6 +200,7 @@
     <div class="nav-item" onclick="showPage('refReport')"><span>📨</span>紹介者報告書</div>
     <div class="nav-item" onclick="showPage('withholding')"><span>📄</span>支払調書</div>
     <div class="nav-item" onclick="showPage('manager')"><span>👔</span>管理人</div>
+    <div class="nav-item" onclick="showPage('prepaid')"><span>📅</span>前払費用管理</div>
     <div id="nav-refund" class="nav-item" onclick="showPage('refund')" style="display:none"><span>↩️</span>消費税還付</div>
     <div id="role-badge" style="display:none"><div id="role-badge-dot"></div></div>
   </nav>
@@ -984,6 +985,51 @@
           <div style="margin-top:10px">
             <div class="form-group"><label>備考</label><input id="e-note" placeholder="メモ・補足など"></div>
           </div>
+          <div style="margin-top:10px">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
+              <input type="checkbox" id="e-prepaid-check" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer" onchange="togglePrepaidForm()">
+              <span>📅 期間按分する（前払費用・長期保険料など）</span>
+              <span style="font-size:11px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:1px 7px">月次自動費用化</span>
+            </label>
+          </div>
+          <!-- 期間按分フォーム（折りたたみ） -->
+          <div id="prepaid-form-area" style="display:none;margin-top:12px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:14px">
+            <div style="font-size:12px;font-weight:700;color:#34d399;margin-bottom:10px">📅 期間按分設定</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group">
+                <label>資産計上科目</label>
+                <select id="e-prepaid-asset-cat">
+                  <option value="長期前払費用">長期前払費用</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>費用化科目</label>
+                <select id="e-prepaid-exp-cat">
+                  <option value="保険料">保険料</option>
+                  <option value="家賃">家賃</option>
+                  <option value="通信費">通信費</option>
+                  <option value="その他">その他</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>契約開始日</label>
+                <input type="date" id="e-prepaid-start" onchange="calcPrepaidPreview()">
+              </div>
+              <div class="form-group">
+                <label>契約終了日</label>
+                <input type="date" id="e-prepaid-end" onchange="calcPrepaidPreview()">
+              </div>
+              <div class="form-group">
+                <label>按分回数（月数）</label>
+                <input type="number" id="e-prepaid-months" min="1" max="120" placeholder="例：24" onchange="calcPrepaidPreview()">
+              </div>
+              <div class="form-group">
+                <label>費用化日（毎月何日）</label>
+                <input type="number" id="e-prepaid-day" min="1" max="28" placeholder="例：1" value="1" onchange="calcPrepaidPreview()">
+              </div>
+            </div>
+            <div id="prepaid-preview-area" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+          </div>
           <div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
             <button class="btn btn-primary" onclick="addExpense()">＋ 追加</button>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--surface2);border:1px dashed var(--border);border-radius:6px;padding:6px 12px;font-size:12px;color:var(--muted);transition:all 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
@@ -1401,6 +1447,17 @@
       </div>
     </div>
 
+    <!-- 前払費用管理 -->
+    <div class="page" id="page-prepaid">
+      <div class="page-header">
+        <div class="page-title">前払費用管理</div>
+      </div>
+      <div class="alert alert-blue" style="margin-bottom:16px">
+        💡 経費入力で「期間按分する」を選択すると、支払時に前払費用として資産計上し、月次で自動的に費用化仕訳が生成されます。
+      </div>
+      <div id="prepaid-list"></div>
+    </div>
+
   </main>
 </div>
 
@@ -1433,7 +1490,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1445,6 +1502,7 @@ async function loadFromDB() {
       fetchAll('receipts', 'id'),
       fetchAll('month_end_pays', 'id'),
       fetchAll('petty_cash', 'id'),
+      fetchAll('prepaid_expenses', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1479,7 +1537,8 @@ async function loadFromDB() {
         amount: Number(r.amount), tax: r.tax, method: r.method, y: r.y, m: r.m,
         invoiceNo: r.invoice_no || '', payee: r.payee || '',
         participants: r.participants || '', purpose: r.purpose || '', settled: r.settled || false,
-        excludeManager: r.exclude_manager || false, note: r.note || ''
+        excludeManager: r.exclude_manager || false, note: r.note || '',
+        entryType: r.entry_type || 'normal', prepaidId: r.prepaid_id || null
       }));
     }
     if (dailyR.data?.length > 0) {
@@ -1525,9 +1584,18 @@ async function loadFromDB() {
       }));
     }
     if (pcR.data?.length > 0) {
-      state.pettyCash = pcR.data.map(r => ({
-        id: r.id, date: r.date, amount: Number(r.amount),
+      state.pettyCash = pcR.data.map(r => ({\n        id: r.id, date: r.date, amount: Number(r.amount),
         type: r.type || 'replenish', note: r.note || '', y: r.y, m: r.m
+      }));
+    }
+    if (prepaidR.data?.length > 0) {
+      state.prepaidExpenses = prepaidR.data.map(r => ({
+        id: r.id, paymentExpenseId: r.payment_expense_id,
+        assetAccount: r.asset_account, expenseAccount: r.expense_account,
+        totalAmount: Number(r.total_amount), startDate: r.start_date, endDate: r.end_date,
+        months: r.months, monthlyAmount: Number(r.monthly_amount),
+        finalAmount: Number(r.final_amount), amortizationDay: r.amortization_day,
+        status: r.status || 'active', note: r.note || '', createdAt: r.created_at
       }));
     }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
@@ -1541,6 +1609,7 @@ async function loadFromDB() {
       ...state.receipts.map(r => r.id),
       ...state.monthEndPays.map(r => r.id),
       ...state.pettyCash.map(r => r.id),
+      ...state.prepaidExpenses.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -1650,6 +1719,7 @@ let state = {
   fxRecords: [], // 両替記録
   receipts: [], // 領収書
   pettyCash: [], // 小口現金
+  prepaidExpenses: [], // 前払費用マスター
   nextId: 300,
 };
 
@@ -1761,6 +1831,7 @@ const CAT_BADGE_STYLE = {
   '旅費交通費': 'background:rgba(52,211,153,0.15);color:var(--green)',
   '支払手数料': 'background:rgba(148,163,184,0.15);color:#94a3b8',
   '長期前払費用': 'background:rgba(52,211,153,0.15);color:#34d399',
+  '保険料': 'background:rgba(52,211,153,0.1);color:#10b981',
   '広告宣伝費': 'background:rgba(244,114,182,0.15);color:#f472b6',
   '衣装・美容費':'background:rgba(124,92,252,0.15);color:var(--accent2)',
   '機材・設備費':'background:rgba(99,102,241,0.15);color:#818cf8',
@@ -1799,6 +1870,10 @@ const getCaster = id => state.casters.find(c => c.id === id);
 const getReferrer = id => state.referrers.find(r => r.id === id);
 const salesOfMonth = (y, m) => state.sales.filter(s => s.y === y && s.m === m);
 const expOfMonth = (y, m) => state.expenses.filter(e => e.y === y && e.m === m);
+// P/L対象（prepaid_payment は除外）
+const isPlExpense = e => e.entryType !== 'prepaid_payment';
+// 管理人立替対象（amortization振替は除外、excludeManagerも除外）
+const isMgrExpense = e => isPlExpense(e) && e.method !== '振替' && !e.excludeManager;
 
 // ===== NAV =====
 function toggleMobileNav() {
@@ -1907,7 +1982,7 @@ async function writeAuditLog(action, recordId, before, after) {
 }
 
 function expToLogObj(e) {
-  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note };
+  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null };
 }
 
 async function downloadAuditLog() {
@@ -2157,7 +2232,7 @@ function selectMonth(y, m) {
 
 
 // ===== AI レシート読み込み =====
-const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','長期前払費用','その他'];
+const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','長期前払費用','保険料','その他'];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
 const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
 let receiptResults = [];
@@ -2578,10 +2653,10 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'' };
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType: 'normal', prepaidId: null };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'' })
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: 'normal', prepaid_id: null })
       .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
   });
   await Promise.all(expRows);
@@ -2629,7 +2704,7 @@ async function addCheckedReceipts() {
 // ===== RENDER ALL =====
 function renderAll() {
   renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
-  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects();
+  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid();
 }
 
 // ===== DASHBOARD =====
@@ -2657,7 +2732,7 @@ function renderDashboard() {
   const totalReward = sales.reduce((s, x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
-  const totalExp = exps.reduce((s, e) => s + e.amount, 0);
+  const totalExp = exps.filter(isPlExpense).reduce((s, e) => s + e.amount, 0);
   const totalRef = sales.reduce((s, x) => {
     const c = getCaster(x.casterId);
     if (!c?.refId) return s;
@@ -2692,7 +2767,7 @@ function renderDashboard() {
   }).join('');
 
   const catMap = {};
-  exps.forEach(e => { catMap[e.cat] = (catMap[e.cat]||0) + e.amount; });
+  exps.filter(isPlExpense).forEach(e => { catMap[e.cat] = (catMap[e.cat]||0) + e.amount; });
   document.getElementById('dash-exp').innerHTML = Object.entries(catMap).sort((a,b)=>b[1]-a[1])
     .map(([cat,amt]) => `<tr><td>${cat}</td><td class="num">${yen(amt)}</td></tr>`).join('');
 
@@ -4405,6 +4480,7 @@ function catOptions(selectedCat) {
     ['会議費','会議費 📋 打合せ・商談が主目的の飲食'],
     ['支払手数料','支払手数料'],
     ['長期前払費用','長期前払費用（保険料・家賃保証金など）'],
+    ['保険料','保険料（前払費用の費用化）'],
     ['その他','その他（上記に当てはまらないもの）'],
   ];
   return cats.map(([v,l]) => `<option value="${v}"${v===selectedCat?' selected':''}>${l}</option>`).join('');
@@ -4557,6 +4633,7 @@ async function addExpense() {
   const invoiceNo = document.getElementById('e-invoice').value.trim();
   const excludeManager = document.getElementById('e-exclude-manager')?.checked || false;
   const note = document.getElementById('e-note')?.value.trim() || '';
+  const isPrepaid = document.getElementById('e-prepaid-check')?.checked || false;
 
   // 全明細行を収集
   const container = document.getElementById('e-rows-container');
@@ -4578,16 +4655,47 @@ async function addExpense() {
     rows.push({ name, cat, tax, amount, participants, purpose });
   }
 
+  // 期間按分の検証（チェック時）
+  let prepaidConfig = null;
+  if (isPrepaid) {
+    if (rows.length > 1) { alert('期間按分は明細1行のみ対応しています。複数行の場合はチェックを外してください。'); return; }
+    const assetCat = document.getElementById('e-prepaid-asset-cat')?.value || '長期前払費用';
+    const expCat = document.getElementById('e-prepaid-exp-cat')?.value || '保険料';
+    const startDate = document.getElementById('e-prepaid-start')?.value;
+    const endDate = document.getElementById('e-prepaid-end')?.value;
+    const months = parseInt(document.getElementById('e-prepaid-months')?.value || '0');
+    const amorDay = parseInt(document.getElementById('e-prepaid-day')?.value || '1');
+    if (!startDate || !endDate || !months || months < 1) {
+      alert('期間按分の設定（開始日・終了日・按分回数）を入力してください'); return;
+    }
+    prepaidConfig = { assetCat, expCat, startDate, endDate, months, amorDay };
+  }
+
   // 領収書ファイル（全行共通・1枚を最初の経費に紐付け）
   const receiptFile = document.getElementById('e-receipt-file')?.files?.[0];
   const [y, m] = date.split('-').map(Number);
 
+  let firstExpenseId = null;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    const newExp = { id: state.nextId++, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants, purpose: r.purpose, y, m, excludeManager, note };
+    // 期間按分の場合：支払時は資産計上科目で登録、entry_type='prepaid_payment'
+    const actualCat = isPrepaid ? prepaidConfig.assetCat : r.cat;
+    const entryType = isPrepaid ? 'prepaid_payment' : 'normal';
+    const newExp = {
+      id: state.nextId++, date, name: r.name, payee, cat: actualCat,
+      amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants,
+      purpose: r.purpose, y, m, excludeManager, note,
+      entryType, prepaidId: null
+    };
     state.expenses.push(newExp);
-    await dbSaveAsync('expenses', { id: newExp.id, date, name: r.name, payee, cat: r.cat, amount: r.amount, tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants, purpose: r.purpose, y, m, exclude_manager: excludeManager, note });
+    await dbSaveAsync('expenses', {
+      id: newExp.id, date, name: r.name, payee, cat: actualCat, amount: r.amount,
+      tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants,
+      purpose: r.purpose, y, m, exclude_manager: excludeManager, note,
+      entry_type: entryType, prepaid_id: null
+    });
     await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
+    if (i === 0) firstExpenseId = newExp.id;
 
     // 領収書は先頭行にのみ添付
     if (i === 0 && receiptFile) {
@@ -4614,11 +4722,73 @@ async function addExpense() {
     }
   }
 
+  // 期間按分：前払費用マスター登録＋月次振替仕訳一括生成
+  if (isPrepaid && prepaidConfig && firstExpenseId !== null) {
+    const { assetCat, expCat, startDate, endDate, months, amorDay } = prepaidConfig;
+    const totalAmt = rows[0].amount;
+    const monthly = Math.floor(totalAmt / months);
+    const final = totalAmt - monthly * (months - 1);
+    // マスター登録
+    const masterId = state.nextId++;
+    const masterRec = {
+      id: masterId, paymentExpenseId: firstExpenseId,
+      assetAccount: assetCat, expenseAccount: expCat,
+      totalAmount: totalAmt, startDate, endDate,
+      months, monthlyAmount: monthly, finalAmount: final,
+      amortizationDay: amorDay, status: 'active', note, createdAt: new Date().toISOString()
+    };
+    state.prepaidExpenses.push(masterRec);
+    await sb.from('prepaid_expenses').insert({
+      id: masterId, payment_expense_id: firstExpenseId,
+      asset_account: assetCat, expense_account: expCat,
+      total_amount: totalAmt, start_date: startDate, end_date: endDate,
+      months, monthly_amount: monthly, final_amount: final,
+      amortization_day: amorDay, status: 'active', note
+    });
+    // 月次振替仕訳を全件（months件）生成
+    const startParts = startDate.split('-').map(Number);
+    let curY = startParts[0], curM = startParts[1];
+    for (let i = 0; i < months; i++) {
+      const isLast = i === months - 1;
+      const amt = isLast ? final : monthly;
+      // 費用化日：その月のamorDay日（月末を超えた場合は月末）
+      const maxDay = new Date(curY, curM, 0).getDate();
+      const day = Math.min(amorDay, maxDay);
+      const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const amorName = `【前払費用按分 ${i+1}/${months}】${rows[0].name}`;
+      const amorId = state.nextId++;
+      const amorExp = {
+        id: amorId, date: amorDate, name: amorName, payee,
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
+        excludeManager: false, note: `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`,
+        entryType: 'amortization', prepaidId: masterId
+      };
+      state.expenses.push(amorExp);
+      await dbSaveAsync('expenses', {
+        id: amorId, date: amorDate, name: amorName, payee,
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+        exclude_manager: false, note: amorExp.note,
+        entry_type: 'amortization', prepaid_id: masterId
+      });
+      // 月を進める
+      curM++;
+      if (curM > 12) { curM = 1; curY++; }
+    }
+    // マスターIDをpayment経費レコードのprepaid_idに更新
+    const pidx = state.expenses.findIndex(e => e.id === firstExpenseId);
+    if (pidx !== -1) { state.expenses[pidx].prepaidId = masterId; }
+    await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', firstExpenseId);
+  }
+
   // リセット
   document.getElementById('e-payee').value = '';
   document.getElementById('e-invoice').value = '';
   const exclCb = document.getElementById('e-exclude-manager');
   if (exclCb) exclCb.checked = false;
+  const prepaidCb = document.getElementById('e-prepaid-check');
+  if (prepaidCb) { prepaidCb.checked = false; togglePrepaidForm(); }
   const receiptInput = document.getElementById('e-receipt-file');
   if (receiptInput) { receiptInput.value = ''; updateExpReceiptLabel(receiptInput); }
   document.getElementById('e-note').value = '';
@@ -4626,6 +4796,44 @@ async function addExpense() {
   const cont = document.getElementById('e-rows-container');
   if (cont) { cont.innerHTML = ''; expRowCount = 0; addExpRow(); }
   renderAll();
+}
+
+function togglePrepaidForm() {
+  const checked = document.getElementById('e-prepaid-check')?.checked;
+  const area = document.getElementById('prepaid-form-area');
+  if (area) area.style.display = checked ? 'block' : 'none';
+  if (checked) calcPrepaidPreview();
+}
+
+function calcPrepaidPreview() {
+  const area = document.getElementById('prepaid-preview-area');
+  if (!area) return;
+  const container = document.getElementById('e-rows-container');
+  const rowEls = container ? [...container.children] : [];
+  let totalAmt = 0;
+  if (rowEls.length > 0) {
+    const rid = rowEls[0].id.replace('e-row-', '');
+    totalAmt = parseFloat(document.getElementById(`er-amount-${rid}`)?.value || '0') || 0;
+  }
+  const months = parseInt(document.getElementById('e-prepaid-months')?.value || '0');
+  const startDate = document.getElementById('e-prepaid-start')?.value;
+  const endDate = document.getElementById('e-prepaid-end')?.value;
+  const amorDay = parseInt(document.getElementById('e-prepaid-day')?.value || '1');
+  if (!months || months < 1 || !totalAmt) {
+    area.innerHTML = '';
+    return;
+  }
+  const monthly = Math.floor(totalAmt / months);
+  const final = totalAmt - monthly * (months - 1);
+  area.innerHTML = `<div style="background:var(--surface2);border-radius:6px;padding:10px 12px;margin-top:4px">
+    <span style="color:#34d399;font-weight:700">按分プレビュー：</span>
+    毎月 <strong style="color:var(--text)">¥${monthly.toLocaleString()}</strong> ×${months-1}回
+    ＋最終月 <strong style="color:var(--accent)">¥${final.toLocaleString()}</strong>（端数）
+    ${startDate ? `　開始：${startDate}` : ''}
+    ${endDate ? `〜終了：${endDate}` : ''}
+    　費用化日：毎月${amorDay}日
+    <span style="margin-left:8px;color:var(--muted);font-size:11px">（計${months}件の振替仕訳を自動生成）</span>
+  </div>`;
 }
 
 function toggleExpEditEntertain() {
@@ -4680,8 +4888,10 @@ async function saveExpEdit() {
   const idx = state.expenses.findIndex(x => x.id === id);
   if (idx !== -1) {
     const before = expToLogObj(state.expenses[idx]);
-    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note };
-    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note });
+    const entryType = state.expenses[idx].entryType || 'normal';
+    const prepaidId = state.expenses[idx].prepaidId || null;
+    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note, entryType, prepaidId };
+    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId });
     await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   }
   closeExpEditModal();
@@ -4696,7 +4906,17 @@ function settleExpense(id) {
 
 async function deleteExpense(id) {
   const target = state.expenses.find(e => e.id === id);
-  if (target) await writeAuditLog('delete', id, expToLogObj(target), null);
+  if (!target) return;
+  if (target.entryType === 'amortization') {
+    if (!confirm('これは前払費用の振替仕訳です。\n削除すると按分記録との整合性が崩れます。\nそれでも削除しますか？')) return;
+  }
+  if (target.entryType === 'prepaid_payment') {
+    const hasAmorts = state.expenses.some(e => e.prepaidId === target.prepaidId && e.entryType === 'amortization');
+    if (hasAmorts) {
+      if (!confirm('これは前払費用の支払記録です。\n関連する振替仕訳が残っています。\n前払費用管理ページからキャンセル操作を行うことを推奨します。\nそれでも削除しますか？')) return;
+    }
+  }
+  await writeAuditLog('delete', id, expToLogObj(target), null);
   state.expenses = state.expenses.filter(e => e.id !== id);
   await dbDelete('expenses', id);
   renderAll();
@@ -4898,6 +5118,12 @@ function renderExpenses() {
         if (e.excludeManager) {
           nameHtml += ` <span style="font-size:10px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">報酬除外</span>`;
         }
+        if (e.entryType === 'amortization') {
+          nameHtml += ` <span style="font-size:10px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔄 振替</span>`;
+        }
+        if (e.entryType === 'prepaid_payment') {
+          nameHtml += ` <span style="font-size:10px;background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">📅 前払計上</span>`;
+        }
         return nameHtml;
       })()}</td>
       <td data-label="支払先" style="font-size:12px;color:var(--muted)">${e.payee||'-'}</td>
@@ -4922,7 +5148,7 @@ function renderExpenses() {
 
   // 立替精算サマリー
   const FURIKAE_METHODS = ['個人クレジット・デビットカード（立替）', '現金（立替）', '個人口座銀行振込（立替）', '管理人立替'];
-  const furikaeExps = expOfMonth(y, m).filter(e => FURIKAE_METHODS.includes(e.method));
+  const furikaeExps = expOfMonth(y, m).filter(e => FURIKAE_METHODS.includes(e.method) && isPlExpense(e));
   const summaryEl = document.getElementById('furikae-summary');
   if (!summaryEl) return;
   if (furikaeExps.length === 0) {
@@ -4997,9 +5223,9 @@ function renderPL() {
   const totalSrc = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcSrcTax(calcReward(coinToYen(x.coins), c.rate)) : 0);
   }, 0);
-  const totalExp = exps.reduce((s,e) => s + e.amount, 0);
+  const totalExp = exps.filter(isPlExpense).reduce((s,e) => s + e.amount, 0);
   const catMap = {};
-  exps.forEach(e => { catMap[e.cat] = (catMap[e.cat]||0) + e.amount; });
+  exps.filter(isPlExpense).forEach(e => { catMap[e.cat] = (catMap[e.cat]||0) + e.amount; });
 
   // 推計
   // 推計売上 = コイン×0.05×レート（売上明細の円換算列と同じ）
@@ -6452,7 +6678,7 @@ function renderRefund() {
 
   // 経費：インボイス番号あり→100%、なし→経過措置率
   let expTaxCredit = 0, expTaxCredit100 = 0, expTaxCreditTransit = 0;
-  exps.forEach(e => {
+  exps.filter(isPlExpense).forEach(e => {
     const base = calcExpTax(e.amount, e.tax);
     if (e.tax <= 0) return; // 非課税・対象外はスキップ
     if (e.invoiceNo) {
@@ -6484,7 +6710,7 @@ function renderRefund() {
       const rw = calcReward(coinToYen(g.coins), c.rate);
       return s + calcRefTotal(g.coins, rw, ref).total;
     }, 0);
-    const totalExpForMgr = exps.reduce((s,e) => e.excludeManager ? s : s + e.amount, 0);
+    const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
     const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
     const opProfit = totalSalesEstimate - totalReward - totalRef - totalExpForMgr;
     return Math.floor(Math.max(0, opProfit) * 0.5);
@@ -6612,7 +6838,7 @@ function calcManagerReward(y, m) {
     }, 0);
   })();
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
-  const totalExpForMgr = exps.reduce((s,e) => e.excludeManager ? s : s + e.amount, 0);
+  const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
   const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
   const mgrReward = Math.floor(Math.max(0, opProfit) * 0.5);
 
@@ -7290,6 +7516,135 @@ function printWithholding() {
 }
 
 // ===== END 支払調書 =====
+
+// ===== 前払費用管理 =====
+function renderPrepaid() {
+  const el = document.getElementById('prepaid-list');
+  if (!el) return;
+
+  if (state.prepaidExpenses.length === 0) {
+    el.innerHTML = '<div class="table-wrap"><div style="padding:32px;text-align:center;color:var(--muted)">前払費用の登録がありません<br><span style="font-size:12px">経費入力で「期間按分する」を選択すると登録されます</span></div></div>';
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  el.innerHTML = state.prepaidExpenses.map(p => {
+    // この按分マスターに紐づく振替仕訳を取得
+    const amorts = state.expenses.filter(e => e.prepaidId === p.id && e.entryType === 'amortization')
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const doneAmorts = amorts.filter(e => e.date <= today);
+    const pendingAmorts = amorts.filter(e => e.date > today);
+    const amortized = doneAmorts.reduce((s, e) => s + e.amount, 0);
+    const remaining = p.totalAmount - amortized;
+    const nextAmort = pendingAmorts[0];
+
+    // 支払元経費
+    const payExp = state.expenses.find(e => e.id === p.paymentExpenseId);
+
+    const statusBadge = p.status === 'cancelled'
+      ? `<span style="font-size:11px;background:rgba(239,68,68,0.15);color:var(--red);border:1px solid rgba(239,68,68,0.3);border-radius:4px;padding:2px 8px;font-weight:700">❌ キャンセル済</span>`
+      : `<span style="font-size:11px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:2px 8px;font-weight:700">✅ 運用中</span>`;
+
+    const progressPct = p.totalAmount > 0 ? Math.round(amortized / p.totalAmount * 100) : 0;
+
+    return `<div class="table-wrap" style="margin-bottom:20px">
+      <div class="table-header" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="table-title">📅 ${payExp ? payExp.name : '（支払元不明）'}</div>
+          ${statusBadge}
+        </div>
+        <div style="display:flex;gap:8px">
+          ${p.status === 'active' ? `<button class="btn btn-sm" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:var(--red);font-size:11px" onclick="cancelPrepaid(${p.id})">キャンセル</button>` : ''}
+        </div>
+      </div>
+      <div style="padding:16px">
+        <!-- 基本情報 -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+          <div style="background:var(--surface2);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">支払総額</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--text)">${yen(p.totalAmount)}</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">累計費用化額</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--green)">${yen(amortized)}</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">未費用化残高</div>
+            <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:${remaining > 0 ? 'var(--yellow)' : 'var(--muted)'}">${yen(remaining)}</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:12px">
+            <div style="font-size:11px;color:var(--muted);margin-bottom:4px">次回振替予定</div>
+            <div style="font-size:14px;font-weight:700;color:var(--accent)">${nextAmort ? nextAmort.date + `<span style="font-size:12px;color:var(--muted)"> (${yen(nextAmort.amount)})</span>` : '—（完了）'}</div>
+          </div>
+        </div>
+        <!-- プログレスバー -->
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px">
+            <span>費用化進捗</span>
+            <span>${doneAmorts.length} / ${amorts.length} 回完了（${progressPct}%）</span>
+          </div>
+          <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${progressPct}%;background:linear-gradient(90deg,#34d399,#10b981);border-radius:4px;transition:width 0.3s"></div>
+          </div>
+        </div>
+        <!-- 詳細情報 -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px">
+          <span>📂 資産科目：<strong style="color:var(--text)">${p.assetAccount}</strong></span>
+          <span>📤 費用化科目：<strong style="color:var(--text)">${p.expenseAccount}</strong></span>
+          <span>📅 契約期間：<strong style="color:var(--text)">${p.startDate} 〜 ${p.endDate}</strong></span>
+          <span>🔢 月次金額：<strong style="color:var(--text)">${yen(p.monthlyAmount)}</strong> × ${p.months - 1}回 ＋最終 ${yen(p.finalAmount)}</span>
+          <span>📆 費用化日：<strong style="color:var(--text)">毎月${p.amortizationDay}日</strong></span>
+          ${payExp ? `<span>💳 支払方法：<strong style="color:var(--text)">${payExp.method}</strong></span>` : ''}
+        </div>
+        <!-- 振替仕訳一覧（折りたたみ） -->
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--accent);user-select:none;padding:6px 0">▶ 振替仕訳一覧（全${amorts.length}件）</summary>
+          <div style="margin-top:8px;max-height:280px;overflow-y:auto">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border)">
+                  <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:600">日付</th>
+                  <th style="text-align:left;padding:4px 8px;color:var(--muted);font-weight:600">摘要</th>
+                  <th style="text-align:right;padding:4px 8px;color:var(--muted);font-weight:600">金額</th>
+                  <th style="text-align:center;padding:4px 8px;color:var(--muted);font-weight:600">状態</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${amorts.map(a => `<tr style="border-bottom:1px solid var(--border);${a.date <= today ? 'opacity:0.6' : ''}">
+                  <td style="padding:4px 8px;font-family:var(--mono)">${a.date}</td>
+                  <td style="padding:4px 8px">${a.name.replace(/^【前払費用按分 \d+\/\d+】/, '')}</td>
+                  <td style="padding:4px 8px;text-align:right;font-family:var(--mono)">${yen(a.amount)}</td>
+                  <td style="padding:4px 8px;text-align:center">${a.date <= today
+                    ? '<span style="font-size:10px;color:var(--green)">✅ 計上済</span>'
+                    : '<span style="font-size:10px;color:var(--muted)">⏳ 予定</span>'}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function cancelPrepaid(masterId) {
+  if (!confirm('この前払費用をキャンセルしますか？\n未来の振替仕訳は削除されます。')) return;
+  const today = new Date().toISOString().slice(0, 10);
+  // 未来の振替仕訳を削除
+  const toDelete = state.expenses.filter(e => e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today);
+  for (const e of toDelete) {
+    await writeAuditLog('delete', e.id, expToLogObj(e), null);
+    await dbDelete('expenses', e.id);
+  }
+  state.expenses = state.expenses.filter(e => !(e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today));
+  // マスターをcancelledに更新
+  const idx = state.prepaidExpenses.findIndex(p => p.id === masterId);
+  if (idx !== -1) state.prepaidExpenses[idx].status = 'cancelled';
+  await sb.from('prepaid_expenses').update({ status: 'cancelled' }).eq('id', masterId);
+  renderAll();
+}
+// ===== END 前払費用管理 =====
 
 // 発行者名 + 日付(YYYYMMDD) + その日の連番(001〜)
 // state.invoiceSeq = { 'ヤマダ-20260307': 1, ... }
