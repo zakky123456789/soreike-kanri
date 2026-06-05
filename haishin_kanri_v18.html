@@ -401,33 +401,6 @@
       </div>
     </div>
 
-    <!-- 紹介者請求書モーダル -->
-    <div id="ref-invoice-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:600px;max-width:95vw;max-height:90vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <div style="font-size:16px;font-weight:700">📄 請求書管理</div>
-          <button onclick="closeRefInvoiceModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
-        </div>
-        <div id="ref-invoice-info" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
-        <div style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
-          onclick="document.getElementById('ref-invoice-file').click()"
-          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-          ondragleave="this.style.borderColor='var(--border)'"
-          ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleRefInvoiceDrop(event)">
-          <div style="font-size:24px;margin-bottom:8px">📄</div>
-          <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
-        </div>
-        <input type="file" id="ref-invoice-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handleRefInvoiceFileSelect(event)">
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
-          <input id="ref-invoice-note" placeholder="例：2026年4月分請求書" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
-        </div>
-        <div id="ref-invoice-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
-        <div id="ref-invoice-list"></div>
-      </div>
-    </div>
-
     <!-- 両替編集モーダル -->
 <div id="fx-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:540px;max-width:95vw">
@@ -550,6 +523,7 @@
               <option value="新聞図書費">新聞図書費（書籍・雑誌・サブスクなど）</option>
               <option value="会議費">会議費 📋 打合せ・商談が主目的の飲食</option>
               <option value="支払手数料">支払手数料</option>
+              <option value="長期前払費用">長期前払費用（保険料・家賃保証金など）</option>
               <option value="その他">その他（上記に当てはまらないもの）</option>
             </select>
           </div>
@@ -1539,8 +1513,7 @@ async function loadFromDB() {
 
     if (receiptsR.data?.length > 0) {
       state.receipts = receiptsR.data.map(r => ({
-        id: r.id, expenseId: r.expense_id, referrerId: r.referrer_id || null,
-        r2Key: r.r2_key, filename: r.filename,
+        id: r.id, expenseId: r.expense_id, r2Key: r.r2_key, filename: r.filename,
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||''
       }));
     }
@@ -1787,6 +1760,7 @@ const CAT_BADGE_STYLE = {
   '通信費':     'background:rgba(34,211,238,0.15);color:#22d3ee',
   '旅費交通費': 'background:rgba(52,211,153,0.15);color:var(--green)',
   '支払手数料': 'background:rgba(148,163,184,0.15);color:#94a3b8',
+  '長期前払費用': 'background:rgba(52,211,153,0.15);color:#34d399',
   '広告宣伝費': 'background:rgba(244,114,182,0.15);color:#f472b6',
   '衣装・美容費':'background:rgba(124,92,252,0.15);color:var(--accent2)',
   '機材・設備費':'background:rgba(99,102,241,0.15);color:#818cf8',
@@ -2183,7 +2157,7 @@ function selectMonth(y, m) {
 
 
 // ===== AI レシート読み込み =====
-const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','その他'];
+const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','長期前払費用','その他'];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
 const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
 let receiptResults = [];
@@ -3111,7 +3085,6 @@ function renderReferrers() {
       <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo||'<span style="color:var(--muted)">-</span>'}</td>
       <td style="color:var(--muted);font-size:12px">${r.note||'-'}</td>
       <td style="display:flex;gap:6px">
-        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--accent)" onclick="openRefInvoiceModal(${r.id})" title="請求書管理">📄</button>
         <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openRefEditModal(${r.id})">編集</button>
         <button class="btn btn-danger btn-sm" onclick="deleteReferrer(${r.id})">削除</button>
       </td>
@@ -3119,112 +3092,6 @@ function renderReferrers() {
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">紹介者が登録されていません</td></tr>';
 }
 
-
-// ===== 紹介者請求書管理 =====
-let refInvoiceReferrerId = null;
-
-function openRefInvoiceModal(referrerId) {
-  refInvoiceReferrerId = referrerId;
-  const ref = state.referrers.find(r => r.id === referrerId);
-  if (!ref) return;
-  document.getElementById('ref-invoice-info').innerHTML =
-    `<strong>${ref.name}</strong>` + (ref.invoiceNo ? `　<span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${ref.invoiceNo}</span>` : '');
-  document.getElementById('ref-invoice-note').value = '';
-  renderRefInvoiceList();
-  document.getElementById('ref-invoice-modal').style.display = 'flex';
-}
-
-function closeRefInvoiceModal() {
-  document.getElementById('ref-invoice-modal').style.display = 'none';
-  refInvoiceReferrerId = null;
-}
-
-function renderRefInvoiceList() {
-  const recs = state.receipts.filter(r => r.referrerId === refInvoiceReferrerId);
-  const el = document.getElementById('ref-invoice-list');
-  if (recs.length === 0) {
-    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">請求書が登録されていません</div>';
-    return;
-  }
-  el.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">登録済み請求書</div>' +
-    recs.map(r => `
-      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
-        <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">
-            ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
-            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
-          </div>
-        </div>
-        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteRefInvoice(${r.id},'${r.r2Key}')">削除</button>
-      </div>`).join('');
-}
-
-async function uploadRefInvoice(file) {
-  const note = document.getElementById('ref-invoice-note').value.trim();
-  document.getElementById('ref-invoice-loading').style.display = 'block';
-  try {
-    const { blob, contentType, filename } = await compressImage(file);
-    const r2Key = `referrer-invoices/${refInvoiceReferrerId}/${safeR2Filename(filename)}`;
-    const base64 = await new Promise(res => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result.split(',')[1]);
-      reader.readAsDataURL(blob);
-    });
-    const res = await fetch(R2_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    const { data: recData, error } = await sb.from('receipts').insert({
-      referrer_id: refInvoiceReferrerId, expense_id: null,
-      r2_key: r2Key, filename, content_type: contentType, file_size: blob.size, note: note || null
-    }).select().single();
-    if (error) throw error;
-    state.receipts.push({
-      id: recData.id, expenseId: null, referrerId: recData.referrer_id,
-      r2Key: recData.r2_key, filename: recData.filename,
-      contentType: recData.content_type, fileSize: recData.file_size,
-      uploadedAt: recData.uploaded_at, note: recData.note || ''
-    });
-    renderRefInvoiceList();
-  } catch(e) {
-    alert('アップロード失敗: ' + e.message);
-  } finally {
-    document.getElementById('ref-invoice-loading').style.display = 'none';
-  }
-}
-
-async function handleRefInvoiceFileSelect(event) {
-  const files = [...event.target.files];
-  for (const f of files) await uploadRefInvoice(f);
-  event.target.value = '';
-}
-
-async function handleRefInvoiceDrop(event) {
-  const files = [...event.dataTransfer.files];
-  for (const f of files) await uploadRefInvoice(f);
-}
-
-async function deleteRefInvoice(id, r2Key) {
-  if (!confirm('この請求書を削除しますか？')) return;
-  try {
-    await fetch(R2_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ action: 'delete', key: r2Key })
-    });
-    await sb.from('receipts').delete().eq('id', id);
-    state.receipts = state.receipts.filter(r => r.id !== id);
-    renderRefInvoiceList();
-  } catch(e) {
-    alert('削除失敗: ' + e.message);
-  }
-}
 
 // ===== FX (両替) =====
 function fxOfMonth(y, m) {
@@ -4537,6 +4404,7 @@ function catOptions(selectedCat) {
     ['新聞図書費','新聞図書費（書籍・雑誌・サブスクなど）'],
     ['会議費','会議費 📋 打合せ・商談が主目的の飲食'],
     ['支払手数料','支払手数料'],
+    ['長期前払費用','長期前払費用（保険料・家賃保証金など）'],
     ['その他','その他（上記に当てはまらないもの）'],
   ];
   return cats.map(([v,l]) => `<option value="${v}"${v===selectedCat?' selected':''}>${l}</option>`).join('');
