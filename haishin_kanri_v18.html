@@ -1584,7 +1584,8 @@ async function loadFromDB() {
       }));
     }
     if (pcR.data?.length > 0) {
-      state.pettyCash = pcR.data.map(r => ({\n        id: r.id, date: r.date, amount: Number(r.amount),
+      state.pettyCash = pcR.data.map(r => ({
+        id: r.id, date: r.date, amount: Number(r.amount),
         type: r.type || 'replenish', note: r.note || '', y: r.y, m: r.m
       }));
     }
