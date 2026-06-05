@@ -2577,6 +2577,51 @@ function renderReceiptResults() {
               <div id="rc-inv-err-${r._id}" style="font-size:11px;color:var(--red);margin-top:3px;display:none">T+13桁の数字で入力してください（例：T1234567890123）</div>
             </div>
           </div>
+          <!-- 期間按分 -->
+          <div style="margin-top:8px">
+            <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none">
+              <input type="checkbox" id="rc-prepaid-check-${r._id}" style="width:16px;height:16px;accent-color:var(--green);cursor:pointer" onchange="toggleRcPrepaidForm(${r._id})">
+              <span>📅 期間按分する（前払費用・長期保険料など）</span>
+              <span style="font-size:11px;background:rgba(52,211,153,0.15);color:#34d399;border:1px solid rgba(52,211,153,0.3);border-radius:4px;padding:1px 7px">月次自動費用化</span>
+            </label>
+          </div>
+          <div id="rc-prepaid-area-${r._id}" style="display:none;margin-top:8px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.3);border-radius:8px;padding:12px">
+            <div style="font-size:12px;font-weight:700;color:#34d399;margin-bottom:8px">📅 期間按分設定</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+              <div class="form-group">
+                <label style="font-size:12px">資産計上科目</label>
+                <select id="rc-prepaid-asset-${r._id}" style="background:var(--surface2);font-size:12px">
+                  <option value="長期前払費用">長期前払費用</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px">費用化科目</label>
+                <select id="rc-prepaid-exp-${r._id}" style="background:var(--surface2);font-size:12px">
+                  <option value="保険料">保険料</option>
+                  <option value="家賃">家賃</option>
+                  <option value="通信費">通信費</option>
+                  <option value="その他">その他</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px">契約開始日</label>
+                <input type="date" id="rc-prepaid-start-${r._id}" style="background:var(--surface2);font-size:12px" onchange="calcRcPrepaidPreview(${r._id})">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px">契約終了日</label>
+                <input type="date" id="rc-prepaid-end-${r._id}" style="background:var(--surface2);font-size:12px" onchange="calcRcPrepaidPreview(${r._id})">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px">按分回数（月数）</label>
+                <input type="number" id="rc-prepaid-months-${r._id}" min="1" max="120" placeholder="例：24" style="background:var(--surface2);font-size:12px" onchange="calcRcPrepaidPreview(${r._id})">
+              </div>
+              <div class="form-group">
+                <label style="font-size:12px">費用化日（毎月何日）</label>
+                <input type="number" id="rc-prepaid-day-${r._id}" min="1" max="28" placeholder="例：1" value="1" style="background:var(--surface2);font-size:12px" onchange="calcRcPrepaidPreview(${r._id})">
+              </div>
+            </div>
+            <div id="rc-prepaid-preview-${r._id}" style="font-size:12px;color:var(--muted)"></div>
+          </div>
         </div>`;
     }).join('');
 
@@ -2642,7 +2687,23 @@ async function addCheckedReceipts() {
       document.getElementById('receipt-add-msg').textContent = `⚠️ 「${name || r._filename}」のインボイス番号がT+13桁の形式ではありません`;
       return;
     }
-    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note, participants, purpose, invoiceNo });
+    // 期間按分設定の取得
+    const isPrepaid = document.getElementById(`rc-prepaid-check-${r._id}`)?.checked || false;
+    let prepaidConfig = null;
+    if (isPrepaid) {
+      const assetCat = document.getElementById(`rc-prepaid-asset-${r._id}`)?.value || '長期前払費用';
+      const expCat = document.getElementById(`rc-prepaid-exp-${r._id}`)?.value || '保険料';
+      const startDate = document.getElementById(`rc-prepaid-start-${r._id}`)?.value;
+      const endDate = document.getElementById(`rc-prepaid-end-${r._id}`)?.value;
+      const months = parseInt(document.getElementById(`rc-prepaid-months-${r._id}`)?.value || '0');
+      const amorDay = parseInt(document.getElementById(`rc-prepaid-day-${r._id}`)?.value || '1');
+      if (!startDate || !endDate || !months || months < 1) {
+        document.getElementById('receipt-add-msg').textContent = `⚠️ 「${name || r._filename}」の期間按分設定（開始日・終了日・按分回数）を入力してください`;
+        return;
+      }
+      prepaidConfig = { assetCat, expCat, startDate, endDate, months, amorDay };
+    }
+    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note, participants, purpose, invoiceNo, isPrepaid, prepaidConfig });
   }
 
   if (toAdd.length === 0) {
@@ -2654,10 +2715,12 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType: 'normal', prepaidId: null };
+    const actualCat = item.isPrepaid ? item.prepaidConfig.assetCat : item.cat;
+    const entryType = item.isPrepaid ? 'prepaid_payment' : 'normal';
+    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: item.cat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: 'normal', prepaid_id: null })
+    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: entryType, prepaid_id: null })
       .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
   });
   await Promise.all(expRows);
@@ -2688,6 +2751,62 @@ async function addCheckedReceipts() {
       }
     } catch(e) { console.warn('領収書自動添付失敗:', e); }
   }));
+
+  // 期間按分マスター登録＋振替仕訳一括生成
+  for (const item of toAdd) {
+    if (!item.isPrepaid || !item.prepaidConfig || !item.newExp) continue;
+    const { assetCat, expCat, startDate, endDate, months, amorDay } = item.prepaidConfig;
+    const totalAmt = item.amount;
+    const monthly = Math.floor(totalAmt / months);
+    const final = totalAmt - monthly * (months - 1);
+    const masterId = state.nextId++;
+    const masterRec = {
+      id: masterId, paymentExpenseId: item.newExp.id,
+      assetAccount: assetCat, expenseAccount: expCat,
+      totalAmount: totalAmt, startDate, endDate,
+      months, monthlyAmount: monthly, finalAmount: final,
+      amortizationDay: amorDay, status: 'active', note: item.note || '', createdAt: new Date().toISOString()
+    };
+    state.prepaidExpenses.push(masterRec);
+    await sb.from('prepaid_expenses').insert({
+      id: masterId, payment_expense_id: item.newExp.id,
+      asset_account: assetCat, expense_account: expCat,
+      total_amount: totalAmt, start_date: startDate, end_date: endDate,
+      months, monthly_amount: monthly, final_amount: final,
+      amortization_day: amorDay, status: 'active', note: item.note || ''
+    });
+    const startParts = startDate.split('-').map(Number);
+    let curY = startParts[0], curM = startParts[1];
+    for (let i = 0; i < months; i++) {
+      const isLast = i === months - 1;
+      const amt = isLast ? final : monthly;
+      const maxDay = new Date(curY, curM, 0).getDate();
+      const day = Math.min(amorDay, maxDay);
+      const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      const amorName = `【前払費用按分 ${i+1}/${months}】${item.name}`;
+      const amorId = state.nextId++;
+      const amorExp = {
+        id: amorId, date: amorDate, name: amorName, payee: item.payee||'',
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
+        excludeManager: false, note: `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`,
+        entryType: 'amortization', prepaidId: masterId
+      };
+      state.expenses.push(amorExp);
+      await dbSaveAsync('expenses', {
+        id: amorId, date: amorDate, name: amorName, payee: item.payee||'',
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+        exclude_manager: false, note: amorExp.note,
+        entry_type: 'amortization', prepaid_id: masterId
+      });
+      curM++; if (curM > 12) { curM = 1; curY++; }
+    }
+    // payment側にprepaid_idを更新
+    const pidx = state.expenses.findIndex(e => e.id === item.newExp.id);
+    if (pidx !== -1) state.expenses[pidx].prepaidId = masterId;
+    await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', item.newExp.id);
+  }
 
   const added = toAdd.length;
   if (added > 0) {
@@ -4797,6 +4916,34 @@ async function addExpense() {
   const cont = document.getElementById('e-rows-container');
   if (cont) { cont.innerHTML = ''; expRowCount = 0; addExpRow(); }
   renderAll();
+}
+
+function toggleRcPrepaidForm(rid) {
+  const checked = document.getElementById(`rc-prepaid-check-${rid}`)?.checked;
+  const area = document.getElementById(`rc-prepaid-area-${rid}`);
+  if (area) area.style.display = checked ? 'block' : 'none';
+  if (checked) calcRcPrepaidPreview(rid);
+}
+
+function calcRcPrepaidPreview(rid) {
+  const area = document.getElementById(`rc-prepaid-preview-${rid}`);
+  if (!area) return;
+  const amount = parseFloat(document.getElementById(`rc-amount-${rid}`)?.value || '0') || 0;
+  const months = parseInt(document.getElementById(`rc-prepaid-months-${rid}`)?.value || '0');
+  const startDate = document.getElementById(`rc-prepaid-start-${rid}`)?.value;
+  const endDate = document.getElementById(`rc-prepaid-end-${rid}`)?.value;
+  const amorDay = parseInt(document.getElementById(`rc-prepaid-day-${rid}`)?.value || '1');
+  if (!months || months < 1 || !amount) { area.innerHTML = ''; return; }
+  const monthly = Math.floor(amount / months);
+  const final = amount - monthly * (months - 1);
+  area.innerHTML = `<div style="background:var(--surface2);border-radius:6px;padding:8px 10px">
+    <span style="color:#34d399;font-weight:700">按分プレビュー：</span>
+    毎月 <strong style="color:var(--text)">¥${monthly.toLocaleString()}</strong> ×${months-1}回
+    ＋最終月 <strong style="color:var(--accent)">¥${final.toLocaleString()}</strong>
+    ${startDate ? `　開始：${startDate}` : ''}${endDate ? `〜${endDate}` : ''}
+    　費用化日：毎月${amorDay}日
+    <span style="color:var(--muted);font-size:11px">（計${months}件）</span>
+  </div>`;
 }
 
 function togglePrepaidForm() {
