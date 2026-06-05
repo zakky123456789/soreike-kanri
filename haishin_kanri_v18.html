@@ -2441,6 +2441,7 @@ async function readReceiptFile(file) {
 
   if (!resp.ok) throw new Error(`API Error ${resp.status}`);
   const data = await resp.json();
+  console.log('claude-proxy raw response:', JSON.stringify(data).substring(0, 500));
   const text = data.content?.find(b => b.type === 'text')?.text || '';
   console.log('AI response text:', text.substring(0, 500));
 
