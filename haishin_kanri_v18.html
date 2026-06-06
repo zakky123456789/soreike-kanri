@@ -1909,6 +1909,11 @@ const expOfMonth = (y, m) => state.expenses.filter(e => e.y === y && e.m === m);
 const isPlExpense = e => e.entryType !== 'prepaid_payment';
 // 管理人立替対象（amortization振替は除外、excludeManagerも除外）
 const isMgrExpense = e => isPlExpense(e) && e.method !== '振替' && !e.excludeManager;
+// 消費税仕入控除対象：
+//   - amortization（月次振替）は除外（内部振替のため二重計上防止）
+//   - 非課税(0)・対象外(-1)は normal/prepaid_payment 問わず除外
+//   - prepaid_payment かつ課税(8 or 10) → 含める（支払時に仕入控除を取る）
+const isTaxExpense = e => e.entryType !== 'amortization' && (e.tax === 10 || e.tax === 8);
 
 // ===== NAV =====
 function toggleMobileNav() {
@@ -6865,10 +6870,11 @@ function renderRefund() {
   });
 
   // 経費：インボイス番号あり→100%、なし→経過措置率
+  // prepaid_payment（支払時・課税のみ）は含む、amortization（月次振替）・非課税・対象外は除外
+  // isTaxExpense で tax===10||8 かつ amortization以外 に絞っているため tax<=0 の二重チェック不要
   let expTaxCredit = 0, expTaxCredit100 = 0, expTaxCreditTransit = 0;
-  exps.filter(isPlExpense).forEach(e => {
+  exps.filter(isTaxExpense).forEach(e => {
     const base = calcExpTax(e.amount, e.tax);
-    if (e.tax <= 0) return; // 非課税・対象外はスキップ
     if (e.invoiceNo) {
       expTaxCredit += base;
       expTaxCredit100 += base;
