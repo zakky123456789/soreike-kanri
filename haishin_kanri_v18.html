@@ -6,6 +6,7 @@
 <title>それいけ合同会社｜配信事務所管理システム</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #0d0f14; --surface: #161920; --surface2: #1e2230; --border: #2a2f3f;
@@ -201,6 +202,7 @@
     <div class="nav-item" onclick="showPage('withholding')"><span>📄</span>支払調書</div>
     <div class="nav-item" onclick="showPage('manager')"><span>👔</span>管理人</div>
     <div class="nav-item" onclick="showPage('prepaid')"><span>📅</span>前払費用管理</div>
+    <div class="nav-item" onclick="showPage('ledger')"><span>📒</span>総勘定元帳</div>
     <div id="nav-refund" class="nav-item" onclick="showPage('refund')" style="display:none"><span>↩️</span>消費税還付</div>
     <div id="role-badge" style="display:none"><div id="role-badge-dot"></div></div>
   </nav>
@@ -1459,6 +1461,34 @@
         💡 経費入力で「期間按分する」を選択すると、支払時に前払費用として資産計上し、月次で自動的に費用化仕訳が生成されます。
       </div>
       <div id="prepaid-list"></div>
+    </div>
+
+    <!-- 総勘定元帳ページ -->
+    <div class="page" id="page-ledger">
+      <div class="page-header">
+        <div class="page-title">📒 総勘定元帳</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:20px;margin-bottom:20px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end">
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label>期間（開始）</label>
+          <input type="date" id="ledger-date-from" value="2026-01-01" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;width:100%">
+        </div>
+        <div class="form-group" style="margin:0;min-width:160px">
+          <label>期間（終了）</label>
+          <input type="date" id="ledger-date-to" value="2026-05-31" style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:13px;width:100%">
+        </div>
+        <button class="btn btn-primary" onclick="downloadLedgerXlsx()" style="white-space:nowrap">
+          📥 総勘定元帳をダウンロード（Excel）
+        </button>
+        <span id="ledger-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:16px;font-size:13px;color:var(--muted);line-height:1.8">
+        <div style="font-weight:600;color:var(--text);margin-bottom:8px">📌 仕訳ルール</div>
+        <div>・<b>売上高</b>：両替レコードの <code>date_to</code> で集計（借）現金 ／（貸）売上高</div>
+        <div>・<b>外注費</b>：日払い・月末精算（借）外注費 ／（貸）現金 ／（貸）預り金（源泉税）</div>
+        <div>・<b>経費</b>：通常経費（借）科目 ／（貸）現金　|　前払費用支払（借）長期前払費用 ／（貸）現金　|　月次振替（借）費用科目 ／（貸）長期前払費用</div>
+        <div>・両替に紐づかない売上は除外　・経費は使用実績のある科目のみシート生成</div>
+      </div>
     </div>
 
     <!-- 未来分再生成モーダル -->
@@ -2867,7 +2897,7 @@ async function addCheckedReceipts() {
 // ===== RENDER ALL =====
 function renderAll() {
   renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
-  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid();
+  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger();
 }
 
 // ===== DASHBOARD =====
@@ -8075,6 +8105,211 @@ document.getElementById('s-rate').addEventListener('input', updateSalePreview);
 updateLabels();
 initTheme();
 // Supabase DBからデータロード（ロード完了後にrenderAll）
+// ===== 総勘定元帳 =====
+function renderLedger() {
+  // ページ描画は不要（ダウンロードのみ）
+}
+
+async function downloadLedgerXlsx() {
+  if (typeof XLSX === 'undefined') {
+    alert('SheetJSが読み込まれていません。ページを再読み込みしてください。');
+    return;
+  }
+  const statusEl = document.getElementById('ledger-status');
+  statusEl.textContent = '⏳ 生成中...';
+
+  const dateFrom = document.getElementById('ledger-date-from').value || '2026-01-01';
+  const dateTo   = document.getElementById('ledger-date-to').value   || '2026-05-31';
+
+  try {
+    // --- データ抽出（stateから） ---
+    const inPeriod = d => d && d >= dateFrom && d <= dateTo;
+
+    const expenses = state.expenses.filter(e => inPeriod(e.date));
+    const dailyPays = state.dailyPays.filter(d => inPeriod(d.date));
+    const monthEndPays = state.monthEndPays.filter(m => inPeriod(m.payDate));
+
+    // 両替：date_toで絞り込み
+    const exchanges = state.fxRecords.filter(x => inPeriod(x.dateTo));
+
+    // caster名ルックアップ
+    const casterName = id => (state.casters.find(c => c.id === id) || {}).name || '不明';
+
+    // --- 仕訳エントリ生成 ---
+    // entry: { date, note, debitAcc, debitAmt, creditAcc, creditAmt, credit2Acc, credit2Amt }
+    // credit2Acc/credit2Amt は複合仕訳の2行目貸方（省略可）
+
+    const allEntries = []; // { ...entry, accounts: [関連する勘定科目] }
+
+    // 1. 売上高：date_toでグルーピング
+    const salesByDateTo = {};
+    exchanges.forEach(x => {
+      const dt = x.dateTo;
+      salesByDateTo[dt] = (salesByDateTo[dt] || 0) + (x.jpy || 0);
+    });
+    Object.entries(salesByDateTo).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([dt, jpy]) => {
+      if (jpy <= 0) return;
+      allEntries.push({ date: dt, note: '配信売上', debitAcc: '現金', debitAmt: jpy, creditAcc: '売上高', creditAmt: jpy });
+    });
+
+    // 2. 日払い
+    [...dailyPays].sort((a,b)=>a.date.localeCompare(b.date)).forEach(dp => {
+      const amt   = dp.amount || 0;
+      const stax  = dp.srcTax || 0;
+      const total = amt + stax;
+      const note  = `日払い：${casterName(dp.casterId)}`;
+      if (stax > 0) {
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax });
+      } else {
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total });
+      }
+    });
+
+    // 3. 月末精算
+    [...monthEndPays].sort((a,b)=>a.payDate.localeCompare(b.payDate)).forEach(mp => {
+      const amt   = mp.amount || 0;
+      const stax  = mp.srcTax || 0;
+      const total = amt + stax;
+      const note  = `月末精算：${casterName(mp.casterId)}（${mp.targetY}/${mp.targetM}）`;
+      if (stax > 0) {
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax });
+      } else {
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total });
+      }
+    });
+
+    // 4. 経費
+    [...expenses].sort((a,b)=>a.date.localeCompare(b.date)).forEach(exp => {
+      const etype  = exp.entryType || 'normal';
+      const cat    = exp.cat || 'その他';
+      const amt    = exp.amount || 0;
+      const note   = exp.name + (exp.payee ? `（${exp.payee}）` : '');
+      if (etype === 'amortization') {
+        allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '長期前払費用', creditAmt: amt });
+      } else if (etype === 'prepaid_payment') {
+        allEntries.push({ date: exp.date, note, debitAcc: '長期前払費用', debitAmt: amt, creditAcc: '現金', creditAmt: amt });
+      } else {
+        allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '現金', creditAmt: amt });
+      }
+    });
+
+    // --- アカウント別に仕訳を振り分け ---
+    const accountEntries = {}; // acc -> [entry]
+    const addToAccount = (acc, entry) => {
+      if (!accountEntries[acc]) accountEntries[acc] = [];
+      accountEntries[acc].push(entry);
+    };
+    allEntries.forEach(e => {
+      addToAccount(e.debitAcc, e);
+      addToAccount(e.creditAcc, e);
+      if (e.credit2Acc) addToAccount(e.credit2Acc, e);
+    });
+
+    // --- シート順序 ---
+    const fixedOrder = ['売上高', '現金', '外注費', '預り金', '長期前払費用'];
+    const expCats = [...new Set(expenses.map(e => e.cat || 'その他'))].sort();
+    const allAccounts = [...fixedOrder];
+    expCats.forEach(c => { if (!allAccounts.includes(c)) allAccounts.push(c); });
+    const accountsToProcess = allAccounts.filter(a => accountEntries[a]?.length > 0);
+
+    // --- Workbook生成 ---
+    const wb = XLSX.utils.book_new();
+
+    // スタイルヘルパー
+    const periodLabel = `${dateFrom} 〜 ${dateTo}`;
+
+    accountsToProcess.forEach(accountName => {
+      const entries = [...accountEntries[accountName]].sort((a,b)=>a.date.localeCompare(b.date));
+
+      // ワークシートデータ（配列of配列）
+      const wsData = [];
+      // タイトル行
+      wsData.push([`総勘定元帳　${accountName}　（${periodLabel}）`, '', '', '', '', '', '']);
+      // ヘッダー行
+      wsData.push(['日付', '摘要', '借方科目', '借方金額', '貸方科目', '貸方金額', '残高']);
+
+      let balance = 0;
+      let debitTotal = 0;
+      let creditTotal = 0;
+
+      entries.forEach(e => {
+        const isDebit  = e.debitAcc  === accountName;
+        const isCredit = e.creditAcc === accountName;
+        const isCredit2 = e.credit2Acc === accountName;
+
+        let drAmt = 0, crAmt = 0;
+        if (isDebit)   drAmt += e.debitAmt;
+        if (isCredit)  crAmt += e.creditAmt;
+        if (isCredit2) crAmt += e.credit2Amt;
+
+        balance    += drAmt - crAmt;
+        debitTotal  += drAmt;
+        creditTotal += crAmt;
+
+        // 表示用の相手科目
+        let dispDebitAcc, dispDebitAmt, dispCreditAcc, dispCreditAmt;
+        if (isDebit) {
+          // このシートは借方
+          dispDebitAcc = e.debitAcc;
+          dispDebitAmt = e.debitAmt;
+          if (e.credit2Acc) {
+            dispCreditAcc = `${e.creditAcc}・${e.credit2Acc}`;
+            dispCreditAmt = e.creditAmt + e.credit2Amt;
+          } else {
+            dispCreditAcc = e.creditAcc;
+            dispCreditAmt = e.creditAmt;
+          }
+        } else {
+          // このシートは貸方
+          dispDebitAcc = e.debitAcc;
+          dispDebitAmt = e.debitAmt;
+          if (isCredit2) {
+            dispCreditAcc = e.credit2Acc;
+            dispCreditAmt = e.credit2Amt;
+          } else {
+            dispCreditAcc = e.creditAcc;
+            dispCreditAmt = e.creditAmt;
+          }
+        }
+
+        wsData.push([e.date, e.note, dispDebitAcc, dispDebitAmt, dispCreditAcc, dispCreditAmt, balance]);
+      });
+
+      // 合計行
+      wsData.push(['合計', '', '', debitTotal, '', creditTotal, balance]);
+
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // 列幅設定
+      ws['!cols'] = [
+        { wch: 14 }, // 日付
+        { wch: 38 }, // 摘要
+        { wch: 18 }, // 借方科目
+        { wch: 14 }, // 借方金額
+        { wch: 18 }, // 貸方科目
+        { wch: 14 }, // 貸方金額
+        { wch: 14 }, // 残高
+      ];
+
+      // セル結合（タイトル行）
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }];
+
+      // シート名（31文字制限・使用禁止文字除去）
+      const sheetName = accountName.slice(0, 31).replace(/[/\\?*[\]:]/g, '・');
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+
+    // ダウンロード
+    const fromStr = dateFrom.replace(/-/g, '');
+    const toStr   = dateTo.replace(/-/g, '');
+    XLSX.writeFile(wb, `総勘定元帳_${fromStr}-${toStr}.xlsx`);
+    statusEl.textContent = `✅ ${accountsToProcess.length}科目のExcelをダウンロードしました`;
+  } catch(err) {
+    console.error(err);
+    statusEl.textContent = `❌ エラー：${err.message}`;
+  }
+}
+
 loadFromDB();
 // 小口現金の日付デフォルト
 const pcDateEl = document.getElementById('pc-date');
