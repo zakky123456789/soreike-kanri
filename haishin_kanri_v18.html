@@ -1304,7 +1304,7 @@
           <button onclick="changeMonth(1)">▶</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
+      <div id="mgr-top-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">
         <!-- 管理人情報登録 -->
         <div class="table-wrap">
           <div class="table-header"><div class="table-title">👔 管理人情報</div></div>
@@ -1340,7 +1340,7 @@
         </div>
       </div>
       <!-- 請求書プレビュー -->
-      <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+      <div id="mgr-invoice-grid" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
         <div class="table-wrap">
           <div class="table-header"><div class="table-title">請求書設定</div></div>
           <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
@@ -8361,15 +8361,6 @@ async function downloadLedgerXlsx() {
 const PASS_ADMIN  = '12251225';
 const PASS_VIEWER = 'kuramoto';
 
-// セッション復元
-(function initAuth() {
-  const role = sessionStorage.getItem('soreike_role');
-  if (role === 'admin' || role === 'viewer') {
-    applyRole(role);
-  }
-  // ログイン画面は常に表示したまま待つ（applyRoleで非表示化）
-})();
-
 function doLogin() {
   const pass = document.getElementById('login-pass').value;
   const errEl = document.getElementById('login-err');
@@ -8395,6 +8386,9 @@ function applyRole(role) {
     // ロールバッジ
     const badgeText = document.getElementById('role-badge-text');
     if (badgeText) badgeText.textContent = '閲覧専用モード';
+    // 消費税還付タブを表示（閲覧者は常に表示）
+    const navRefund = document.getElementById('nav-refund');
+    if (navRefund) navRefund.style.display = '';
     // 編集系要素を非表示
     applyViewerRestrictions();
   } else {
@@ -8441,14 +8435,13 @@ function applyViewerRestrictions() {
     });
     // 売上・経費・両替などの入力フォーム行（table-wrapの入力グリッド）を非表示
     // ページ内の入力フォーム（form-groupを含むtable-wrap）を特定して隠す
-    const inputPages = ['page-sales', 'page-expenses', 'page-fx', 'page-manager'];
+    // 売上・経費・両替：入力フォームのtable-wrapを非表示
+    const inputPages = ['page-sales', 'page-expenses', 'page-fx'];
     inputPages.forEach(pageId => {
       const page = document.getElementById(pageId);
       if (!page) return;
-      // そのページ内の最初のtable-wrap（入力フォーム）を非表示
       const wraps = page.querySelectorAll('.table-wrap');
       wraps.forEach(wrap => {
-        // 入力要素（input/select/textarea）を含むtable-wrapを隠す
         if (wrap.querySelector('input:not([readonly]), select, textarea')) {
           if (!wrap.classList.contains('viewer-hidden')) {
             wrap.classList.add('viewer-hidden');
@@ -8456,6 +8449,26 @@ function applyViewerRestrictions() {
         }
       });
     });
+    // 管理人ページ：情報入力エリアのみ隠す（請求書プレビューは残す）
+    const mgrPage = document.getElementById('page-manager');
+    if (mgrPage) {
+      const wraps = mgrPage.querySelectorAll('.table-wrap');
+      wraps.forEach(wrap => {
+        // 請求書プレビューを含むtable-wrapは除外
+        if (wrap.querySelector('#mgr-invoice-preview')) return;
+        if (wrap.querySelector('input:not([readonly]), select, textarea')) {
+          if (!wrap.classList.contains('viewer-hidden')) {
+            wrap.classList.add('viewer-hidden');
+          }
+        }
+      });
+      // 請求書グリッドを1列化してプレビューを全幅表示
+      const grid = document.getElementById('mgr-invoice-grid');
+      if (grid) grid.style.gridTemplateColumns = '1fr';
+      // 上部グリッドも1列化（管理人情報が消えるため報酬計算を全幅に）
+      const topGrid = document.getElementById('mgr-top-grid');
+      if (topGrid) topGrid.style.gridTemplateColumns = '1fr';
+    }
   }
 
   hideEditButtons();
@@ -8467,6 +8480,15 @@ function applyViewerRestrictions() {
 
 // 小口現金の日付デフォルト（ログイン後に設定）
 // ※ loadFromDB()・pcDateEl設定はapplyRole()内で実行
+
+// セッション復元（全関数定義後に実行）
+(function initAuth() {
+  const role = sessionStorage.getItem('soreike_role');
+  if (role === 'admin' || role === 'viewer') {
+    applyRole(role);
+  }
+  // セッションなし → ログイン画面がそのまま表示される
+})();
 </script>
 </body>
 </html>
