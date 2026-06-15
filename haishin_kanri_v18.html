@@ -93,6 +93,40 @@
   .btn-primary:hover { background: #3b82f6; }
   .btn-danger { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
   .btn-danger:hover { background: rgba(248,113,113,0.25); }
+  .viewer-hidden { display: none !important; }
+  #login-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; z-index: 9999;
+  }
+  #login-screen.hidden { display: none; }
+  #login-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 40px 36px; width: 360px; max-width: 92vw; text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  #login-box .login-logo { font-size: 28px; margin-bottom: 6px; }
+  #login-box .login-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+  #login-box .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 28px; }
+  #login-box input {
+    width: 100%; box-sizing: border-box;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--text); font-size: 14px; margin-bottom: 12px;
+    outline: none; transition: border-color 0.15s;
+  }
+  #login-box input:focus { border-color: var(--accent); }
+  #login-box .login-btn {
+    width: 100%; padding: 11px; border-radius: 8px; border: none;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: background 0.15s;
+  }
+  #login-box .login-btn:hover { background: #3b82f6; }
+  #login-box .login-err { font-size: 12px; color: var(--red); margin-top: 8px; min-height: 18px; }
+  #viewer-banner {
+    display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 500;
+    background: rgba(79,156,249,0.15); border-bottom: 1px solid var(--accent);
+    padding: 6px 16px; font-size: 12px; color: var(--accent);
+    text-align: center; font-weight: 600;
+  }
   .btn-sm { padding: 4px 10px; font-size: 12px; }
   .alert { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
   .alert-red { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.3); color: var(--red); }
@@ -156,6 +190,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
 <body>
+<!-- ログイン画面 -->
+<div id="login-screen">
+  <div id="login-box">
+    <div class="login-logo">📊</div>
+    <div class="login-title">それいけ合同会社</div>
+    <div class="login-sub">配信事務所管理システム</div>
+    <input type="password" id="login-pass" placeholder="パスワードを入力" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="login-btn" onclick="doLogin()">ログイン</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+<!-- 閲覧者バナー -->
+<div id="viewer-banner">👁️ 閲覧専用モード（編集・削除はできません）</div>
 <!-- モバイルヘッダー -->
 <div id="mobile-header">
   <div>
@@ -8310,10 +8357,116 @@ async function downloadLedgerXlsx() {
   }
 }
 
-loadFromDB();
-// 小口現金の日付デフォルト
-const pcDateEl = document.getElementById('pc-date');
-if (pcDateEl) pcDateEl.value = new Date().toISOString().slice(0, 10);
+// ===== ログイン・閲覧者制御 =====
+const PASS_ADMIN  = '12251225';
+const PASS_VIEWER = 'kuramoto';
+
+// セッション復元
+(function initAuth() {
+  const role = sessionStorage.getItem('soreike_role');
+  if (role === 'admin' || role === 'viewer') {
+    applyRole(role);
+  }
+  // ログイン画面は常に表示したまま待つ（applyRoleで非表示化）
+})();
+
+function doLogin() {
+  const pass = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-err');
+  if (pass === PASS_ADMIN) {
+    sessionStorage.setItem('soreike_role', 'admin');
+    applyRole('admin');
+  } else if (pass === PASS_VIEWER) {
+    sessionStorage.setItem('soreike_role', 'viewer');
+    applyRole('viewer');
+  } else {
+    errEl.textContent = 'パスワードが正しくありません';
+    document.getElementById('login-pass').value = '';
+  }
+}
+
+function applyRole(role) {
+  // ログイン画面を隠す
+  document.getElementById('login-screen').classList.add('hidden');
+
+  if (role === 'viewer') {
+    // 閲覧者バナー表示
+    document.getElementById('viewer-banner').style.display = 'block';
+    // ロールバッジ
+    const badgeText = document.getElementById('role-badge-text');
+    if (badgeText) badgeText.textContent = '閲覧専用モード';
+    // 編集系要素を非表示
+    applyViewerRestrictions();
+  } else {
+    document.getElementById('viewer-banner').style.display = 'none';
+    const badgeText = document.getElementById('role-badge-text');
+    if (badgeText) badgeText.textContent = '配信事務所管理システム';
+  }
+
+  // 初回ログイン・セッション復元どちらでもDB読み込み
+  loadFromDB();
+  const pcDateEl = document.getElementById('pc-date');
+  if (pcDateEl) pcDateEl.value = new Date().toISOString().slice(0, 10);
+}
+
+function applyViewerRestrictions() {
+  // 閲覧者モード：編集・追加・削除系の要素を非表示にするセレクタ
+  // 折りたたみフォームエリア（開閉ヘッダーごと非表示）
+  const HIDDEN_SELECTORS = [
+    '#caster-form',           // 新規配信者登録フォーム
+    '#referrer-form',         // 新規紹介者登録フォーム
+    '#ai-receipt-form',       // AIレシート読み込み
+    '#petty-cash-section',    // 小口現金入力
+  ];
+  // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
+  HIDDEN_SELECTORS.forEach(sel => {
+    const el = document.querySelector(sel);
+    if (el) {
+      el.classList.add('viewer-hidden');
+      const header = el.previousElementSibling;
+      if (header && header.classList.contains('table-header')) {
+        header.classList.add('viewer-hidden');
+      }
+    }
+  });
+
+  // ボタン制御：印刷・PDF・ダウンロード系以外を非表示
+  const ALLOW_TEXTS = ['印刷', 'PDF', 'ダウンロード', '📥', '🖨️'];
+  function hideEditButtons() {
+    document.querySelectorAll('.btn-primary, .btn-danger').forEach(btn => {
+      if (btn.classList.contains('viewer-hidden')) return;
+      const txt = btn.textContent || '';
+      const allowed = ALLOW_TEXTS.some(t => txt.includes(t));
+      if (!allowed) btn.classList.add('viewer-hidden');
+    });
+    // 売上・経費・両替などの入力フォーム行（table-wrapの入力グリッド）を非表示
+    // ページ内の入力フォーム（form-groupを含むtable-wrap）を特定して隠す
+    const inputPages = ['page-sales', 'page-expenses', 'page-fx', 'page-manager'];
+    inputPages.forEach(pageId => {
+      const page = document.getElementById(pageId);
+      if (!page) return;
+      // そのページ内の最初のtable-wrap（入力フォーム）を非表示
+      const wraps = page.querySelectorAll('.table-wrap');
+      wraps.forEach(wrap => {
+        // 入力要素（input/select/textarea）を含むtable-wrapを隠す
+        if (wrap.querySelector('input:not([readonly]), select, textarea')) {
+          if (!wrap.classList.contains('viewer-hidden')) {
+            wrap.classList.add('viewer-hidden');
+          }
+        }
+      });
+    });
+  }
+
+  hideEditButtons();
+
+  // renderAll後も制限を維持するためMutationObserverで監視
+  const observer = new MutationObserver(hideEditButtons);
+  observer.observe(document.body, { childList: true, subtree: true, attributes: false });
+}
+
+// 小口現金の日付デフォルト（ログイン後に設定）
+// ※ loadFromDB()・pcDateEl設定はapplyRole()内で実行
 </script>
 </body>
 </html>
