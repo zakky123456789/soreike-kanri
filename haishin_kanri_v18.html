@@ -1984,8 +1984,9 @@ const salesOfMonth = (y, m) => state.sales.filter(s => s.y === y && s.m === m);
 const expOfMonth = (y, m) => state.expenses.filter(e => e.y === y && e.m === m);
 // P/L対象（prepaid_payment は除外）
 const isPlExpense = e => e.entryType !== 'prepaid_payment';
-// 管理人立替対象（amortization振替は除外、excludeManagerも除外）
-const isMgrExpense = e => isPlExpense(e) && e.method !== '振替' && !e.excludeManager;
+// 管理人報酬の負担対象経費（P/L対象＝prepaid_payment除外、excludeManagerも除外）
+// amortization（月次振替・費用化）は含める→その月に管理人が半額負担する形になる
+const isMgrExpense = e => isPlExpense(e) && !e.excludeManager;
 // 消費税仕入控除対象：
 //   - amortization（月次振替）は除外（内部振替のため二重計上防止）
 //   - 非課税(0)・対象外(-1)は normal/prepaid_payment 問わず除外
