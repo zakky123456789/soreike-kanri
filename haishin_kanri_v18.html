@@ -451,6 +451,62 @@
       </div>
     </div>
 
+    <!-- 支払い添付（銀行明細・受領書）汎用モーダル -->
+    <div id="pay-attach-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1100;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:600px;max-width:95vw;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-size:16px;font-weight:700">📎 添付ファイル（銀行明細・受領書など）</div>
+          <button onclick="closePayAttachModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div id="pay-attach-info" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
+        <div id="pay-attach-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
+          onclick="document.getElementById('pay-attach-file').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+          ondragleave="this.style.borderColor='var(--border)'"
+          ondrop="event.preventDefault();this.style.borderColor='var(--border)';handlePayAttachDrop(event)">
+          <div style="font-size:24px;margin-bottom:8px">📄</div>
+          <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+        </div>
+        <input type="file" id="pay-attach-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handlePayAttachFileSelect(event)">
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">メモ（種類の区別に使えます：例「銀行明細」「受領書」）</label>
+          <input id="pay-attach-note" placeholder="例：銀行明細" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+        </div>
+        <div id="pay-attach-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
+        <div id="pay-attach-list"></div>
+      </div>
+    </div>
+
+    <!-- 紹介者：支払い記録モーダル -->
+    <div id="ref-pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:700">💰 支払い記録 — <span id="ref-pay-name" style="color:var(--accent)"></span></div>
+          <button onclick="closeRefPayModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <input type="hidden" id="ref-pay-referrer-id">
+        <input type="hidden" id="ref-pay-edit-id">
+        <div id="ref-pay-form-wrap" style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:10px" id="ref-pay-form-title">支払いを記録</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="form-group"><label>支払日 <span style="color:var(--red)">*</span></label><input id="ref-pay-date" type="date"></div>
+            <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="ref-pay-amount" type="number" placeholder="例：30000"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div class="form-group"><label>対象年</label><input id="ref-pay-target-y" type="number" placeholder="例：2026"></div>
+            <div class="form-group"><label>対象月</label><input id="ref-pay-target-m" type="number" min="1" max="12" placeholder="例：6"></div>
+          </div>
+          <div class="form-group" style="margin-bottom:10px"><label>メモ</label><input id="ref-pay-note" placeholder="任意"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="ref-pay-cancel-btn" style="display:none" onclick="resetRefPayForm()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveRefPay()">登録</button>
+          </div>
+        </div>
+        <div id="ref-pay-list"></div>
+      </div>
+    </div>
+
     <!-- 両替編集モーダル -->
 <div id="fx-edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;align-items:center;justify-content:center">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:540px;max-width:95vw">
@@ -1339,6 +1395,31 @@
           <div style="padding:16px" id="mgr-reward-summary"></div>
         </div>
       </div>
+      <!-- 管理人：支払い記録 -->
+      <div class="table-wrap" id="mgr-pay-form-wrap" style="margin-bottom:16px">
+        <div class="table-header"><div class="table-title">💰 管理人への支払い記録</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <input type="hidden" id="mgr-pay-edit-id">
+          <div style="font-size:12px;font-weight:600;color:var(--muted)" id="mgr-pay-form-title">支払いを記録</div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>支払日 <span style="color:var(--red)">*</span></label><input id="mgr-pay-date" type="date"></div>
+            <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="mgr-pay-amount" type="number" placeholder="例：50000"></div>
+          </div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>対象年</label><input id="mgr-pay-target-y" type="number" placeholder="例：2026"></div>
+            <div class="form-group"><label>対象月</label><input id="mgr-pay-target-m" type="number" min="1" max="12" placeholder="例：6"></div>
+          </div>
+          <div class="form-group"><label>メモ</label><input id="mgr-pay-note" placeholder="任意"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="mgr-pay-cancel-btn" style="display:none" onclick="resetMgrPayForm()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveMgrPay()">登録</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:24px">
+        <div class="table-header"><div class="table-title">登録済み支払い記録</div></div>
+        <div style="padding:16px" id="mgr-pay-list"></div>
+      </div>
       <!-- 請求書プレビュー -->
       <div id="mgr-invoice-grid" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
         <div class="table-wrap">
@@ -1453,6 +1534,7 @@
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" onclick="closeMepModal()">キャンセル</button>
+          <button id="mep-attach-btn" class="btn" style="display:none" onclick="openPayAttachModal('month_end_pay', parseInt(document.getElementById('mep-edit-id').value))">📎 添付</button>
           <button id="mep-delete-btn" class="btn" style="background:var(--red);color:#fff;display:none" onclick="deleteMep()">削除</button>
           <button class="btn btn-primary" onclick="saveMep()">保存</button>
         </div>
@@ -1599,7 +1681,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1612,6 +1694,8 @@ async function loadFromDB() {
       fetchAll('month_end_pays', 'id'),
       fetchAll('petty_cash', 'id'),
       fetchAll('prepaid_expenses', 'id'),
+      fetchAll('referrer_pays', 'id'),
+      fetchAll('manager_pays', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1682,7 +1766,9 @@ async function loadFromDB() {
     if (receiptsR.data?.length > 0) {
       state.receipts = receiptsR.data.map(r => ({
         id: r.id, expenseId: r.expense_id, r2Key: r.r2_key, filename: r.filename,
-        contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||''
+        contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||'',
+        dailyPayId: r.daily_pay_id || null, monthEndPayId: r.month_end_pay_id || null,
+        referrerPayId: r.referrer_pay_id || null, managerPayId: r.manager_pay_id || null
       }));
     }
     if (mepR.data?.length > 0) {
@@ -1708,6 +1794,18 @@ async function loadFromDB() {
         status: r.status || 'active', note: r.note || '', createdAt: r.created_at
       }));
     }
+    if (refPayR.data?.length > 0) {
+      state.referrerPays = refPayR.data.map(r => ({
+        id: r.id, referrerId: r.referrer_id, payDate: r.pay_date, amount: Number(r.amount),
+        targetY: r.target_y, targetM: r.target_m, note: r.note || ''
+      }));
+    }
+    if (mgrPayR.data?.length > 0) {
+      state.managerPays = mgrPayR.data.map(r => ({
+        id: r.id, payDate: r.pay_date, amount: Number(r.amount),
+        targetY: r.target_y, targetM: r.target_m, note: r.note || ''
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -1720,6 +1818,8 @@ async function loadFromDB() {
       ...state.monthEndPays.map(r => r.id),
       ...state.pettyCash.map(r => r.id),
       ...state.prepaidExpenses.map(r => r.id),
+      ...state.referrerPays.map(r => r.id),
+      ...state.managerPays.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -1830,6 +1930,8 @@ let state = {
   receipts: [], // 領収書
   pettyCash: [], // 小口現金
   prepaidExpenses: [], // 前払費用マスター
+  referrerPays: [], // 紹介者への支払い記録
+  managerPays: [], // 管理人への支払い記録
   nextId: 300,
 };
 
@@ -2310,6 +2412,265 @@ async function deleteReceipt(id, r2Key) {
     renderReceiptList();
     renderExpenses();
   } catch(e) { alert('削除失敗: ' + e.message); }
+}
+
+// ===== 支払い添付（銀行明細・受領書）汎用モーダル =====
+// 配信者（日払い・月末精算）・紹介者・管理人への支払いに対して、
+// 送金の証拠（銀行明細）や先方からもらった受領書を添付するための共通モーダル。
+// 種類分けタグは作らず、メモ欄で区別する運用。
+const PAY_ATTACH_CONFIG = {
+  daily_pay:     { stateField: 'dailyPayId',    dbCol: 'daily_pay_id',     r2Prefix: 'daily_pays' },
+  month_end_pay: { stateField: 'monthEndPayId', dbCol: 'month_end_pay_id', r2Prefix: 'month_end_pays' },
+  referrer_pay:  { stateField: 'referrerPayId', dbCol: 'referrer_pay_id',  r2Prefix: 'referrer_pays' },
+  manager_pay:   { stateField: 'managerPayId',  dbCol: 'manager_pay_id',   r2Prefix: 'manager_pays' },
+};
+
+let payAttachTarget = null; // { type, id }
+
+function payAttachInfoHtml(type, id) {
+  if (type === 'daily_pay') {
+    const d = state.dailyPays.find(x => x.id === id);
+    if (!d) return '';
+    const c = getCaster(d.casterId);
+    return `<span style="color:var(--muted)">${d.date}</span>　<strong>${c?.name||'?'}</strong>　<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(d.amount - d.srcTax)}</span>`;
+  }
+  if (type === 'month_end_pay') {
+    const d = state.monthEndPays.find(x => x.id === id);
+    if (!d) return '';
+    const c = getCaster(d.casterId);
+    return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>${c?.name||'?'}</strong>　<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(d.amount - d.srcTax)}</span>`;
+  }
+  if (type === 'referrer_pay') {
+    const d = state.referrerPays.find(x => x.id === id);
+    if (!d) return '';
+    const r = state.referrers.find(x => x.id === d.referrerId);
+    return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>${r?.name||'?'}</strong>　${d.targetY ? `<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　` : ''}<span style="font-family:var(--mono);color:var(--accent)">${yen(d.amount)}</span>`;
+  }
+  if (type === 'manager_pay') {
+    const d = state.managerPays.find(x => x.id === id);
+    if (!d) return '';
+    return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>管理人</strong>　${d.targetY ? `<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　` : ''}<span style="font-family:var(--mono);color:var(--accent)">${yen(d.amount)}</span>`;
+  }
+  return '';
+}
+
+function openPayAttachModal(type, id) {
+  payAttachTarget = { type, id };
+  document.getElementById('pay-attach-info').innerHTML = payAttachInfoHtml(type, id);
+  document.getElementById('pay-attach-note').value = '';
+  renderPayAttachList();
+  document.getElementById('pay-attach-modal').style.display = 'flex';
+}
+
+function closePayAttachModal() {
+  document.getElementById('pay-attach-modal').style.display = 'none';
+  payAttachTarget = null;
+}
+
+function renderPayAttachList() {
+  if (!payAttachTarget) return;
+  const cfg = PAY_ATTACH_CONFIG[payAttachTarget.type];
+  const recs = state.receipts.filter(r => r[cfg.stateField] === payAttachTarget.id);
+  const el = document.getElementById('pay-attach-list');
+  if (recs.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">添付ファイルが登録されていません</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">登録済み添付ファイル</div>' +
+    recs.map(r => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+        <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">
+            ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
+            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+          </div>
+        </div>
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+        <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
+      </div>`).join('');
+}
+
+async function uploadPayAttach(file) {
+  if (!payAttachTarget) return;
+  const cfg = PAY_ATTACH_CONFIG[payAttachTarget.type];
+  const note = document.getElementById('pay-attach-note').value.trim();
+  document.getElementById('pay-attach-loading').style.display = 'block';
+  try {
+    const { blob, contentType, filename } = await compressImage(file);
+    const r2Key = `${cfg.r2Prefix}/${payAttachTarget.id}/${safeR2Filename(filename)}`;
+    const base64 = await new Promise(res => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.readAsDataURL(blob);
+    });
+    const res = await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const insertRow = { r2_key: r2Key, filename, content_type: contentType, file_size: blob.size, note: note || null };
+    insertRow[cfg.dbCol] = payAttachTarget.id;
+    const { data: recData, error } = await sb.from('receipts').insert(insertRow).select().single();
+    if (error) throw error;
+    state.receipts.push({
+      id: recData.id, expenseId: recData.expense_id || null, r2Key: recData.r2_key,
+      filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+      uploadedAt: recData.uploaded_at, note: recData.note || '',
+      dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
+      referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null
+    });
+    renderPayAttachList();
+    renderAll();
+    if (refPayModalReferrerId != null) renderRefPayList();
+  } catch(e) {
+    alert('アップロード失敗: ' + e.message);
+  } finally {
+    document.getElementById('pay-attach-loading').style.display = 'none';
+  }
+}
+
+async function handlePayAttachFileSelect(event) {
+  const files = [...event.target.files];
+  for (const f of files) await uploadPayAttach(f);
+  event.target.value = '';
+}
+
+async function handlePayAttachDrop(event) {
+  const files = [...event.dataTransfer.files];
+  for (const f of files) await uploadPayAttach(f);
+}
+
+async function deletePayAttach(id, r2Key) {
+  if (!confirm('この添付ファイルを削除しますか？')) return;
+  try {
+    await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'delete', key: r2Key })
+    });
+    await sb.from('receipts').delete().eq('id', id);
+    state.receipts = state.receipts.filter(r => r.id !== id);
+    renderPayAttachList();
+    renderAll();
+    if (refPayModalReferrerId != null) renderRefPayList();
+  } catch(e) { alert('削除失敗: ' + e.message); }
+}
+
+// 一覧の行に置く「📎 添付」バッジ（件数表示・クリックでモーダルを開く）
+function payAttachBadge(type, id) {
+  const cfg = PAY_ATTACH_CONFIG[type];
+  const count = state.receipts.filter(r => r[cfg.stateField] === id).length;
+  if (count > 0) {
+    return `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green)" onclick="openPayAttachModal('${type}',${id})">📎 ${count}件</button>`;
+  }
+  return `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openPayAttachModal('${type}',${id})">📎 追加</button>`;
+}
+
+// ===== 紹介者：支払い記録モーダル =====
+let refPayModalReferrerId = null;
+
+function openRefPayModal(referrerId) {
+  refPayModalReferrerId = referrerId;
+  const r = state.referrers.find(x => x.id === referrerId);
+  document.getElementById('ref-pay-name').textContent = r?.name || '?';
+  document.getElementById('ref-pay-referrer-id').value = referrerId;
+  resetRefPayForm();
+  renderRefPayList();
+  document.getElementById('ref-pay-modal').style.display = 'flex';
+}
+
+function closeRefPayModal() {
+  document.getElementById('ref-pay-modal').style.display = 'none';
+  refPayModalReferrerId = null;
+}
+
+function resetRefPayForm() {
+  document.getElementById('ref-pay-edit-id').value = '';
+  document.getElementById('ref-pay-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('ref-pay-amount').value = '';
+  document.getElementById('ref-pay-target-y').value = state.y;
+  document.getElementById('ref-pay-target-m').value = state.m;
+  document.getElementById('ref-pay-note').value = '';
+  document.getElementById('ref-pay-form-title').textContent = '支払いを記録';
+  document.getElementById('ref-pay-cancel-btn').style.display = 'none';
+}
+
+function renderRefPayList() {
+  const pays = state.referrerPays.filter(p => p.referrerId === refPayModalReferrerId)
+    .sort((a,b) => (b.payDate||'').localeCompare(a.payDate||''));
+  const el = document.getElementById('ref-pay-list');
+  if (pays.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">支払い記録がありません</div>';
+    return;
+  }
+  el.innerHTML = '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">登録済み支払い記録</div>' +
+    pays.map(p => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong></div>
+          ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+        </div>
+        ${payAttachBadge('referrer_pay', p.id)}
+        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editRefPay(${p.id})">編集</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteRefPay(${p.id})">削除</button>
+      </div>`).join('');
+}
+
+function editRefPay(id) {
+  const p = state.referrerPays.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('ref-pay-edit-id').value = id;
+  document.getElementById('ref-pay-date').value = p.payDate || '';
+  document.getElementById('ref-pay-amount').value = p.amount;
+  document.getElementById('ref-pay-target-y').value = p.targetY || '';
+  document.getElementById('ref-pay-target-m').value = p.targetM || '';
+  document.getElementById('ref-pay-note').value = p.note || '';
+  document.getElementById('ref-pay-form-title').textContent = '支払い記録を編集';
+  document.getElementById('ref-pay-cancel-btn').style.display = '';
+}
+
+async function saveRefPay() {
+  const referrerId = parseInt(document.getElementById('ref-pay-referrer-id').value);
+  const editId = document.getElementById('ref-pay-edit-id').value;
+  const payDate = document.getElementById('ref-pay-date').value;
+  const amount = parseInt(document.getElementById('ref-pay-amount').value) || 0;
+  const targetY = parseInt(document.getElementById('ref-pay-target-y').value) || null;
+  const targetM = parseInt(document.getElementById('ref-pay-target-m').value) || null;
+  const note = document.getElementById('ref-pay-note').value.trim();
+
+  if (!payDate) { alert('支払日を入力してください'); return; }
+  if (!amount) { alert('金額を入力してください'); return; }
+
+  const record = { referrerId, payDate, amount, targetY, targetM, note };
+
+  if (editId) {
+    const id = parseInt(editId);
+    const idx = state.referrerPays.findIndex(p => p.id === id);
+    if (idx !== -1) state.referrerPays[idx] = { ...state.referrerPays[idx], ...record };
+    await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+  } else {
+    const id = state.nextId++;
+    state.referrerPays.push({ id, ...record });
+    await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+  }
+  resetRefPayForm();
+  renderRefPayList();
+}
+
+async function deleteRefPay(id) {
+  const attached = state.receipts.filter(r => r.referrerPayId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('この支払い記録を削除しますか？')) return;
+  await dbDelete('referrer_pays', id);
+  state.referrerPays = state.referrerPays.filter(p => p.id !== id);
+  renderRefPayList();
 }
 
 // ===== 紹介者フォーム 請求書摘要トグル =====
@@ -3401,6 +3762,7 @@ function renderReferrers() {
       <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo||'<span style="color:var(--muted)">-</span>'}</td>
       <td style="color:var(--muted);font-size:12px">${r.note||'-'}</td>
       <td style="display:flex;gap:6px">
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="openRefPayModal(${r.id})">💰 支払い記録</button>
         <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openRefEditModal(${r.id})">編集</button>
         <button class="btn btn-danger btn-sm" onclick="deleteReferrer(${r.id})">削除</button>
       </td>
@@ -4383,6 +4745,11 @@ function closeDpEditModal() {
 }
 
 async function deleteDailyPay(id) {
+  const attached = state.receipts.filter(r => r.dailyPayId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
   await dbDelete('daily_pays', id);
   state.dailyPays = state.dailyPays.filter(d => d.id !== id);
   renderAll();
@@ -4534,7 +4901,7 @@ function renderSales() {
       <td class="num" style="color:var(--green)">${yen(d.amount - d.srcTax)}</td>
       <td style="color:var(--muted);font-size:12px">${d.note||'-'}</td>
       <td style="font-size:12px;color:var(--accent)">${deadline}</td>
-      <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
+      <td style="display:flex;gap:6px">${payAttachBadge('daily_pay', d.id)}<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">前払いなし</td></tr>';
 
@@ -7373,6 +7740,91 @@ function renderManager() {
   const ml = document.getElementById('ml-manager');
   if (ml) ml.textContent = lbl;
   renderManagerReward();
+  renderMgrPayList();
+}
+
+// ===== 管理人：支払い記録 =====
+function resetMgrPayForm() {
+  document.getElementById('mgr-pay-edit-id').value = '';
+  document.getElementById('mgr-pay-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('mgr-pay-amount').value = '';
+  document.getElementById('mgr-pay-target-y').value = state.y;
+  document.getElementById('mgr-pay-target-m').value = state.m;
+  document.getElementById('mgr-pay-note').value = '';
+  document.getElementById('mgr-pay-form-title').textContent = '支払いを記録';
+  document.getElementById('mgr-pay-cancel-btn').style.display = 'none';
+}
+
+function renderMgrPayList() {
+  const el = document.getElementById('mgr-pay-list');
+  if (!el) return;
+  const pays = [...state.managerPays].sort((a,b) => (b.payDate||'').localeCompare(a.payDate||''));
+  if (pays.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">支払い記録がありません</div>';
+    return;
+  }
+  el.innerHTML = pays.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong></div>
+        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+      </div>
+      ${payAttachBadge('manager_pay', p.id)}
+      <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrPay(${p.id})">編集</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteMgrPay(${p.id})">削除</button>
+    </div>`).join('');
+}
+
+function editMgrPay(id) {
+  const p = state.managerPays.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('mgr-pay-edit-id').value = id;
+  document.getElementById('mgr-pay-date').value = p.payDate || '';
+  document.getElementById('mgr-pay-amount').value = p.amount;
+  document.getElementById('mgr-pay-target-y').value = p.targetY || '';
+  document.getElementById('mgr-pay-target-m').value = p.targetM || '';
+  document.getElementById('mgr-pay-note').value = p.note || '';
+  document.getElementById('mgr-pay-form-title').textContent = '支払い記録を編集';
+  document.getElementById('mgr-pay-cancel-btn').style.display = '';
+}
+
+async function saveMgrPay() {
+  const editId = document.getElementById('mgr-pay-edit-id').value;
+  const payDate = document.getElementById('mgr-pay-date').value;
+  const amount = parseInt(document.getElementById('mgr-pay-amount').value) || 0;
+  const targetY = parseInt(document.getElementById('mgr-pay-target-y').value) || null;
+  const targetM = parseInt(document.getElementById('mgr-pay-target-m').value) || null;
+  const note = document.getElementById('mgr-pay-note').value.trim();
+
+  if (!payDate) { alert('支払日を入力してください'); return; }
+  if (!amount) { alert('金額を入力してください'); return; }
+
+  const record = { payDate, amount, targetY, targetM, note };
+
+  if (editId) {
+    const id = parseInt(editId);
+    const idx = state.managerPays.findIndex(p => p.id === id);
+    if (idx !== -1) state.managerPays[idx] = { ...state.managerPays[idx], ...record };
+    await dbSave('manager_pays', { id, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+  } else {
+    const id = state.nextId++;
+    state.managerPays.push({ id, ...record });
+    await dbSave('manager_pays', { id, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+  }
+  resetMgrPayForm();
+  renderMgrPayList();
+}
+
+async function deleteMgrPay(id) {
+  const attached = state.receipts.filter(r => r.managerPayId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('この支払い記録を削除しますか？')) return;
+  await dbDelete('manager_pays', id);
+  state.managerPays = state.managerPays.filter(p => p.id !== id);
+  renderMgrPayList();
 }
 
 
@@ -7441,9 +7893,11 @@ function openMepModal(casterId, y, m, editId) {
       document.getElementById('mep-note').value = existing.note || '';
     }
     document.getElementById('mep-delete-btn').style.display = '';
+    document.getElementById('mep-attach-btn').style.display = '';
   } else {
     document.getElementById('mep-pay-date').value = defDate;
     document.getElementById('mep-delete-btn').style.display = 'none';
+    document.getElementById('mep-attach-btn').style.display = 'none';
   }
 
   const modal = document.getElementById('mep-modal');
@@ -7486,8 +7940,13 @@ async function saveMep() {
 async function deleteMep() {
   const editId = document.getElementById('mep-edit-id').value;
   if (!editId) return;
-  if (!confirm('後払い登録を削除しますか？')) return;
   const id = parseInt(editId);
+  const attached = state.receipts.filter(r => r.monthEndPayId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('後払い登録を削除しますか？')) return;
   await dbDelete('month_end_pays', id);
   state.monthEndPays = state.monthEndPays.filter(p => p.id !== id);
   closeMepModal();
