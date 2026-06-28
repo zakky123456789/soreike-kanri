@@ -430,22 +430,24 @@
           <button onclick="closeReceiptModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
         </div>
         <div id="receipt-mgmt-expense-info" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
-        <!-- アップロードエリア -->
-        <div id="receipt-mgmt-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
-          onclick="document.getElementById('receipt-mgmt-file').click()"
-          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-          ondragleave="this.style.borderColor='var(--border)'"
-          ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleReceiptDrop(event)">
-          <div style="font-size:24px;margin-bottom:8px">📄</div>
-          <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+        <!-- アップロードエリア（閲覧者モードでは丸ごと非表示：閲覧・DL・プレビューはreceipt-mgmt-listに残す） -->
+        <div id="receipt-mgmt-upload-section">
+          <div id="receipt-mgmt-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
+            onclick="document.getElementById('receipt-mgmt-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+            ondragleave="this.style.borderColor='var(--border)'"
+            ondrop="event.preventDefault();this.style.borderColor='var(--border)';handleReceiptDrop(event)">
+            <div style="font-size:24px;margin-bottom:8px">📄</div>
+            <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+          </div>
+          <input type="file" id="receipt-mgmt-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handleReceiptFileSelect(event)">
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考（差し替え理由など）</label>
+            <input id="receipt-mgmt-note" placeholder="例：誤アップロードのため差し替え" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+          </div>
+          <div id="receipt-mgmt-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
         </div>
-        <input type="file" id="receipt-mgmt-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handleReceiptFileSelect(event)">
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">備考（差し替え理由など）</label>
-          <input id="receipt-mgmt-note" placeholder="例：誤アップロードのため差し替え" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
-        </div>
-        <div id="receipt-mgmt-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
         <!-- 登録済み領収書一覧 -->
         <div id="receipt-mgmt-list"></div>
       </div>
@@ -459,21 +461,24 @@
           <button onclick="closePayAttachModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
         </div>
         <div id="pay-attach-info" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
-        <div id="pay-attach-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
-          onclick="document.getElementById('pay-attach-file').click()"
-          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-          ondragleave="this.style.borderColor='var(--border)'"
-          ondrop="event.preventDefault();this.style.borderColor='var(--border)';handlePayAttachDrop(event)">
-          <div style="font-size:24px;margin-bottom:8px">📄</div>
-          <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+        <!-- アップロードエリア（閲覧者モードでは丸ごと非表示：閲覧・DL・プレビューはpay-attach-listに残す） -->
+        <div id="pay-attach-upload-section">
+          <div id="pay-attach-upload" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:all 0.15s"
+            onclick="document.getElementById('pay-attach-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+            ondragleave="this.style.borderColor='var(--border)'"
+            ondrop="event.preventDefault();this.style.borderColor='var(--border)';handlePayAttachDrop(event)">
+            <div style="font-size:24px;margin-bottom:8px">📄</div>
+            <div style="font-size:13px;color:var(--muted)">クリックまたはドラッグ&ドロップ</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG / PNG / HEIC / PDF 対応・自動圧縮</div>
+          </div>
+          <input type="file" id="pay-attach-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handlePayAttachFileSelect(event)">
+          <div style="margin-bottom:12px">
+            <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">メモ（種類の区別に使えます：例「銀行明細」「受領書」）</label>
+            <input id="pay-attach-note" placeholder="例：銀行明細" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
+          </div>
+          <div id="pay-attach-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
         </div>
-        <input type="file" id="pay-attach-file" style="display:none" accept="image/*,.pdf,.heic,.heif" multiple onchange="handlePayAttachFileSelect(event)">
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">メモ（種類の区別に使えます：例「銀行明細」「受領書」）</label>
-          <input id="pay-attach-note" placeholder="例：銀行明細" style="width:100%;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px">
-        </div>
-        <div id="pay-attach-loading" style="display:none;text-align:center;padding:16px;color:var(--muted);font-size:13px">⏳ アップロード中...</div>
         <div id="pay-attach-list"></div>
       </div>
     </div>
@@ -988,7 +993,7 @@
       <!-- 月末精算サマリー -->
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">📋 月末精算サマリー</div></div>
-        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">月末源泉税<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num" id="settle-transfer-header">振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th>後払登録</th></tr></thead>
+        <table><thead><tr><th>配信者</th><th class="num">月間報酬</th><th class="num">前払い累計</th><th class="num">前払い振込計</th><th class="num">前払い源泉計</th><th class="num">月末請求額（税込）<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">月末源泉税<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num" id="settle-transfer-header">振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th style="text-align:center">支払い記録</th></tr></thead>
         <tbody id="settlement-table"></tbody></table>
         <div style="padding:8px 12px;font-size:11px;color:var(--yellow);border-top:1px solid var(--border)">※参考値：複数回前払いによる端数誤差が生じる場合があります。正確な振込金額は請求書をご確認ください。</div>
       </div>
@@ -4929,10 +4934,22 @@ function renderSales() {
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
     const existingMep = state.monthEndPays.find(p => p.casterId === c.id && p.targetY === y && p.targetM === m);
+    const isViewerRole = sessionStorage.getItem('soreike_role') === 'viewer';
+    const mepAttachCount = existingMep ? state.receipts.filter(rec => rec.monthEndPayId === existingMep.id).length : 0;
+    const mepAttachBadge = mepAttachCount > 0
+      ? `<div style="font-size:10px;color:var(--green);margin-top:3px">📎 ${mepAttachCount}件</div>`
+      : (existingMep ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">添付なし</div>` : '');
     const mepBtn = remaining > 0
       ? existingMep
-        ? `<button class="btn btn-sm" style="background:var(--green);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">✏️ 編集</button>`
-        : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 後払登録</button>`
+        ? `<div style="display:flex;flex-direction:column;align-items:center">` +
+            (isViewerRole
+              ? `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green);font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">👁️ 内容を確認</button>`
+              : `<button class="btn btn-sm" style="background:var(--green);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">✏️ 確認・編集</button>`) +
+            mepAttachBadge +
+          `</div>`
+        : (isViewerRole
+            ? `<span style="color:var(--muted);font-size:11px">未登録</span>`
+            : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 支払いを記録</button>`)
       : '<span style="color:var(--muted);font-size:11px">-</span>';
     return { totalReward, totalDailyAmt, totalDailyTransfer, totalDailySrc, remaining, remainingSrc, transfer, mepBtn, name: c.name };
   }).filter(Boolean);
@@ -9233,6 +9250,8 @@ function applyViewerRestrictions() {
     '#petty-cash-section',    // 小口現金入力
     '#mep-quick-section',     // 後払い登録のクイックアップロード（v24+：新規登録を自動実行するため閲覧者には隠す）
     '#mep-attach-add-btn',    // 後払い編集時の「✚ファイルを追加」（添付一覧の閲覧・DL・プレビューは表示したまま、追加のみ閲覧者には隠す）
+    '#receipt-mgmt-upload-section', // 経費領収書モーダルのアップロード欄（一覧の閲覧・DL・プレビューはreceipt-mgmt-listに残す）
+    '#pay-attach-upload-section',   // 汎用添付モーダル（配信者/紹介者/管理人）のアップロード欄（一覧はpay-attach-listに残す）
   ];
   // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
   HIDDEN_SELECTORS.forEach(sel => {
