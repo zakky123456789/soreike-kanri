@@ -478,6 +478,23 @@
       </div>
     </div>
 
+    <!-- ファイルプレビューモーダル（画像・PDFをダウンロードせずその場で確認） -->
+    <div id="file-preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1300;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;width:90vw;max-width:900px;max-height:92vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
+          <div id="file-preview-filename" style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"></div>
+          <button id="file-preview-download-btn" class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent);flex-shrink:0;white-space:nowrap">⬇️ ダウンロード</button>
+          <button onclick="closeFilePreview()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;flex-shrink:0">✕</button>
+        </div>
+        <div id="file-preview-body" style="flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;min-height:200px;background:var(--surface2);border-radius:8px;padding:8px">
+          <div id="file-preview-loading" style="display:none;color:var(--muted);font-size:13px">⏳ 読み込み中...</div>
+          <img id="file-preview-img" style="display:none;max-width:100%;max-height:80vh;object-fit:contain;border-radius:4px">
+          <iframe id="file-preview-iframe" style="display:none;width:100%;height:80vh;border:none;border-radius:4px;background:#fff"></iframe>
+          <div id="file-preview-unsupported" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:24px;line-height:1.7"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 紹介者：支払い記録モーダル -->
     <div id="ref-pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
@@ -2258,6 +2275,7 @@ function renderReceiptList() {
             ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
           </div>
         </div>
+        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
         <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
         <button class="btn btn-danger btn-sm" onclick="deleteReceipt(${r.id},'${r.r2Key}')">削除</button>
       </div>`).join('');
@@ -2487,6 +2505,7 @@ function renderPayAttachList() {
             ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
           </div>
         </div>
+        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
         <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
         <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
       </div>`).join('');
@@ -2568,6 +2587,63 @@ function payAttachBadge(type, id) {
     return `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green)" onclick="openPayAttachModal('${type}',${id})">📎 ${count}件</button>`;
   }
   return `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openPayAttachModal('${type}',${id})">📎 追加</button>`;
+}
+
+// ===== ファイルプレビュー（領収書・添付ファイルを画像/PDFのままダウンロードせず確認） =====
+// receipt-mgmt-modal（経費領収書）・pay-attach-modal（配信者/紹介者/管理人への支払い添付）の
+// 両方の一覧から呼ばれる共通モーダル。R2は非公開バケットのためdownloadReceiptと同じ
+// 「base64で取得→Blob化→objectURL」の経路を使い、画像はimg、PDFはiframeで表示する。
+let filePreviewObjectUrl = null;
+
+async function openFilePreview(r2Key, filename, contentType) {
+  document.getElementById('file-preview-filename').textContent = filename;
+  const img = document.getElementById('file-preview-img');
+  const iframe = document.getElementById('file-preview-iframe');
+  const unsupported = document.getElementById('file-preview-unsupported');
+  const loading = document.getElementById('file-preview-loading');
+  img.style.display = 'none'; img.src = '';
+  iframe.style.display = 'none'; iframe.src = '';
+  unsupported.style.display = 'none'; unsupported.innerHTML = '';
+  loading.style.display = 'block';
+  document.getElementById('file-preview-download-btn').onclick = () => downloadReceipt(r2Key, filename, contentType);
+  document.getElementById('file-preview-modal').style.display = 'flex';
+  try {
+    const res = await fetch(R2_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ action: 'download', key: r2Key, contentType })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    const binary = atob(data.base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: contentType });
+    if (filePreviewObjectUrl) URL.revokeObjectURL(filePreviewObjectUrl);
+    filePreviewObjectUrl = URL.createObjectURL(blob);
+    loading.style.display = 'none';
+    if (contentType && contentType.startsWith('image/')) {
+      img.src = filePreviewObjectUrl;
+      img.style.display = 'block';
+    } else if (contentType === 'application/pdf') {
+      iframe.src = filePreviewObjectUrl;
+      iframe.style.display = 'block';
+    } else {
+      unsupported.innerHTML = 'このファイル形式はプレビューに対応していません。<br>「⬇️ ダウンロード」からご確認ください。';
+      unsupported.style.display = 'block';
+    }
+  } catch(e) {
+    loading.style.display = 'none';
+    unsupported.innerHTML = 'プレビューの読み込みに失敗しました: ' + e.message;
+    unsupported.style.display = 'block';
+  }
+}
+
+function closeFilePreview() {
+  document.getElementById('file-preview-modal').style.display = 'none';
+  document.getElementById('file-preview-img').src = '';
+  document.getElementById('file-preview-iframe').src = '';
+  if (filePreviewObjectUrl) { URL.revokeObjectURL(filePreviewObjectUrl); filePreviewObjectUrl = null; }
 }
 
 // ===== 紹介者：支払い記録モーダル =====
