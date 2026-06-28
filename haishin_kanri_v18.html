@@ -945,7 +945,7 @@
   <th class="num">ドル換算</th>
   <th class="num">円換算</th>
   <th class="num">事務所売上</th>
-  <th></th>
+  <th>操作</th>
 </tr></thead>
         <tbody id="sales-table"></tbody></table>
       </div>
@@ -4608,6 +4608,17 @@ async function toggleExcludeReport(id) {
   renderAll();
 }
 
+// レポート除外の表示：管理者はON/OFF切替ボタン、閲覧者は状態を示す読み取り専用バッジ（クリック不可）。
+// 除外されていない通常の配信は閲覧者には何も表示しない（特に伝える情報がないため）。
+function reportExcludeControl(saleId, excluded) {
+  if (isViewerRole()) {
+    return excluded
+      ? `<span style="font-size:10px;background:rgba(251,191,36,0.2);border:1px solid var(--yellow);color:var(--yellow);border-radius:6px;padding:5px 10px;display:inline-flex;align-items:center" title="レポートの平均値計算から除外されています">📊除外中</span>`
+      : '';
+  }
+  return `<button class="btn btn-sm" style="background:${excluded?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${excluded?'var(--yellow)':'var(--border)'};color:${excluded?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${saleId})" title="レポートの平均値計算から除外">${excluded?'📊除外中':'📊'}</button>`;
+}
+
 // ===== DAILY PAY =====
 
 // 選択中の配信IDセット
@@ -5162,7 +5173,7 @@ function renderSales() {
       <td class="num" style="color:var(--green);${fw}">${hasRate?yen(sumOffice):'-'}</td>
       <td style="display:flex;gap:6px;flex-wrap:nowrap">
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>`}
-        ${!isMulti ? `<button class="btn btn-sm" style="background:${g.sales[0].excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${g.sales[0].excludeReport?'var(--yellow)':'var(--border)'};color:${g.sales[0].excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${g.sales[0].id})" title="レポートの平均値計算から除外">${g.sales[0].excludeReport?'📊除外中':'📊'}</button>` : ''}
+        ${!isMulti ? reportExcludeControl(g.sales[0].id, g.sales[0].excludeReport) : ''}
         ${!isMulti ? `<button class="btn btn-danger btn-sm" onclick="deleteSale(${g.sales[0].id})">削除</button>` : ''}
       </td>
     </tr>`);
@@ -5198,7 +5209,7 @@ function renderSales() {
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
           <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
-          <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button>`}<button class="btn btn-sm" style="background:${s.excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${s.excludeReport?'var(--yellow)':'var(--border)'};color:${s.excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${s.id})" title="レポートの平均値計算から除外">${s.excludeReport?'📊除外中':'📊'}</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
+          <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button>`}${reportExcludeControl(s.id, s.excludeReport)}<button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
         </tr>`);
       });
     }
