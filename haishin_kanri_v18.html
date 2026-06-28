@@ -1560,6 +1560,11 @@
           <div id="mep-transfer-status" style="display:none;font-size:11px;padding:4px;line-height:1.5"></div>
           <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">アップロードすると自動で内容を読み取って登録します（情報入力は不要）<br>完了したら「保存」を押して閉じてください</div>
         </div>
+        <div id="mep-attach-section" style="margin-bottom:16px;display:none">
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">📎 添付ファイル</div>
+          <div id="mep-attach-list"></div>
+          <button id="mep-attach-add-btn" class="btn btn-sm" style="margin-top:2px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openPayAttachModal('month_end_pay', parseInt(document.getElementById('mep-edit-id').value))">✚ ファイルを追加</button>
+        </div>
         <div style="margin-bottom:14px">
           <label style="font-size:12px;color:var(--muted)">支払日 <span style="color:var(--red)">*</span></label>
           <input id="mep-pay-date" type="date" class="form-control" style="margin-top:4px">
@@ -1582,8 +1587,7 @@
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" onclick="closeMepModal()">キャンセル</button>
-          <button id="mep-attach-btn" class="btn" style="display:none" onclick="openPayAttachModal('month_end_pay', parseInt(document.getElementById('mep-edit-id').value))">📎 添付</button>
-          <button id="mep-delete-btn" class="btn" style="background:var(--red);color:#fff;display:none" onclick="deleteMep()">削除</button>
+          <button id="mep-delete-btn" class="btn btn-danger" style="background:var(--red);color:#fff;display:none" onclick="deleteMep()">削除</button>
           <button class="btn btn-primary" onclick="saveMep()">保存</button>
         </div>
       </div>
@@ -2582,6 +2586,7 @@ async function uploadPayAttach(file) {
     renderPayAttachList();
     renderAll();
     if (refPayModalReferrerId != null) renderRefPayList();
+    renderMepAttachList();
   } catch(e) {
     alert('アップロード失敗: ' + e.message);
   } finally {
@@ -2613,6 +2618,7 @@ async function deletePayAttach(id, r2Key) {
     renderPayAttachList();
     renderAll();
     if (refPayModalReferrerId != null) renderRefPayList();
+    renderMepAttachList();
   } catch(e) { alert('削除失敗: ' + e.message); }
 }
 
@@ -7970,6 +7976,33 @@ function dashSecretClick() {
 // ===== 請求書番号生成（統一）=====
 // ===== 後払い登録 =====
 
+// 編集時：添付ファイルをモーダル内に直接一覧表示（👁️プレビュー・⬇️ダウンロードはクリック1回で見られるようにする）
+// 削除ボタンはbtn-dangerクラスのため、閲覧者モードでは自動的に非表示になる（他の添付一覧と同じ仕組み）
+function renderMepAttachList() {
+  const el = document.getElementById('mep-attach-list');
+  if (!el) return;
+  const editId = parseInt(document.getElementById('mep-edit-id').value) || null;
+  if (!editId) { el.innerHTML = ''; return; }
+  const recs = state.receipts.filter(r => r.monthEndPayId === editId);
+  if (recs.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:10px">添付ファイルはまだありません</div>';
+    return;
+  }
+  el.innerHTML = recs.map(r => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <div style="font-size:18px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">
+          ${new Date(r.uploadedAt).toLocaleString('ja-JP')}${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+        </div>
+      </div>
+      <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
+      <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+      <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
+    </div>`).join('');
+}
+
 function openMepModal(casterId, y, m, editId) {
   const caster = state.casters.find(c => c.id === casterId);
   if (!caster) return;
@@ -8013,13 +8046,15 @@ function openMepModal(casterId, y, m, editId) {
       document.getElementById('mep-note').value = existing.note || '';
     }
     document.getElementById('mep-delete-btn').style.display = '';
-    document.getElementById('mep-attach-btn').style.display = '';
-    // 編集時は既存の📎添付ボタン（pay-attach-modal）でファイル追加するため、クイック登録UIは隠す
+    // 編集時は添付ファイルをモーダル内に直接一覧表示する（クリックしないと見えない仕様は不親切なため）
+    document.getElementById('mep-attach-section').style.display = '';
+    renderMepAttachList();
+    // クイック登録UIは隠す（既に登録済みのため）
     document.getElementById('mep-quick-section').style.display = 'none';
   } else {
     document.getElementById('mep-pay-date').value = defDate;
     document.getElementById('mep-delete-btn').style.display = 'none';
-    document.getElementById('mep-attach-btn').style.display = 'none';
+    document.getElementById('mep-attach-section').style.display = 'none';
     document.getElementById('mep-quick-section').style.display = '';
   }
 
@@ -9197,6 +9232,7 @@ function applyViewerRestrictions() {
     '#ai-receipt-form',       // AIレシート読み込み
     '#petty-cash-section',    // 小口現金入力
     '#mep-quick-section',     // 後払い登録のクイックアップロード（v24+：新規登録を自動実行するため閲覧者には隠す）
+    '#mep-attach-add-btn',    // 後払い編集時の「✚ファイルを追加」（添付一覧の閲覧・DL・プレビューは表示したまま、追加のみ閲覧者には隠す）
   ];
   // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
   HIDDEN_SELECTORS.forEach(sel => {
