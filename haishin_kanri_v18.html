@@ -1011,7 +1011,7 @@
           <th class="num" style="cursor:pointer;user-select:none" onclick="sortDpTable('transfer')"><span id="dp-th-transfer">支払額</span></th>
           <th style="cursor:pointer;user-select:none" onclick="sortDpTable('note')"><span id="dp-th-note">備考</span></th>
           <th style="cursor:pointer;user-select:none" onclick="sortDpTable('deadline')"><span id="dp-th-deadline">納付期限</span></th>
-          <th></th>
+          <th>支払い記録</th>
         </tr></thead>
         <tbody id="daily-pay-table"></tbody></table>
       </div>
@@ -1713,6 +1713,9 @@
 // ===== SUPABASE =====
 const SUPABASE_URL = 'https://yythvjufqnmvwwlecygj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5dGh2anVmcW5tdnd3bGVjeWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDA2NzYsImV4cCI6MjA4ODU3NjY3Nn0.LuuchGYqhqWfAcFxP0ZjIckQVeBhOwR7MItaFaUFjBo';
+
+// 閲覧者モードかどうかの判定（sessionStorageを毎回直接読むより使い回せるよう関数化）
+function isViewerRole() { return sessionStorage.getItem('soreike_role') === 'viewer'; }
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let dbReady = false;
@@ -2739,7 +2742,7 @@ function renderRefPayList() {
           ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
         </div>
         ${payAttachBadge('referrer_pay', p.id)}
-        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editRefPay(${p.id})">編集</button>
+        ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editRefPay(${p.id})">編集</button>`}
         <button class="btn btn-danger btn-sm" onclick="deleteRefPay(${p.id})">削除</button>
       </div>`).join('');
 }
@@ -3649,7 +3652,7 @@ function renderCasters() {
       <td>${invNo}</td>
       ${memoCell}
       <td style="display:flex;gap:6px">
-        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openEditModal(${c.id})">編集</button>
+        ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openEditModal(${c.id})">編集</button>`}
         <button class="btn btn-danger btn-sm" onclick="deleteCaster(${c.id})">削除</button>
       </td>
     </tr>`;
@@ -3887,7 +3890,7 @@ function renderReferrers() {
       <td style="color:var(--muted);font-size:12px">${r.note||'-'}</td>
       <td style="display:flex;gap:6px">
         <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="openRefPayModal(${r.id})">💰 支払い記録</button>
-        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openRefEditModal(${r.id})">編集</button>
+        ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openRefEditModal(${r.id})">編集</button>`}
         <button class="btn btn-danger btn-sm" onclick="deleteReferrer(${r.id})">削除</button>
       </td>
     </tr>`;
@@ -4147,7 +4150,7 @@ function renderFxRecords() {
     const period = r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-';
     const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
     const editBtns = '<td style="display:flex;gap:6px;padding:7px 14px">'
-      + '<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(' + r.id + ')">編集</button>'
+      + (isViewerRole() ? '' : '<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(' + r.id + ')">編集</button>')
       + '<button class="btn btn-danger btn-sm" onclick="deleteFxRecord(' + r.id + ')">削除</button>'
       + '</td>';
 
@@ -5026,6 +5029,8 @@ function renderSales() {
     const deadline = `${dlY}年${dlM}月10日`;
     const targetY = d.targetY ?? d.y; const targetM = d.targetM ?? d.m;
     const isCross = (targetY !== d.y || targetM !== d.m);
+    const isViewerRole = sessionStorage.getItem('soreike_role') === 'viewer';
+    const dpEditBtn = isViewerRole ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button>`;
     return `<tr>
       <td style="color:var(--muted);font-size:12px">${d.date}</td>
       <td style="font-size:12px"><span class="badge ${isCross?'badge-orange':'badge-purple'}">${targetY}年${targetM}月分${isCross?'　⚡':''}
@@ -5037,7 +5042,7 @@ function renderSales() {
       <td class="num" style="color:var(--green)">${yen(d.amount - d.srcTax)}</td>
       <td style="color:var(--muted);font-size:12px">${d.note||'-'}</td>
       <td style="font-size:12px;color:var(--accent)">${deadline}</td>
-      <td style="display:flex;gap:6px">${payAttachBadge('daily_pay', d.id)}<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
+      <td style="display:flex;gap:6px">${payAttachBadge('daily_pay', d.id)}${dpEditBtn}<button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">前払いなし</td></tr>';
 
@@ -5156,7 +5161,7 @@ function renderSales() {
       <td class="num" style="color:var(--accent);${fw}">${hasRate?yen(sumJpy):'-'}</td>
       <td class="num" style="color:var(--green);${fw}">${hasRate?yen(sumOffice):'-'}</td>
       <td style="display:flex;gap:6px;flex-wrap:nowrap">
-        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>
+        ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>`}
         ${!isMulti ? `<button class="btn btn-sm" style="background:${g.sales[0].excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${g.sales[0].excludeReport?'var(--yellow)':'var(--border)'};color:${g.sales[0].excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${g.sales[0].id})" title="レポートの平均値計算から除外">${g.sales[0].excludeReport?'📊除外中':'📊'}</button>` : ''}
         ${!isMulti ? `<button class="btn btn-danger btn-sm" onclick="deleteSale(${g.sales[0].id})">削除</button>` : ''}
       </td>
@@ -5193,7 +5198,7 @@ function renderSales() {
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
           <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
-          <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button><button class="btn btn-sm" style="background:${s.excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${s.excludeReport?'var(--yellow)':'var(--border)'};color:${s.excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${s.id})" title="レポートの平均値計算から除外">${s.excludeReport?'📊除外中':'📊'}</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
+          <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button>`}<button class="btn btn-sm" style="background:${s.excludeReport?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${s.excludeReport?'var(--yellow)':'var(--border)'};color:${s.excludeReport?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${s.id})" title="レポートの平均値計算から除外">${s.excludeReport?'📊除外中':'📊'}</button><button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
         </tr>`);
       });
     }
@@ -5916,7 +5921,7 @@ function renderExpenses() {
         }
         return `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openReceiptModal(${e.id})">📎 追加</button>`;
       })()}</td>
-      <td style="display:flex;gap:6px"><button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button><button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
+      <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button>`}<button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
     </tr>`;
   }).join('') || '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
 
@@ -7906,7 +7911,7 @@ function renderMgrPayList() {
         ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
       </div>
       ${payAttachBadge('manager_pay', p.id)}
-      <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrPay(${p.id})">編集</button>
+      ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrPay(${p.id})">編集</button>`}
       <button class="btn btn-danger btn-sm" onclick="deleteMgrPay(${p.id})">削除</button>
     </div>`).join('');
 }
