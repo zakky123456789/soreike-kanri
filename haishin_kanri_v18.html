@@ -1519,7 +1519,7 @@
 
     <!-- 後払登録モーダル -->
     <div id="mep-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
-      <div style="background:var(--surface);border-radius:12px;padding:28px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+      <div style="background:var(--surface);border-radius:12px;padding:28px;width:460px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
         <div style="font-size:16px;font-weight:700;margin-bottom:20px">後払い支払い登録</div>
         <input type="hidden" id="mep-caster-id">
         <input type="hidden" id="mep-target-y">
@@ -1529,6 +1529,37 @@
           <div style="font-size:12px;color:var(--muted);margin-bottom:4px">配信者・対象月</div>
           <div id="mep-label" style="font-weight:600;color:var(--accent)"></div>
         </div>
+        <div id="mep-quick-section" style="margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+            <div>
+              <div id="mep-invoice-upload" style="border:2px dashed var(--accent);border-radius:8px;padding:14px 6px;text-align:center;cursor:pointer;transition:all 0.15s"
+                onclick="document.getElementById('mep-invoice-file').click()"
+                ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'"
+                ondragleave="this.style.borderColor='var(--accent)'"
+                ondrop="event.preventDefault();this.style.borderColor='var(--accent)';handleMepInvoiceDrop(event)">
+                <div style="font-size:22px;margin-bottom:4px">📄</div>
+                <div style="font-size:12px;font-weight:600">請求書</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:2px">金額・源泉税を自動入力</div>
+              </div>
+              <input type="file" id="mep-invoice-file" style="display:none" accept="image/*,.pdf,.heic,.heif" onchange="handleMepInvoiceFileSelect(event)">
+            </div>
+            <div>
+              <div id="mep-transfer-upload" style="border:2px dashed var(--accent);border-radius:8px;padding:14px 6px;text-align:center;cursor:pointer;transition:all 0.15s"
+                onclick="document.getElementById('mep-transfer-file').click()"
+                ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'"
+                ondragleave="this.style.borderColor='var(--accent)'"
+                ondrop="event.preventDefault();this.style.borderColor='var(--accent)';handleMepTransferDrop(event)">
+                <div style="font-size:22px;margin-bottom:4px">🏦</div>
+                <div style="font-size:12px;font-weight:600">振込明細</div>
+                <div style="font-size:10px;color:var(--muted);margin-top:2px">支払日を自動入力</div>
+              </div>
+              <input type="file" id="mep-transfer-file" style="display:none" accept="image/*,.pdf,.heic,.heif" onchange="handleMepTransferFileSelect(event)">
+            </div>
+          </div>
+          <div id="mep-invoice-status" style="display:none;font-size:11px;padding:4px;line-height:1.5"></div>
+          <div id="mep-transfer-status" style="display:none;font-size:11px;padding:4px;line-height:1.5"></div>
+          <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">アップロードすると自動で内容を読み取って登録します（情報入力は不要）<br>完了したら「保存」を押して閉じてください</div>
+        </div>
         <div style="margin-bottom:14px">
           <label style="font-size:12px;color:var(--muted)">支払日 <span style="color:var(--red)">*</span></label>
           <input id="mep-pay-date" type="date" class="form-control" style="margin-top:4px">
@@ -1537,12 +1568,12 @@
           <div>
             <label style="font-size:12px;color:var(--muted)">振込額（税込・源泉控除後）</label>
             <input id="mep-amount" type="number" class="form-control" style="margin-top:4px" readonly>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算（変更不可）</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算／請求書アップロードで自動入力</div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--muted)">源泉徴収税額</label>
             <input id="mep-src-tax" type="number" class="form-control" style="margin-top:4px" readonly>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算（変更不可）</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">自動計算／請求書アップロードで自動入力</div>
           </div>
         </div>
         <div style="margin-bottom:20px">
@@ -2511,37 +2542,43 @@ function renderPayAttachList() {
       </div>`).join('');
 }
 
+// 共通アップロード処理（PAY_ATTACH_CONFIGのtype + 対象idを指定してreceiptsに登録）
+// pay-attach-modal経由のuploadPayAttachと、後払い登録のクイックアップロード（handleMepInvoiceFiles/handleMepTransferFiles）の両方から呼ばれる
+async function uploadFileToPayTarget(type, id, file, note) {
+  const cfg = PAY_ATTACH_CONFIG[type];
+  const { blob, contentType, filename } = await compressImage(file);
+  const r2Key = `${cfg.r2Prefix}/${id}/${safeR2Filename(filename)}`;
+  const base64 = await new Promise(res => {
+    const reader = new FileReader();
+    reader.onload = () => res(reader.result.split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+  const res = await fetch(R2_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
+  });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error);
+  const insertRow = { r2_key: r2Key, filename, content_type: contentType, file_size: blob.size, note: note || null };
+  insertRow[cfg.dbCol] = id;
+  const { data: recData, error } = await sb.from('receipts').insert(insertRow).select().single();
+  if (error) throw error;
+  state.receipts.push({
+    id: recData.id, expenseId: recData.expense_id || null, r2Key: recData.r2_key,
+    filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
+    uploadedAt: recData.uploaded_at, note: recData.note || '',
+    dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
+    referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null
+  });
+}
+
 async function uploadPayAttach(file) {
   if (!payAttachTarget) return;
-  const cfg = PAY_ATTACH_CONFIG[payAttachTarget.type];
   const note = document.getElementById('pay-attach-note').value.trim();
   document.getElementById('pay-attach-loading').style.display = 'block';
   try {
-    const { blob, contentType, filename } = await compressImage(file);
-    const r2Key = `${cfg.r2Prefix}/${payAttachTarget.id}/${safeR2Filename(filename)}`;
-    const base64 = await new Promise(res => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result.split(',')[1]);
-      reader.readAsDataURL(blob);
-    });
-    const res = await fetch(R2_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
-    const insertRow = { r2_key: r2Key, filename, content_type: contentType, file_size: blob.size, note: note || null };
-    insertRow[cfg.dbCol] = payAttachTarget.id;
-    const { data: recData, error } = await sb.from('receipts').insert(insertRow).select().single();
-    if (error) throw error;
-    state.receipts.push({
-      id: recData.id, expenseId: recData.expense_id || null, r2Key: recData.r2_key,
-      filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
-      uploadedAt: recData.uploaded_at, note: recData.note || '',
-      dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
-      referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null
-    });
+    await uploadFileToPayTarget(payAttachTarget.type, payAttachTarget.id, file, note);
     renderPayAttachList();
     renderAll();
     if (refPayModalReferrerId != null) renderRefPayList();
@@ -7961,6 +7998,13 @@ function openMepModal(casterId, y, m, editId) {
   document.getElementById('mep-amount').value = transfer > 0 ? transfer : 0;
   document.getElementById('mep-src-tax').value = remainingSrc;
   document.getElementById('mep-note').value = '';
+  // クイックアップロードの状態表示・選択済みファイルをリセット（前回開いた時の表示が残らないように）
+  const invStatus = document.getElementById('mep-invoice-status');
+  const trfStatus = document.getElementById('mep-transfer-status');
+  invStatus.style.display = 'none'; invStatus.textContent = '';
+  trfStatus.style.display = 'none'; trfStatus.textContent = '';
+  document.getElementById('mep-invoice-file').value = '';
+  document.getElementById('mep-transfer-file').value = '';
 
   if (editId) {
     const existing = state.monthEndPays.find(p => p.id === editId);
@@ -7970,10 +8014,13 @@ function openMepModal(casterId, y, m, editId) {
     }
     document.getElementById('mep-delete-btn').style.display = '';
     document.getElementById('mep-attach-btn').style.display = '';
+    // 編集時は既存の📎添付ボタン（pay-attach-modal）でファイル追加するため、クイック登録UIは隠す
+    document.getElementById('mep-quick-section').style.display = 'none';
   } else {
     document.getElementById('mep-pay-date').value = defDate;
     document.getElementById('mep-delete-btn').style.display = 'none';
     document.getElementById('mep-attach-btn').style.display = 'none';
+    document.getElementById('mep-quick-section').style.display = '';
   }
 
   const modal = document.getElementById('mep-modal');
@@ -7984,7 +8031,9 @@ function closeMepModal() {
   document.getElementById('mep-modal').style.display = 'none';
 }
 
-async function saveMep() {
+// レコードの作成/更新のみ行い、idを返す（モーダルのクローズや再描画は呼び出し側の責任）
+// 通常の保存ボタン（saveMep）と、クイック登録（handleMepInvoiceFiles/handleMepTransferFiles経由のsaveMepAndAttach）の両方から呼ばれる
+async function saveMepRecord() {
   const casterId = parseInt(document.getElementById('mep-caster-id').value);
   const targetY  = parseInt(document.getElementById('mep-target-y').value);
   const targetM  = parseInt(document.getElementById('mep-target-m').value);
@@ -7994,24 +8043,224 @@ async function saveMep() {
   const srcTax   = parseInt(document.getElementById('mep-src-tax').value) || 0;
   const note     = document.getElementById('mep-note').value.trim();
 
-  if (!payDate) { alert('支払日を入力してください'); return; }
+  if (!payDate) { alert('支払日を入力してください'); return null; }
 
   const record = { casterId, payDate, amount, srcTax, targetY, targetM, note };
 
+  let id;
   if (editId) {
-    const id = parseInt(editId);
+    id = parseInt(editId);
     const idx = state.monthEndPays.findIndex(p => p.id === id);
     if (idx !== -1) state.monthEndPays[idx] = { ...state.monthEndPays[idx], ...record };
     await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
   } else {
-    const id = state.nextId++;
+    id = state.nextId++;
     state.monthEndPays.push({ id, ...record });
     await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
+    // 新規作成後は以後の処理がこのレコードを「編集対象」として扱えるようにidをセット
+    document.getElementById('mep-edit-id').value = id;
   }
+  return id;
+}
 
+async function saveMep() {
+  const id = await saveMepRecord();
+  if (id == null) return;
   closeMepModal();
   renderSales();
 }
+
+// ===== 後払い登録のクイックアップロード（請求書／振込明細を別々に読み取り） =====
+// 「請求書」をアップロードすると、AI（claude-proxy経由）が金額・源泉徴収税額を読み取って自動入力。
+// 「振込明細」をアップロードすると、AIが振込日のみを読み取って自動入力する
+// （振込明細は他の支払いとまとめて振り込まれている場合があるため、金額は抽出対象に含めない）。
+// いずれの場合も、読み取り後にレコードを自動作成/更新し、ファイルをその場で添付する。
+// 振込額・源泉徴収税額の欄は readonly のままだが、JSによる値のセットは可能（ユーザーの直接入力のみ禁止）。
+
+// 画像/PDFをAI解析用にbase64化（HEIC変換・画像圧縮を含む。compressImage()を再利用）
+async function prepareFileForMepAI(file) {
+  if (file.type && file.type !== file.type.toLowerCase()) {
+    file = new File([file], file.name, { type: file.type.toLowerCase() });
+  }
+  if (!file.type && file.name) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const typeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', heic: 'image/heic', heif: 'image/heif' };
+    if (typeMap[ext]) file = new File([file], file.name, { type: typeMap[ext] });
+  }
+  const isHeic = file.type === 'image/heic' || file.type === 'image/heif'
+    || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+  if (isHeic && typeof window.heic2any !== 'undefined') {
+    try {
+      const blob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+      file = new File([blob], file.name.replace(/\.heic$/i, '.jpg').replace(/\.heif$/i, '.jpg'), { type: 'image/jpeg' });
+    } catch(e) { console.warn('heic2any失敗、ブラウザネイティブで試みます:', e.message); }
+  }
+  const isPdf = file.type === 'application/pdf';
+  if (!isPdf) {
+    const compressed = await compressImage(file);
+    const base64 = await new Promise(res => {
+      const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.readAsDataURL(compressed.blob);
+    });
+    return { base64, contentType: compressed.contentType, filename: compressed.filename, _origFile: file };
+  } else {
+    const base64 = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result.split(',')[1]); r.onerror = () => rej(new Error('ファイル読み込み失敗')); r.readAsDataURL(file);
+    });
+    return { base64, contentType: 'application/pdf', filename: file.name, _origFile: file };
+  }
+}
+
+// claude-proxy呼び出し共通部分。systemプロンプトに従ってJSONオブジェクトのみを返すことを期待する。
+async function callMepAI(systemPrompt, base64, contentType) {
+  const isPdf = contentType === 'application/pdf';
+  const content = isPdf
+    ? [{ type:'document', source:{ type:'base64', media_type:'application/pdf', data:base64 } },
+       { type:'text', text:'このファイルを読み取ってください。' }]
+    : [{ type:'image', source:{ type:'base64', media_type:contentType, data:base64 } },
+       { type:'text', text:'この画像を読み取ってください。' }];
+  const resp = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: systemPrompt, messages: [{ role: 'user', content }] })
+  });
+  if (!resp.ok) throw new Error(`API Error ${resp.status}`);
+  const data = await resp.json();
+  const text = data.content?.find(b => b.type === 'text')?.text || '';
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  if (!objMatch) throw new Error('JSONが取得できませんでした');
+  return JSON.parse(objMatch[0]);
+}
+
+async function extractInvoiceAmounts(base64, contentType) {
+  const systemPrompt = `配信者（業務委託先）からの請求書の画像/PDFを読み取り、以下の2つの数値のみをJSON形式で返してください。
+前置き・説明・マークダウン記法（バッククォートなど）は一切不要です。JSONのみ出力してください。
+
+抽出する値：
+- amount：源泉徴収税額を差し引いた後の、実際の振込予定額。「差引金額」「お支払い金額」「振込金額」等の名称で記載されている数値を使ってください。
+  そのような直接記載が無い場合は、税込合計金額から源泉徴収税額を差し引いて計算してください。
+- srcTax：源泉徴収税額。「源泉徴収税」「源泉所得税」等の名称で記載されている数値を使ってください。
+  「0円」「￥0」のように明確に0円と記載されている場合はその通り0としてください。
+  それ以外（源泉徴収税額の項目自体が請求書に存在しない・記載が見当たらない）の場合は、推測せず必ずnullにしてください。
+
+両方とも円単位の整数（カンマ・円記号・小数点なし）で返してください。請求書ではないファイルだった場合や、内容が全く読み取れない場合は両方nullにしてください。
+
+出力形式（このJSON以外は何も出力しないこと）：
+{"amount": 数値またはnull, "srcTax": 数値またはnull}`;
+  const result = await callMepAI(systemPrompt, base64, contentType);
+  return {
+    amount: typeof result.amount === 'number' ? Math.round(result.amount) : null,
+    srcTax: typeof result.srcTax === 'number' ? Math.round(result.srcTax) : null
+  };
+}
+
+async function extractTransferDate(base64, contentType) {
+  const systemPrompt = `銀行の振込明細・取引明細の画像/PDFを読み取り、実際に振込（送金）が行われた日付のみをJSON形式で返してください。
+前置き・説明・マークダウン記法は一切不要です。JSONのみ出力してください。
+この振込は他の支払いとまとめて1件で振り込まれている可能性があるため、金額は読み取らず、日付のみを読み取ってください。
+
+出力形式（このJSON以外は何も出力しないこと）：
+{"payDate": "YYYY-MM-DD形式の振込日。読み取れない場合はnull"}`;
+  const result = await callMepAI(systemPrompt, base64, contentType);
+  return { payDate: (typeof result.payDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(result.payDate)) ? result.payDate : null };
+}
+
+// レコードを作成/更新し、ファイルを指定のnoteで添付する共通処理
+async function saveMepAndAttach(file, note) {
+  const id = await saveMepRecord();
+  if (id == null) throw new Error('支払日が未入力です');
+  await uploadFileToPayTarget('month_end_pay', id, file, note);
+  renderSales();
+}
+
+async function handleMepInvoiceFiles(fileList) {
+  const file = fileList[0];
+  if (!file) return;
+  const statusEl = document.getElementById('mep-invoice-status');
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = '⏳ 請求書を解析中...';
+  try {
+    const { base64, contentType, _origFile } = await prepareFileForMepAI(file);
+    let extracted = null;
+    try {
+      extracted = await extractInvoiceAmounts(base64, contentType);
+    } catch(e) {
+      console.warn('請求書の解析に失敗:', e.message);
+    }
+    if (extracted && extracted.amount != null) document.getElementById('mep-amount').value = extracted.amount;
+    // srcTaxがnull（請求書に項目自体が見当たらない）の場合も、欄には便宜上0を入れるが、
+    // 「0だから安心」ではなく「読み取れなかったかもしれない」ことが分かるよう警告を分けて出す
+    const srcTaxMissing = !extracted || extracted.srcTax == null;
+    const srcTaxValue = (extracted && extracted.srcTax != null) ? extracted.srcTax : 0;
+    document.getElementById('mep-src-tax').value = srcTaxValue;
+    await saveMepAndAttach(_origFile, '請求書');
+    if (extracted && extracted.amount != null && !srcTaxMissing && srcTaxValue > 0) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = `✅ 添付完了（金額¥${extracted.amount.toLocaleString()}／源泉¥${srcTaxValue.toLocaleString()} を自動入力）`;
+    } else if (extracted && extracted.amount != null && srcTaxMissing) {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = `⚠️ 添付完了（金額¥${extracted.amount.toLocaleString()}を自動入力）。源泉徴収税額は請求書から読み取れなかったため0としています。記載漏れでないかご確認ください。`;
+    } else if (extracted && extracted.amount != null && srcTaxValue === 0) {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = `⚠️ 添付完了（金額¥${extracted.amount.toLocaleString()}を自動入力）。源泉徴収税額が0円と記載されています。意図した内容かご確認ください。`;
+    } else {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '⚠️ 添付しましたが金額の読み取りに失敗しました。下の欄を確認・修正してください。';
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '❌ エラー: ' + e.message;
+  }
+}
+
+function handleMepInvoiceFileSelect(event) {
+  handleMepInvoiceFiles(event.target.files);
+  event.target.value = '';
+}
+
+function handleMepInvoiceDrop(event) {
+  handleMepInvoiceFiles(event.dataTransfer.files);
+}
+
+async function handleMepTransferFiles(fileList) {
+  const file = fileList[0];
+  if (!file) return;
+  const statusEl = document.getElementById('mep-transfer-status');
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = '⏳ 振込明細を解析中...';
+  try {
+    const { base64, contentType, _origFile } = await prepareFileForMepAI(file);
+    let extracted = null;
+    try {
+      extracted = await extractTransferDate(base64, contentType);
+    } catch(e) {
+      console.warn('振込明細の解析に失敗:', e.message);
+    }
+    if (extracted && extracted.payDate) document.getElementById('mep-pay-date').value = extracted.payDate;
+    await saveMepAndAttach(_origFile, '振込明細');
+    if (extracted && extracted.payDate) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = `✅ 添付完了（振込日 ${extracted.payDate} を自動入力）`;
+    } else {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '⚠️ 添付しましたが振込日の読み取りに失敗しました。上の支払日欄を確認・修正してください。';
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '❌ エラー: ' + e.message;
+  }
+}
+
+function handleMepTransferFileSelect(event) {
+  handleMepTransferFiles(event.target.files);
+  event.target.value = '';
+}
+
+function handleMepTransferDrop(event) {
+  handleMepTransferFiles(event.dataTransfer.files);
+}
+
 
 async function deleteMep() {
   const editId = document.getElementById('mep-edit-id').value;
@@ -8947,6 +9196,7 @@ function applyViewerRestrictions() {
     '#referrer-form',         // 新規紹介者登録フォーム
     '#ai-receipt-form',       // AIレシート読み込み
     '#petty-cash-section',    // 小口現金入力
+    '#mep-quick-section',     // 後払い登録のクイックアップロード（v24+：新規登録を自動実行するため閲覧者には隠す）
   ];
   // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
   HIDDEN_SELECTORS.forEach(sel => {
