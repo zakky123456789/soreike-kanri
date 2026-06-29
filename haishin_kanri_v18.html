@@ -6248,8 +6248,9 @@ function renderTax() {
     const allPaid = group.every(x => x.paid);
     const daysLeft = Math.ceil((deadline - today) / 86400000);
     const deadlineStr = deadline.toLocaleDateString('ja-JP');
+    const groupPaidDate = allPaid ? group.map(x => state.taxPaidDate[x.key]).find(d => d) : null;
     const statusBadge = allPaid
-      ? '<span class="badge badge-green">✅ 全納付済</span>'
+      ? `<span class="badge badge-green">✅ 全納付済${groupPaidDate ? '（'+groupPaidDate+'）' : ''}</span>`
       : daysLeft <= 0 ? '<span class="badge badge-red">🚨 期限切れ</span>'
       : daysLeft <= 5 ? '<span class="badge badge-yellow">⚠️ 要注意</span>'
       : '<span class="badge badge-blue">📅 期限内</span>';
@@ -6278,7 +6279,7 @@ function renderTax() {
         <td class="num" style="color:var(--yellow)">${yen(x.srcTax)}</td>
         <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
-        <td>${x.paid?`<span class="badge badge-green">✅ 納付済${state.taxPaidDate[x.key] ? '（'+state.taxPaidDate[x.key]+'）' : ''}</span>`:x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
+        <td>${x.paid?'<span class="badge badge-green">✅ 納付済</span>':x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
         <td>${x.paid
           ?(isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setTax('${x.key}',false)">取消</button>`)
           :`<button class="btn btn-primary btn-sm" onclick="setTax('${x.key}',true)">納付済にする</button>`
