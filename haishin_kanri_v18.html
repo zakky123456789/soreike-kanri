@@ -6221,10 +6221,6 @@ function renderTax() {
 
   rows.sort((a,b) => a.deadline - b.deadline);
 
-  // 添付モーダル（openTaxAttachModal）のヘッダー表示用：key→行情報の参照マップ
-  taxRowInfoMap = {};
-  rows.forEach(r => { taxRowInfoMap[r.key] = r; });
-
   let alerts = '';
   rows.filter(x => !x.paid && x.daysLeft <= 5).forEach(x => {
     alerts += x.daysLeft <= 0
@@ -6244,6 +6240,9 @@ function renderTax() {
   const deadlineGroups = [...deadlineMap.values()].sort((a,b) => a.deadline - b.deadline);
 
   let html = '';
+  // 添付モーダル用：納付期限グループ単位のマップをリセット（まとめて1回の振込で支払うため、添付・支払日はグループ単位で管理）
+  taxGroupItemsMap = {};
+  taxGroupInfoMap = {};
   deadlineGroups.forEach(({ deadline, rows: group }) => {
     const totalSrc = group.reduce((s,x) => s + x.srcTax, 0);
     const allPaid = group.every(x => x.paid);
@@ -6257,6 +6256,11 @@ function renderTax() {
     const daysStr = allPaid ? '-' : daysLeft + '日';
     const daysColor = allPaid ? 'var(--muted)' : daysLeft <= 0 ? 'var(--red)' : daysLeft <= 5 ? 'var(--yellow)' : 'var(--muted)';
 
+    // 納付期限（年月日）から決定的なグループキーを生成（実際の振込は期限ごとに1回まとめて行うため、添付もこの単位で1つ）
+    const groupKey = `grp-${deadline.getFullYear()}-${String(deadline.getMonth()+1).padStart(2,'0')}-${String(deadline.getDate()).padStart(2,'0')}`;
+    taxGroupItemsMap[groupKey] = group.map(x => x.key);
+    taxGroupInfoMap[groupKey] = { label: group.map(x=>x.label).join('・'), srcTax: totalSrc, deadline };
+
     // 合算ヘッダー行
     html += `<tr style="background:rgba(79,156,249,0.06);border-left:3px solid var(--accent)">
       <td><strong>${deadlineStr} 納付分</strong><span style="font-size:11px;color:var(--muted);margin-left:8px">${group.map(x=>x.label).join('・')}</span></td>
@@ -6264,7 +6268,7 @@ function renderTax() {
       <td><strong>${deadlineStr}</strong></td>
       <td style="font-family:var(--mono);color:${daysColor}">${daysStr}</td>
       <td>${statusBadge}</td>
-      <td></td>
+      <td>${taxAttachBadge(groupKey)}</td>
     </tr>`;
 
     // 内訳行
@@ -6275,7 +6279,7 @@ function renderTax() {
         <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
         <td>${x.paid?`<span class="badge badge-green">✅ 納付済${state.taxPaidDate[x.key] ? '（'+state.taxPaidDate[x.key]+'）' : ''}</span>`:x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
-        <td style="display:flex;gap:6px;align-items:center">${taxAttachBadge(x.key)}${x.paid
+        <td>${x.paid
           ?(isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setTax('${x.key}',false)">取消</button>`)
           :`<button class="btn btn-primary btn-sm" onclick="setTax('${x.key}',true)">納付済にする</button>`
         }</td>
@@ -6374,13 +6378,14 @@ async function setTax(key, v, paidDate) {
 }
 
 // ===== 源泉税：支払い明細添付（AI読み取りで支払日を自動登録） =====
-// renderTax()内で都度計算されるkeyに対し、receipts.tax_keyで紐付ける（数値idを持たないため文字列keyをFKとして使用）。
-// 振込明細・納付書をアップロードするとextractTransferDate()（後払い登録と共通）で支払日を読み取り、
-// setTax(key, true, payDate)で納付済み＋支払日を自動登録し、同時にファイルを添付する。
-let taxRowInfoMap = {}; // key → renderTax()内の行情報（添付モーダルのヘッダー表示用）
-let taxAttachTarget = null; // 現在開いている添付モーダルの対象key
+// 実際の納付は「納付期限ごとに1回まとめて」行うため、添付・支払日登録も内訳項目単位ではなく
+// 納付期限グループ単位（taxGroupItemsMap参照）で1箇所のみ。receipts.tax_keyにはグループキー（grp-YYYY-MM-DD）を保存し、
+// グループキー経由で配下の全item key（tax_paid.key）にまとめてpaid=true・paid_dateを反映する。
+let taxGroupItemsMap = {}; // groupKey → 配下の内訳item key配列（renderTax()で都度再構築）
+let taxGroupInfoMap = {};  // groupKey → 表示用情報（label, srcTax, deadline）
+let taxAttachTarget = null; // 現在開いている添付モーダルの対象 { key: groupKey, itemKeys: [...] }
 
-// 内訳行に置く📎バッジ（件数表示・クリックでモーダルを開く）。未登録時、閲覧者には意味のないボタンを出さない
+// 合算ヘッダー行に置く📎バッジ（件数表示・クリックでモーダルを開く）。未登録時、閲覧者には意味のないボタンを出さない
 function taxAttachBadge(key) {
   const count = state.receipts.filter(r => r.taxKey === key).length;
   if (count > 0) {
@@ -6391,12 +6396,15 @@ function taxAttachBadge(key) {
 }
 
 function openTaxAttachModal(key) {
-  taxAttachTarget = key;
-  const info = taxRowInfoMap[key];
+  const itemKeys = taxGroupItemsMap[key] || [];
+  taxAttachTarget = { key, itemKeys };
+  const info = taxGroupInfoMap[key];
   document.getElementById('tax-attach-info').innerHTML = info
     ? `<span style="color:var(--muted)">${info.label}</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(info.srcTax)}</span>　<span style="font-size:11px;color:var(--muted)">納付期限 ${info.deadline.toLocaleDateString('ja-JP')}</span>`
     : '';
-  document.getElementById('tax-attach-date').value = state.taxPaidDate[key] || '';
+  // 日付欄：グループ内のいずれかのitemに既に支払日が登録済みならそれを表示
+  const existingDate = itemKeys.map(k => state.taxPaidDate[k]).find(d => d);
+  document.getElementById('tax-attach-date').value = existingDate || '';
   const statusEl = document.getElementById('tax-attach-status');
   statusEl.style.display = 'none'; statusEl.textContent = '';
   document.getElementById('tax-attach-file').value = '';
@@ -6411,7 +6419,7 @@ function closeTaxAttachModal() {
 
 function renderTaxAttachList() {
   if (!taxAttachTarget) return;
-  const recs = state.receipts.filter(r => r.taxKey === taxAttachTarget);
+  const recs = state.receipts.filter(r => r.taxKey === taxAttachTarget.key);
   const el = document.getElementById('tax-attach-list');
   if (recs.length === 0) {
     el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">添付ファイルが登録されていません</div>';
@@ -6434,22 +6442,43 @@ function renderTaxAttachList() {
       </div>`).join('');
 }
 
+// itemKeys（同一納付期限グループ内の全内訳item key）にまとめてpaid=true・paid_dateを反映する一括処理。
+// 個別のsetTax()を複数回呼ぶ代わりに1回のupsertでまとめて保存し、renderAll()も1回だけ呼ぶ
+async function setTaxBulkDate(itemKeys, payDate) {
+  if (!itemKeys || itemKeys.length === 0) return false;
+  const rows = itemKeys.map(key => ({ key, paid: true, paid_date: payDate || null }));
+  const { error } = await sb.from('tax_paid').upsert(rows, { onConflict: 'key' });
+  if (error) {
+    console.error('tax_paid bulk upsert error:', error);
+    alert('保存に失敗しました: ' + error.message);
+    return false;
+  }
+  itemKeys.forEach(key => {
+    state.taxPaid[key] = true;
+    if (payDate) state.taxPaidDate[key] = payDate; else delete state.taxPaidDate[key];
+  });
+  renderAll();
+  return true;
+}
+
 // 手動で支払日のみ保存（AI読み取りに失敗した場合の修正用／添付なしで日付だけ登録したい場合用）
+// グループ内の全内訳item（まとめて1回の振込で支払うもの）に一括反映する
 async function saveTaxAttachDate() {
   if (!taxAttachTarget) return;
   const dateVal = document.getElementById('tax-attach-date').value;
-  await setTax(taxAttachTarget, true, dateVal);
+  const ok = await setTaxBulkDate(taxAttachTarget.itemKeys, dateVal);
+  if (!ok) return;
   const statusEl = document.getElementById('tax-attach-status');
   statusEl.style.display = 'block';
   statusEl.style.color = 'var(--green)';
-  statusEl.textContent = '✅ 支払日を保存しました';
+  statusEl.textContent = `✅ 支払日を保存しました（${taxAttachTarget.itemKeys.length}件まとめて納付済みに設定）`;
 }
 
 async function handleTaxAttachFiles(fileList) {
   if (!taxAttachTarget) return;
   const file = fileList[0];
   if (!file) return;
-  const key = taxAttachTarget;
+  const { key, itemKeys } = taxAttachTarget;
   const statusEl = document.getElementById('tax-attach-status');
   statusEl.style.display = 'block';
   statusEl.style.color = 'var(--muted)';
@@ -6463,13 +6492,14 @@ async function handleTaxAttachFiles(fileList) {
       console.warn('振込明細の解析に失敗:', e.message);
     }
     const payDate = (extracted && extracted.payDate) ? extracted.payDate : (document.getElementById('tax-attach-date').value || null);
-    await setTax(key, true, payDate);
+    const ok = await setTaxBulkDate(itemKeys, payDate);
+    if (!ok) { statusEl.style.color = 'var(--red)'; statusEl.textContent = '❌ 保存に失敗しました'; return; }
     document.getElementById('tax-attach-date').value = payDate || '';
     await uploadFileToPayTarget('tax_paid', key, _origFile, '振込明細');
     renderTaxAttachList();
     if (extracted && extracted.payDate) {
       statusEl.style.color = 'var(--green)';
-      statusEl.textContent = `✅ 添付完了（支払日 ${extracted.payDate} を自動入力し、納付済みに登録しました）`;
+      statusEl.textContent = `✅ 添付完了（支払日 ${extracted.payDate} を自動入力し、${itemKeys.length}件まとめて納付済みに登録しました）`;
     } else {
       statusEl.style.color = 'var(--yellow)';
       statusEl.textContent = '⚠️ 添付・納付済み登録は完了しましたが、支払日の読み取りに失敗しました。上の日付欄を確認し「日付を保存」を押してください。';
