@@ -6359,10 +6359,12 @@ async function setTax(key, v, paidDate) {
       else delete state.taxPaidDate[key];
     }
   } else {
-    // 添付ファイルがある場合は先に削除してもらう（他の支払い記録系テーブルと同じ削除ガード方針）
-    const attached = state.receipts.filter(r => r.taxKey === key);
+    // 添付ファイルは「納付期限グループ」単位（taxGroupItemsMap）でtax_keyに紐付いているため、
+    // このitem keyが属するグループに添付があるかどうかを調べてからガードする
+    const groupKey = Object.keys(taxGroupItemsMap).find(gk => taxGroupItemsMap[gk].includes(key));
+    const attached = groupKey ? state.receipts.filter(r => r.taxKey === groupKey) : [];
     if (attached.length > 0) {
-      alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+      alert(`この納付期限グループに添付ファイルが${attached.length}件あります。先に📎ボタン（合算ヘッダー行）から添付ファイルを削除してください。`);
       return;
     }
     const { error } = await sb.from('tax_paid').delete().eq('key', key);
