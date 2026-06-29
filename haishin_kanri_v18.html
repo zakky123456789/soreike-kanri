@@ -6269,21 +6269,18 @@ function renderTax() {
       <td><strong>${deadlineStr}</strong></td>
       <td style="font-family:var(--mono);color:${daysColor}">${daysStr}</td>
       <td>${statusBadge}</td>
-      <td>${taxAttachBadge(groupKey)}</td>
+      <td style="display:flex;gap:6px;align-items:center">${taxAttachBadge(groupKey)}${allPaid && !isViewerRole() ? `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="cancelTaxGroup('${groupKey}')">取消</button>` : ''}</td>
     </tr>`;
 
-    // 内訳行
+    // 内訳行（状態・操作はグループ単位でのみ表示。納付処理は合算ヘッダー行の📎添付からのみ行う）
     group.forEach(x => {
       html += `<tr style="opacity:0.8">
         <td style="padding-left:20px;font-size:13px">└ ${x.label}</td>
         <td class="num" style="color:var(--yellow)">${yen(x.srcTax)}</td>
         <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
-        <td>${x.paid?'<span class="badge badge-green">✅ 納付済</span>':x.daysLeft<=0?'<span class="badge badge-red">🚨 期限切れ</span>':x.daysLeft<=5?'<span class="badge badge-yellow">⚠️ 要注意</span>':'<span class="badge badge-blue">📅 期限内</span>'}</td>
-        <td>${x.paid
-          ?(isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="setTax('${x.key}',false)">取消</button>`)
-          :`<button class="btn btn-primary btn-sm" onclick="setTax('${x.key}',true)">納付済にする</button>`
-        }</td>
+        <td></td>
+        <td></td>
       </tr>`;
     });
 
@@ -6464,7 +6461,29 @@ async function setTaxBulkDate(itemKeys, payDate) {
   return true;
 }
 
-// 手動で支払日のみ保存（AI読み取りに失敗した場合の修正用／添付なしで日付だけ登録したい場合用）
+// 納付期限グループ単位で「納付済み」を一括取消（念のための取消手段）。
+// 添付ファイルがある場合は先に📎ボタンから削除してもらう（他の支払い記録系テーブルと同じ削除ガード方針）
+async function cancelTaxGroup(groupKey) {
+  const itemKeys = taxGroupItemsMap[groupKey] || [];
+  if (itemKeys.length === 0) return;
+  const attached = state.receipts.filter(r => r.taxKey === groupKey);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('このグループの納付済みを取り消しますか？')) return;
+  const { error } = await sb.from('tax_paid').delete().in('key', itemKeys);
+  if (error) {
+    console.error('tax_paid bulk delete error:', error);
+    alert('取消に失敗しました: ' + error.message);
+    return;
+  }
+  itemKeys.forEach(key => {
+    delete state.taxPaid[key];
+    delete state.taxPaidDate[key];
+  });
+  renderAll();
+}
 // グループ内の全内訳item（まとめて1回の振込で支払うもの）に一括反映する
 async function saveTaxAttachDate() {
   if (!taxAttachTarget) return;
