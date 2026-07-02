@@ -1245,22 +1245,26 @@
           </div>
         </div>
         <div id="petty-cash-section" style="display:none">
-          <div style="padding:16px;border-bottom:1px solid var(--border)">
-            <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">補充 / 初期残高登録</div>
-            <div class="form-grid form-grid-4">
-              <div class="form-group"><label>日付</label><input id="pc-date" type="date"></div>
-              <div class="form-group"><label>金額</label><input id="pc-amount" type="number" placeholder="例：50000"></div>
-              <div class="form-group"><label>種別</label>
-                <select id="pc-type">
-                  <option value="replenish">補充（法人口座→管理人振込）</option>
-                  <option value="initial">初期残高</option>
-                </select>
-              </div>
-              <div class="form-group"><label>メモ</label><input id="pc-note" placeholder="例：3月分補充"></div>
-            </div>
-            <button class="btn btn-primary" onclick="addPettyCash()" style="margin-top:8px">＋ 登録</button>
-          </div>
           <div id="pc-history"></div>
+        </div>
+      </div>
+
+      <!-- 小口現金：補充/初期残高登録（閲覧者には非表示） -->
+      <div class="table-wrap" id="petty-cash-write-wrap" style="margin-top:0;display:none">
+        <div style="padding:16px;border-bottom:1px solid var(--border)">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid var(--border)">補充 / 初期残高登録</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>日付</label><input id="pc-date" type="date"></div>
+            <div class="form-group"><label>金額</label><input id="pc-amount" type="number" placeholder="例：50000"></div>
+            <div class="form-group"><label>種別</label>
+              <select id="pc-type">
+                <option value="replenish">補充（法人口座→管理人振込）</option>
+                <option value="initial">初期残高</option>
+              </select>
+            </div>
+            <div class="form-group"><label>メモ</label><input id="pc-note" placeholder="例：3月分補充"></div>
+          </div>
+          <button class="btn btn-primary" onclick="addPettyCash()" style="margin-top:8px">＋ 登録</button>
         </div>
       </div>
     </div>
@@ -5797,10 +5801,12 @@ async function deletePettyCash(id) {
 
 function togglePettyCashSection() {
   const el = document.getElementById('petty-cash-section');
+  const writeEl = document.getElementById('petty-cash-write-wrap');
   const icon = document.getElementById('petty-cash-section-icon');
   if (!el) return;
   const isOpen = el.style.display !== 'none';
   el.style.display = isOpen ? 'none' : 'block';
+  if (writeEl && !isViewerRole()) writeEl.style.display = isOpen ? 'none' : 'block';
   if (icon) icon.textContent = isOpen ? '▼ 開く' : '▲ 閉じる';
 }
 
@@ -9494,7 +9500,6 @@ function applyViewerRestrictions() {
     '#caster-form',           // 新規配信者登録フォーム
     '#referrer-form',         // 新規紹介者登録フォーム
     '#ai-receipt-form',       // AIレシート読み込み
-    '#petty-cash-section',    // 小口現金入力
     '#mep-quick-section',     // 後払い登録のクイックアップロード（v24+：新規登録を自動実行するため閲覧者には隠す）
     '#mep-attach-add-btn',    // 後払い編集時の「✚ファイルを追加」（添付一覧の閲覧・DL・プレビューは表示したまま、追加のみ閲覧者には隠す）
     '#receipt-mgmt-upload-section', // 経費領収書モーダルのアップロード欄（一覧の閲覧・DL・プレビューはreceipt-mgmt-listに残す）
