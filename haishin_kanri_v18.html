@@ -2287,11 +2287,12 @@ async function dbSaveAsync(table, row) {
 }
 
 // ===== 監査ログ =====
-async function writeAuditLog(action, recordId, before, after) {
+// tableNameを省略した場合は既存呼び出し（expenses用）との互換性のため'expenses'を既定値とする
+async function writeAuditLog(action, recordId, before, after, tableName = 'expenses') {
   try {
     await sb.from('audit_log').insert({
       action,
-      table_name: 'expenses',
+      table_name: tableName,
       record_id: recordId,
       before: before || null,
       after: after || null
@@ -2303,6 +2304,12 @@ async function writeAuditLog(action, recordId, before, after) {
 
 function expToLogObj(e) {
   return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null };
+}
+
+// 小口現金（petty_cash）の監査ログ用スナップショット
+// 補充（replenish）・初期残高（initial）の登録／削除を追跡できるようにする
+function pcToLogObj(p) {
+  return { id: p.id, date: p.date, amount: p.amount, type: p.type, note: p.note, y: p.y, m: p.m };
 }
 
 async function downloadAuditLog() {
@@ -5785,6 +5792,7 @@ async function addPettyCash() {
   const newPc = { id: state.nextId++, date, amount, type, note, y, m };
   state.pettyCash.push(newPc);
   await dbSave('petty_cash', { id: newPc.id, date, amount, type, note, y, m });
+  await writeAuditLog('add', newPc.id, null, pcToLogObj(newPc), 'petty_cash');
   document.getElementById('pc-date').value = '';
   document.getElementById('pc-amount').value = '';
   document.getElementById('pc-note').value = '';
@@ -5794,8 +5802,10 @@ async function addPettyCash() {
 
 async function deletePettyCash(id) {
   if (!confirm('この記録を削除しますか？')) return;
+  const target = state.pettyCash.find(p => p.id === id);
   await dbDelete('petty_cash', id);
   state.pettyCash = state.pettyCash.filter(p => p.id !== id);
+  if (target) await writeAuditLog('delete', id, pcToLogObj(target), null, 'petty_cash');
   renderAll();
 }
 
