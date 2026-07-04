@@ -9271,6 +9271,13 @@ async function downloadLedgerXlsx() {
 
     // caster名ルックアップ
     const casterName = id => (state.casters.find(c => c.id === id) || {}).name || '不明';
+    // caster：インボイス登録番号ルックアップ（未登録者は空欄）
+    const casterInvoiceNo = id => {
+      const c = state.casters.find(c => c.id === id);
+      return (c && c.invoice === 'yes' && c.invoiceNo) ? c.invoiceNo : '';
+    };
+    // 経費の消費税区分（数値）→ 表示ラベル
+    const ledgerTaxLabel = t => t === 10 ? '課税10%' : t === 8 ? '課税8%（軽減）' : t === 0 ? '非課税' : t === -1 ? '対象外' : '';
 
     // --- 仕訳エントリ生成 ---
     // entry: { date, note, debitAcc, debitAmt, creditAcc, creditAmt, credit2Acc, credit2Amt }
@@ -9295,10 +9302,13 @@ async function downloadLedgerXlsx() {
       const stax  = dp.srcTax || 0;
       const total = amt + stax;
       const note  = `日払い：${casterName(dp.casterId)}`;
+      const debitTaxCategory = '課税10%';
+      const debitTaxAmt = calcExpTax(total, 10);
+      const debitInvoiceNo = casterInvoiceNo(dp.casterId);
       if (stax > 0) {
-        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax });
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       } else {
-        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total });
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
     });
 
@@ -9308,10 +9318,13 @@ async function downloadLedgerXlsx() {
       const stax  = mp.srcTax || 0;
       const total = amt + stax;
       const note  = `月末精算：${casterName(mp.casterId)}（${mp.targetY}/${mp.targetM}）`;
+      const debitTaxCategory = '課税10%';
+      const debitTaxAmt = calcExpTax(total, 10);
+      const debitInvoiceNo = casterInvoiceNo(mp.casterId);
       if (stax > 0) {
-        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax });
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       } else {
-        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total });
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
     });
 
@@ -9321,12 +9334,16 @@ async function downloadLedgerXlsx() {
       const cat    = exp.cat || 'その他';
       const amt    = exp.amount || 0;
       const note   = exp.name + (exp.payee ? `（${exp.payee}）` : '');
+      // 消費税区分・金額・インボイス番号（amortizationは内部振替のため対象外＝空欄のまま）
+      const debitTaxCategory = etype === 'amortization' ? '' : ledgerTaxLabel(exp.tax);
+      const debitTaxAmt      = etype === 'amortization' ? '' : calcExpTax(amt, exp.tax > 0 ? exp.tax : 0);
+      const debitInvoiceNo   = etype === 'amortization' ? '' : (exp.invoiceNo || '');
       if (etype === 'amortization') {
         allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '長期前払費用', creditAmt: amt });
       } else if (etype === 'prepaid_payment') {
-        allEntries.push({ date: exp.date, note, debitAcc: '長期前払費用', debitAmt: amt, creditAcc: '現金', creditAmt: amt });
+        allEntries.push({ date: exp.date, note, debitAcc: '長期前払費用', debitAmt: amt, creditAcc: '現金', creditAmt: amt, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       } else {
-        allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '現金', creditAmt: amt });
+        allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '現金', creditAmt: amt, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
     });
 
@@ -9359,11 +9376,15 @@ async function downloadLedgerXlsx() {
       const entries = [...accountEntries[accountName]].sort((a,b)=>a.date.localeCompare(b.date));
 
       // ワークシートデータ（配列of配列）
+      // 列構成：日付/摘要/借方科目/借方金額/借方消費税区分/借方消費税額/借方インボイス/
+      //         貸方科目/貸方金額/貸方消費税区分/貸方消費税額/貸方インボイス/残高
+      // 貸方（決済科目：現金・預り金・長期前払費用等）側の消費税区分・金額・インボイスは
+      // 常に空欄とする（税情報は取引の実体側＝借方にのみ表示する方針。ユーザー確認済み）
       const wsData = [];
       // タイトル行
-      wsData.push([`総勘定元帳　${accountName}　（${periodLabel}）`, '', '', '', '', '', '']);
+      wsData.push([`総勘定元帳　${accountName}　（${periodLabel}）`, '', '', '', '', '', '', '', '', '', '', '', '']);
       // ヘッダー行
-      wsData.push(['日付', '摘要', '借方科目', '借方金額', '貸方科目', '貸方金額', '残高']);
+      wsData.push(['日付', '摘要', '借方科目', '借方金額', '消費税区分', '消費税金額', 'インボイス', '貸方科目', '貸方金額', '消費税区分', '消費税金額', 'インボイス', '残高']);
 
       let balance = 0;
       let debitTotal = 0;
@@ -9409,11 +9430,16 @@ async function downloadLedgerXlsx() {
           }
         }
 
-        wsData.push([e.date, e.note, dispDebitAcc, dispDebitAmt, dispCreditAcc, dispCreditAmt, balance]);
+        // 消費税区分・金額・インボイス番号（借方のみ。貸方＝決済科目は常に空欄）
+        const dispDebitTaxCategory = e.debitTaxCategory || '';
+        const dispDebitTaxAmt      = (e.debitTaxAmt === '' || e.debitTaxAmt === undefined || e.debitTaxAmt === null) ? '' : e.debitTaxAmt;
+        const dispDebitInvoiceNo   = e.debitInvoiceNo || '';
+
+        wsData.push([e.date, e.note, dispDebitAcc, dispDebitAmt, dispDebitTaxCategory, dispDebitTaxAmt, dispDebitInvoiceNo, dispCreditAcc, dispCreditAmt, '', '', '', balance]);
       });
 
       // 合計行
-      wsData.push(['合計', '', '', debitTotal, '', creditTotal, balance]);
+      wsData.push(['合計', '', '', debitTotal, '', '', '', '', creditTotal, '', '', '', balance]);
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
 
@@ -9423,13 +9449,19 @@ async function downloadLedgerXlsx() {
         { wch: 38 }, // 摘要
         { wch: 18 }, // 借方科目
         { wch: 14 }, // 借方金額
+        { wch: 16 }, // 借方：消費税区分
+        { wch: 12 }, // 借方：消費税金額
+        { wch: 16 }, // 借方：インボイス
         { wch: 18 }, // 貸方科目
         { wch: 14 }, // 貸方金額
+        { wch: 16 }, // 貸方：消費税区分
+        { wch: 12 }, // 貸方：消費税金額
+        { wch: 16 }, // 貸方：インボイス
         { wch: 14 }, // 残高
       ];
 
       // セル結合（タイトル行）
-      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }];
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } }];
 
       // シート名（31文字制限・使用禁止文字除去）
       const sheetName = accountName.slice(0, 31).replace(/[/\\?*[\]:]/g, '・');
