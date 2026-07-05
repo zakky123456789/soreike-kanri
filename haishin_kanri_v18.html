@@ -1322,7 +1322,7 @@
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">両替記録（確定売上一覧）</div></div>
-        <table style="border-collapse:collapse"><thead><tr><th>対象期間</th><th>両替日</th><th class="num">USD額</th><th class="num">レート</th><th class="num">円額（確定売上）</th><th>メモ</th><th></th></tr></thead>
+        <table style="border-collapse:collapse"><thead><tr><th>対象期間</th><th>両替日</th><th class="num">USD額</th><th class="num">レート</th><th class="num">円額（確定売上）</th><th>メモ</th><th>添付</th><th></th></tr></thead>
         <tbody id="fx-table"></tbody></table>
       </div>
       <div class="table-wrap">
@@ -1867,7 +1867,7 @@ async function loadFromDB() {
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||'',
         dailyPayId: r.daily_pay_id || null, monthEndPayId: r.month_end_pay_id || null,
         referrerPayId: r.referrer_pay_id || null, managerPayId: r.manager_pay_id || null,
-        taxKey: r.tax_key || null
+        taxKey: r.tax_key || null, exchangeId: r.exchange_id || null
       }));
     }
     if (mepR.data?.length > 0) {
@@ -2581,6 +2581,7 @@ const PAY_ATTACH_CONFIG = {
   referrer_pay:  { stateField: 'referrerPayId', dbCol: 'referrer_pay_id',  r2Prefix: 'referrer_pays' },
   manager_pay:   { stateField: 'managerPayId',  dbCol: 'manager_pay_id',   r2Prefix: 'manager_pays' },
   tax_paid:      { stateField: 'taxKey',        dbCol: 'tax_key',          r2Prefix: 'tax_paid' },
+  exchange:      { stateField: 'exchangeId',    dbCol: 'exchange_id',      r2Prefix: 'exchanges' },
 };
 
 let payAttachTarget = null; // { type, id }
@@ -2608,6 +2609,12 @@ function payAttachInfoHtml(type, id) {
     const d = state.managerPays.find(x => x.id === id);
     if (!d) return '';
     return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>管理人</strong>　${d.targetY ? `<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　` : ''}<span style="font-family:var(--mono);color:var(--accent)">${yen(d.amount)}</span>`;
+  }
+  if (type === 'exchange') {
+    const d = state.fxRecords.find(x => x.id === id);
+    if (!d) return '';
+    const period = d.dateFrom && d.dateTo ? d.dateFrom + ' 〜 ' + d.dateTo : d.dateFrom || d.dateTo || d.date;
+    return `<span style="color:var(--muted)">${d.date}</span>　<strong>両替</strong>　<span class="badge badge-purple">${period}</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(d.jpy)}</span>`;
   }
   return '';
 }
@@ -2679,7 +2686,7 @@ async function uploadFileToPayTarget(type, id, file, note) {
     uploadedAt: recData.uploaded_at, note: recData.note || '',
     dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
     referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null,
-    taxKey: recData.tax_key || null
+    taxKey: recData.tax_key || null, exchangeId: recData.exchange_id || null
   });
 }
 
@@ -2728,6 +2735,7 @@ async function deletePayAttach(id, r2Key) {
     if (taxAttachTarget) renderTaxAttachList();
   } catch(e) { alert('削除失敗: ' + e.message); }
 }
+// renderAll()内でrenderFxRecords()が呼ばれるため、両替（exchange）の添付削除も自動反映される
 
 // 一覧の行に置く「📎 添付」バッジ（件数表示・クリックでモーダルを開く）
 function payAttachBadge(type, id) {
@@ -4252,6 +4260,7 @@ function renderFxRecords() {
   const rowsHtml = records.map(r => {
     const period = r.dateFrom && r.dateTo ? r.dateFrom + ' 〜 ' + r.dateTo : r.dateFrom || r.dateTo || '-';
     const isCross = r.dateFrom && r.dateTo && r.dateFrom.slice(0,7) !== r.dateTo.slice(0,7);
+    const attachCell = '<td style="padding:7px 14px">' + payAttachBadge('exchange', r.id) + '</td>';
     const editBtns = '<td style="display:flex;gap:6px;padding:7px 14px">'
       + (isViewerRole() ? '' : '<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openFxEditModal(' + r.id + ')">編集</button>')
       + '<button class="btn btn-danger btn-sm" onclick="deleteFxRecord(' + r.id + ')">削除</button>'
@@ -4267,6 +4276,7 @@ function renderFxRecords() {
       + '<td class="num" style="color:var(--muted);font-size:12px;padding:8px 14px">' + (r.rate ? r.rate : '-') + '</td>'
       + '<td class="num" style="color:var(--green);font-weight:700;padding:8px 14px">' + yen(r.jpy) + '</td>'
       + '<td style="color:var(--muted);font-size:12px;padding:8px 14px">' + (r.note || '-') + '</td>'
+      + attachCell
       + editBtns
       + '</tr>';
 
@@ -4287,6 +4297,7 @@ function renderFxRecords() {
         + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px;font-weight:600">' + yen(jpyFrom) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td style="padding:5px 14px"></td>'
+        + '<td style="padding:5px 14px"></td>'
         + '</tr>'
         + '<tr style="background:rgba(79,156,249,0.04);border-left:3px solid rgba(79,156,249,0.35);border-bottom:2px solid rgba(79,156,249,0.2);">'
         + '<td style="padding:5px 14px 8px 32px;font-size:12px;color:var(--muted)">└ ' + toLabel + '</td>'
@@ -4294,6 +4305,7 @@ function renderFxRecords() {
         + '<td class="num" style="font-family:var(--mono);padding:5px 14px;font-size:12px">' + usd(r.usdTo) + '</td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td class="num" style="color:var(--accent);padding:5px 14px;font-size:12px;font-weight:600">' + yen(jpyTo) + '</td>'
+        + '<td style="padding:5px 14px"></td>'
         + '<td style="padding:5px 14px"></td>'
         + '<td style="padding:5px 14px"></td>'
         + '</tr>';
@@ -4308,9 +4320,9 @@ function renderFxRecords() {
       + '<td class="num" style="font-family:var(--mono)">' + usd(totalUsd) + '</td>'
       + '<td></td>'
       + '<td class="num" style="color:var(--green)">' + yen(totalJpy) + '</td>'
-      + '<td colspan="2"></td>'
+      + '<td colspan="3"></td>'
       + '</tr>'
-    : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">この月の両替記録がありません</td></tr>';
+    : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">この月の両替記録がありません</td></tr>';
 
   // 月別サマリー生成
   const monthMap = {};
