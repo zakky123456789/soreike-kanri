@@ -1951,6 +1951,55 @@ async function dbDelete(table, id) {
   return true;
 }
 
+// ===== ID衝突防止：新規作成専用ヘルパー（v27） =====
+// 背景：state.nextIdはログイン時にDBの最大ID+1で初期化される「クライアント側カウンター」のため、
+// 複数タブ・複数端末を同時に開いていると、それぞれが独立して同じ次のIDを採番してしまうことがある。
+// 既存のdbSave()は常にupsertのため、ID衝突が起きてもエラーにならず「後からの保存が先の行を
+// 静かに上書き」してしまう（例：紹介者Aへの支払いが、直後に登録した紹介者Bの支払いで丸ごと上書き）。
+// 対処：①新規作成のたびに全テーブルの最新の最大IDを再取得してから採番（衝突自体を減らす）
+//      ②upsertではなくinsertを使い、万一衝突してもDB側の一意制約違反(23505)として検知
+//      ③衝突を検知した場合は自動でIDを取り直して再試行（ユーザーには何も見せない）
+// 対象：referrer_pays・manager_pays・daily_pays・month_end_pays の新規作成のみ。
+// 既存レコードの編集（idが確定済みのupsert）はこれまで通りdbSave()を使う（変更なし）。
+// 他のテーブルの新規作成（casters/referrers/sales/expenses等）も理論上は同じリスクを持つが、
+// まずは今回バグが実際に発生した支払い記録系テーブルから対応する。
+const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays'];
+
+async function fetchFreshMaxId() {
+  const results = await Promise.all(
+    ID_POOL_TABLES.map(t => sb.from(t).select('id').order('id', { ascending: false }).limit(1))
+  );
+  let max = 0;
+  for (const r of results) {
+    if (!r.error && r.data && r.data.length > 0 && r.data[0].id > max) max = r.data[0].id;
+  }
+  return max;
+}
+
+// buildRow(id) => DB行オブジェクトを返すコールバック。戻り値：確定した新しいid
+async function insertWithFreshId(table, buildRow, maxRetries = 5) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const freshMax = await fetchFreshMaxId();
+    const id = Math.max(freshMax + 1, state.nextId);
+    const { error } = await sb.from(table).insert(buildRow(id));
+    if (!error) {
+      state.nextId = Math.max(state.nextId, id + 1);
+      showSyncStatus('ok');
+      return id;
+    }
+    if (error.code === '23505') {
+      // ID衝突（一意制約違反）：採番し直して自動リトライ
+      console.warn(`ID衝突を検知（table=${table}, id=${id}）。再採番してリトライします（${attempt + 1}/${maxRetries}）`);
+      continue;
+    }
+    console.error('DB insert error:', table, JSON.stringify(error));
+    showSyncStatus('error');
+    throw error;
+  }
+  showSyncStatus('error');
+  throw new Error(`ID衝突のリトライが${maxRetries}回失敗しました（table: ${table}）`);
+}
+
 function showSyncStatus(status) {
   const el = document.getElementById('sync-status');
   if (!el) return;
@@ -2830,9 +2879,13 @@ async function saveRefPay() {
     if (idx !== -1) state.referrerPays[idx] = { ...state.referrerPays[idx], ...record };
     await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
   } else {
-    const id = state.nextId++;
-    state.referrerPays.push({ id, ...record });
-    await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+    try {
+      const id = await insertWithFreshId('referrer_pays', id => ({ id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note }));
+      state.referrerPays.push({ id, ...record });
+    } catch(e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return;
+    }
   }
   resetRefPayForm();
   renderRefPayList();
@@ -4817,9 +4870,14 @@ async function addDailyPay() {
   const savedAmount = gross; // DBにはamount=税込報酬で保存（既存の計算ロジックと互換）
   const saleIds = [...dpSelectedSaleIds];
   const salesLabel = getSelectedSaleLabel();
-  state.dailyPays.push({ id: state.nextId++, casterId, amount: savedAmount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel });
-  const newDp = state.dailyPays[state.dailyPays.length - 1];
-  await dbSave('daily_pays', { id: newDp.id, caster_id: newDp.casterId, amount: savedAmount, src_tax: newDp.srcTax, date: newDp.date, note: newDp.note||'', y: newDp.y, m: newDp.m, target_y: newDp.targetY, target_m: newDp.targetM, sale_ids: JSON.stringify(newDp.saleIds||[]), sales_label: newDp.salesLabel||'' });
+  let newDpId;
+  try {
+    newDpId = await insertWithFreshId('daily_pays', id => ({ id, caster_id: casterId, amount: savedAmount, src_tax: srcTax, date, note: note||'', y, m, target_y: targetY, target_m: targetM, sale_ids: JSON.stringify(saleIds||[]), sales_label: salesLabel||'' }));
+  } catch(e) {
+    alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+    return;
+  }
+  state.dailyPays.push({ id: newDpId, casterId, amount: savedAmount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel });
   document.getElementById('dp-amount').value = '';
   document.getElementById('dp-note').value = '';
   document.getElementById('dp-preview').style.display = 'none';
@@ -8200,9 +8258,13 @@ async function saveMgrPay() {
     if (idx !== -1) state.managerPays[idx] = { ...state.managerPays[idx], ...record };
     await dbSave('manager_pays', { id, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
   } else {
-    const id = state.nextId++;
-    state.managerPays.push({ id, ...record });
-    await dbSave('manager_pays', { id, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+    try {
+      const id = await insertWithFreshId('manager_pays', id => ({ id, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note }));
+      state.managerPays.push({ id, ...record });
+    } catch(e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return;
+    }
   }
   resetMgrPayForm();
   renderMgrPayList();
@@ -8363,9 +8425,13 @@ async function saveMepRecord() {
     if (idx !== -1) state.monthEndPays[idx] = { ...state.monthEndPays[idx], ...record };
     await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
   } else {
-    id = state.nextId++;
+    try {
+      id = await insertWithFreshId('month_end_pays', id => ({ id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note }));
+    } catch(e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return null;
+    }
     state.monthEndPays.push({ id, ...record });
-    await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
     // 新規作成後は以後の処理がこのレコードを「編集対象」として扱えるようにidをセット
     document.getElementById('mep-edit-id').value = id;
   }
