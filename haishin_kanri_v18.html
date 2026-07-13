@@ -671,7 +671,8 @@
           <div class="form-group"><label>支払先名</label><input id="exp-edit-payee" placeholder="例：SEIYU川口店"></div>
           <div class="form-group"><label>勘定科目</label>
             <select id="exp-edit-cat" onchange="toggleExpEditEntertain()">
-              <option value="消耗品費">消耗品費（日用品・備品・洗剤・文房具など）</option>
+              <option value="消耗品費">消耗品費（日用品・備品・PC・カメラ・配信機材など、10万円未満）</option>
+              <option value="固定資産">固定資産（PC・カメラ・照明・配信機材など、10万円以上の買い物）</option>
               <option value="接待交際費">接待交際費 🍻 懇親・接待が主目的の飲食</option>
               <option value="外注費">外注費（業務委託・フリーランス報酬など）</option>
               <option value="家賃">家賃（事務所・マンション賃料など）</option>
@@ -680,7 +681,6 @@
               <option value="旅費交通費">旅費交通費（電車・タクシー・ガソリンなど）</option>
               <option value="広告宣伝費">広告宣伝費（SNS広告・チラシ・PR費など）</option>
               <option value="衣装・美容費">衣装・美容費（衣装・コスメ・ヘアメイクなど）</option>
-              <option value="機材・設備費">機材・設備費（PC・カメラ・照明・配信機材など）</option>
               <option value="新聞図書費">新聞図書費（書籍・雑誌・サブスクなど）</option>
               <option value="会議費">会議費 📋 打合せ・商談が主目的の飲食</option>
               <option value="支払手数料">支払手数料</option>
@@ -2184,6 +2184,7 @@ const coins = n => fmt(n) + 'C';
 const coinToYen = c => c * COIN_RATE;
 const CAT_BADGE_STYLE = {
   '消耗品費':   'background:rgba(167,139,250,0.15);color:#a78bfa',
+  '固定資産':   'background:rgba(99,102,241,0.15);color:#818cf8',
   '接待交際費': 'background:rgba(251,146,60,0.15);color:#fb923c',
   '外注費':     'background:rgba(79,156,249,0.15);color:var(--accent)',
   '家賃':       'background:rgba(248,113,113,0.15);color:var(--red)',
@@ -2243,6 +2244,14 @@ const isMgrExpense = e => isPlExpense(e) && !e.excludeManager;
 //   - 非課税(0)・対象外(-1)は normal/prepaid_payment 問わず除外
 //   - prepaid_payment かつ課税(8 or 10) → 含める（支払時に仕入控除を取る）
 const isTaxExpense = e => e.entryType !== 'amortization' && (e.tax === 10 || e.tax === 8);
+
+// 固定資産振り分けルール（2026年7月分〜）：
+// 消耗品費で入力された明細のうち、金額（税込）が10万円以上のものは自動的に固定資産へ振り分ける。
+// 手動入力・AIレシート読み込みの両方の保存直前に適用する（addExpense/receipt commit/saveExpEdit）。
+function applyFixedAssetRule(cat, amount) {
+  if (cat === '消耗品費' && amount >= 100000) return '固定資産';
+  return cat;
+}
 
 // ===== NAV =====
 function toggleMobileNav() {
@@ -2949,7 +2958,7 @@ function selectMonth(y, m) {
 
 
 // ===== AI レシート読み込み =====
-const RECEIPT_CAT_OPTIONS = ['消耗品費','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','機材・設備費','新聞図書費','会議費','支払手数料','長期前払費用','保険料','保証料','清掃費','その他'];
+const RECEIPT_CAT_OPTIONS = ['消耗品費','固定資産','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','新聞図書費','会議費','支払手数料','長期前払費用','保険料','保証料','清掃費','その他'];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
 const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
 let receiptResults = [];
@@ -3077,7 +3086,7 @@ async function readReceiptFile(file) {
    - レシートに記載されている**全ての商品名・品目名を「・」区切りで列挙**してください。
    - AIが独自に「ほか」「など」で省略しないでください。
    - 【略称補完ルール】以下の勘定科目に該当する場合のみ、略称を「略称（補完した正式名称）」の形式で補完し、複数個購入は末尾に「×N個」を付けてください。
-     対象科目：消耗品費・機材・設備費・衣装・美容費・新聞図書費・旅費交通費・広告宣伝費
+     対象科目：消耗品費・固定資産・衣装・美容費・新聞図書費・旅費交通費・広告宣伝費
      例：「ジョキンウェット カエ（除菌ウェットシート詰め替え）×3個」
    - 【補完しない科目】水道光熱費・通信費・家賃・外注費・会議費・接待交際費はnameルールが別途固定されているため、略称補完・個数付記は行わないでください。
    - 例（良い）：「ジョキンウェット カエ（除菌ウェットシート詰め替え）×3個」「手巻おにぎり辛子明太子・コカーコーラ500ml」「50円切手（非課税・通信費）」
@@ -3135,7 +3144,7 @@ async function readReceiptFile(file) {
     "payee": "支払先の店舗名・会社名のみ（例：セブン-イレブン千代田店）",
     "amount": その分割区分の税込合計金額（数値）※必ず税込金額。税抜金額は使わないこと。税抜+消費税=税込で計算して入力。,
     "tax": "10" か "8" か "0" か "-1"（食品・飲料→8、それ以外→10、切手・家賃・非課税→0、保険金・補助金・対価性なし→-1）,
-    "cat": "${catList}" のいずれか最も適切なもの（飲食店のレシートは「会議費」または「接待交際費」のどちらかを選択すること。居酒屋・レストラン等の会食は「接待交際費」、カフェ・軽食等の打合せは「会議費」を優先）,
+    "cat": "${catList}" のいずれか最も適切なもの（飲食店のレシートは迷ったら「会議費」を選択すること。居酒屋の懇親会など明らかに接待交際費に該当するとわかる場合のみ「接待交際費」としてよい。PC・カメラ・照明・什器等の物品は、金額（税込）が10万円未満なら「消耗品費」、10万円以上なら「固定資産」を選択すること）,
     "invoiceNo": "T+13桁のインボイス番号（レシートに「登録番号」「適格請求書発行事業者登録番号」「インボイス番号」等で記載されているTから始まる14桁の番号）、なければ空文字",
     "note": "備考欄に記載すべき内容があれば記載、なければ空文字"
   }
@@ -3435,7 +3444,7 @@ async function addCheckedReceipts() {
 
   // 全経費をDBに一括保存（並列）
   const expRows = toAdd.map(item => {
-    const actualCat = item.isPrepaid ? item.prepaidConfig.assetCat : item.cat;
+    const actualCat = item.isPrepaid ? item.prepaidConfig.assetCat : applyFixedAssetRule(item.cat, item.amount);
     const entryType = item.isPrepaid ? 'prepaid_payment' : 'normal';
     const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null };
     state.expenses.push(newExp);
@@ -5346,7 +5355,8 @@ let expRowCount = 0;
 
 function catOptions(selectedCat) {
   const cats = [
-    ['消耗品費','消耗品費（日用品・備品・洗剤・文房具など）'],
+    ['消耗品費','消耗品費（日用品・備品・PC・カメラ・配信機材など、10万円未満）'],
+    ['固定資産','固定資産（PC・カメラ・照明・配信機材など、10万円以上の買い物）'],
     ['接待交際費','接待交際費 🍻 懇親・接待が主目的の飲食'],
     ['外注費','外注費（業務委託・フリーランス報酬など）'],
     ['家賃','家賃（事務所・マンション賃料など）'],
@@ -5355,7 +5365,6 @@ function catOptions(selectedCat) {
     ['旅費交通費','旅費交通費（電車・タクシー・ガソリンなど）'],
     ['広告宣伝費','広告宣伝費（SNS広告・チラシ・PR費など）'],
     ['衣装・美容費','衣装・美容費（衣装・コスメ・ヘアメイクなど）'],
-    ['機材・設備費','機材・設備費（PC・カメラ・照明・配信機材など）'],
     ['新聞図書費','新聞図書費（書籍・雑誌・サブスクなど）'],
     ['会議費','会議費 📋 打合せ・商談が主目的の飲食'],
     ['支払手数料','支払手数料'],
@@ -5561,7 +5570,7 @@ async function addExpense() {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     // 期間按分の場合：支払時は資産計上科目で登録、entry_type='prepaid_payment'
-    const actualCat = isPrepaid ? prepaidConfig.assetCat : r.cat;
+    const actualCat = isPrepaid ? prepaidConfig.assetCat : applyFixedAssetRule(r.cat, r.amount);
     const entryType = isPrepaid ? 'prepaid_payment' : 'normal';
     const newExp = {
       id: state.nextId++, date, name: r.name, payee, cat: actualCat,
@@ -5794,14 +5803,15 @@ async function saveExpEdit() {
   const note = document.getElementById('exp-edit-note')?.value.trim() || '';
   if (!date || !name || isNaN(amount)) { alert('日付・品名・金額を入力してください'); return; }
   if ((cat === '接待交際費' || cat === '会議費') && (!participants || !purpose)) { alert(`${cat}は参加者と目的・事由が必須です`); return; }
+  const finalCat = applyFixedAssetRule(cat, amount);
   const [y, m] = date.split('-').map(Number);
   const idx = state.expenses.findIndex(x => x.id === id);
   if (idx !== -1) {
     const before = expToLogObj(state.expenses[idx]);
     const entryType = state.expenses[idx].entryType || 'normal';
     const prepaidId = state.expenses[idx].prepaidId || null;
-    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note, entryType, prepaidId };
-    await dbSaveAsync('expenses', { id, date, name, payee, cat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId });
+    state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat: finalCat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note, entryType, prepaidId };
+    await dbSaveAsync('expenses', { id, date, name, payee, cat: finalCat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId });
     await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   }
   closeExpEditModal();
