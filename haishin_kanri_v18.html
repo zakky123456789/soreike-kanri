@@ -1206,7 +1206,15 @@
       <div class="table-wrap" id="exp-table-wrap">
         <div class="table-header">
           <div class="table-title">経費明細</div>
-          <button class="btn" onclick="downloadAuditLog()" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">📥 操作ログをDL</button>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+              勘定科目で絞り込み
+              <select id="exp-cat-filter" onchange="expCatFilter=this.value;renderExpenses();" style="font-size:12px;padding:4px 8px">
+                <option value="">すべて</option>
+              </select>
+            </label>
+            <button class="btn" onclick="downloadAuditLog()" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">📥 操作ログをDL</button>
+          </div>
         </div>
         <table><thead><tr>
           <th style="cursor:pointer;user-select:none" onclick="setExpSort('date')"><span id="eh-date">日付</span></th>
@@ -2156,6 +2164,7 @@ async function fetchAddress(zipInputId, addressInputId) {
 let salesSort = { key: 'date', dir: 1 }; // dir: 1=昇順, -1=降順
 let dpSort = { key: 'date', dir: 1 };
 let expSort = { key: 'date', dir: 1 };
+let expCatFilter = ''; // 経費明細の勘定科目フィルター（空文字＝すべて表示）
 
 function setSalesSort(key) {
   // グループ表示のため日付ソートのみ対応
@@ -2959,6 +2968,8 @@ function selectMonth(y, m) {
 
 // ===== AI レシート読み込み =====
 const RECEIPT_CAT_OPTIONS = ['消耗品費','固定資産','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','新聞図書費','会議費','支払手数料','長期前払費用','保険料','保証料','清掃費','その他'];
+// 経費明細の勘定科目フィルター用の選択肢。過去データ用に廃止済みの「機材・設備費」も含める（新規入力の選択肢には出さない）
+const EXP_FILTER_CAT_OPTIONS = [...RECEIPT_CAT_OPTIONS.slice(0, 2), '機材・設備費', ...RECEIPT_CAT_OPTIONS.slice(2)];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
 const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
 let receiptResults = [];
@@ -5971,12 +5982,19 @@ function renderPettyCash() {
 
 function renderExpenses() {
   const { y, m } = state;
+  // 勘定科目フィルターのプルダウンを初期化（初回のみ・選択中の値は保持）
+  const filterSel = document.getElementById('exp-cat-filter');
+  if (filterSel && filterSel.options.length === 1) {
+    filterSel.innerHTML = '<option value="">すべて</option>' + EXP_FILTER_CAT_OPTIONS.map(c => `<option value="${c}">${c}</option>`).join('');
+    filterSel.value = expCatFilter;
+  }
   const ehLabels = { date:'日付', name:'品名', payee:'支払先', cat:'勘定科目', amount:'金額', tax:'消費税区分', taxAmt:'消費税額', invoiceNo:'インボイス', method:'支払方法', note:'備考' };
   Object.keys(ehLabels).forEach(k => {
     const el = document.getElementById('eh-' + k);
     if (el) el.innerHTML = ehLabels[k] + expSortIcon(k);
   });
-  const sortedExps = [...expOfMonth(y, m)].sort((a, b) => {
+  const filteredExps = expCatFilter ? expOfMonth(y, m).filter(e => e.cat === expCatFilter) : expOfMonth(y, m);
+  const sortedExps = [...filteredExps].sort((a, b) => {
     const k = expSort.key, d = expSort.dir;
     if (k === 'name')      return d * (a.name||'').localeCompare(b.name||'', 'ja');
     if (k === 'payee')     return d * (a.payee||'').localeCompare(b.payee||'', 'ja');
@@ -6069,7 +6087,7 @@ function renderExpenses() {
       })()}</td>
       <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button>`}<button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">この月のデータがありません</td></tr>';
+  }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">${expCatFilter ? `「${expCatFilter}」に該当する経費データがありません` : 'この月のデータがありません'}</td></tr>`;
 
   // 立替精算サマリー
   const FURIKAE_METHODS = ['個人クレジット・デビットカード（立替）', '現金（立替）', '個人口座銀行振込（立替）', '管理人立替'];
