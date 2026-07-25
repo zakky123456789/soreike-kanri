@@ -340,13 +340,20 @@
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
             <div class="form-group"><label>メモ（自由記入）</label><input id="c-memo" placeholder="例：週3配信、猫好き"></div>
           </div>
+          <div style="margin-bottom:20px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑥ 在籍状況</div>
+            <div class="form-grid form-grid-4">
+              <div class="form-group"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="c-retired" style="width:auto" onchange="toggleRetiredDateInput('c-retired','c-retired-date-wrap')"> 退所済み</label></div>
+              <div class="form-group" id="c-retired-date-wrap" style="display:none"><label>退所日</label><input type="date" id="c-retired-date"></div>
+            </div>
+          </div>
           <button class="btn btn-primary" onclick="addCaster()">＋ 登録する</button>
           <div id="caster-error" style="display:none;margin-top:10px;font-size:12px;color:var(--red);background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:6px;padding:8px 12px"></div>
         </div>
       </div>
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">登録配信者一覧</div></div>
-        <table><thead><tr><th>配信者名</th><th class="num">報酬率</th><th>紹介者</th><th>インボイス</th><th>インボイス番号</th><th>メモ</th><th></th></tr></thead>
+        <table><thead><tr><th>配信者名</th><th>状態</th><th class="num">報酬率</th><th>紹介者</th><th>インボイス</th><th>インボイス番号</th><th>メモ</th><th></th></tr></thead>
         <tbody id="casters-table"></tbody></table>
       </div>
     </div>
@@ -413,6 +420,15 @@
         <div style="margin-bottom:24px">
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑤ メモ</div>
           <div class="form-group"><label>メモ（自由記入）</label><input id="edit-memo" placeholder="例：週3配信、猫好き"></div>
+        </div>
+
+        <!-- ⑥ 在籍状況 -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑥ 在籍状況</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="edit-retired" style="width:auto" onchange="toggleRetiredDateInput('edit-retired','edit-retired-date-wrap')"> 退所済み</label></div>
+            <div class="form-group" id="edit-retired-date-wrap" style="display:none"><label>退所日</label><input type="date" id="edit-retired-date"></div>
+          </div>
         </div>
 
         <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -1808,7 +1824,8 @@ async function loadFromDB() {
         id: r.id, name: r.name, rate: Number(r.rate), refId: r.ref_id,
         invoice: r.invoice, invoiceNo: r.invoice_no,
         address: r.address, bank: r.bank, branch: r.branch, account: r.account, holder: r.holder,
-        realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||''
+        realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||'',
+        retired: !!r.retired, retiredDate: r.retired_date || ''
       }));
     }
     if (referrersR.data?.length > 0) {
@@ -3700,6 +3717,12 @@ function toggleInvoiceInput(wrapperId, val) {
   if (el) el.style.display = val === 'yes' ? 'grid' : 'none';
 }
 
+function toggleRetiredDateInput(checkboxId, wrapperId) {
+  const checked = document.getElementById(checkboxId).checked;
+  const el = document.getElementById(wrapperId);
+  if (el) el.style.display = checked ? 'block' : 'none';
+}
+
 function showCasterError(msg) {
   const el = document.getElementById('caster-error');
   if (!el) return;
@@ -3727,7 +3750,9 @@ async function addCaster() {
   const account   = actype + ' ' + acnum;
   const holder    = document.getElementById('c-holder').value.trim();
   const memo      = document.getElementById('c-memo').value.trim();
-  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo };
+  const retired     = document.getElementById('c-retired').checked;
+  const retiredDate = retired ? document.getElementById('c-retired-date').value.trim() : '';
+  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate };
   state.casters.push(newCaster);
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
@@ -3745,9 +3770,12 @@ async function addCaster() {
   document.getElementById('c-holder').value = '';
   document.getElementById('c-memo').value = '';
   document.getElementById('c-invoice').value = 'no';
+  document.getElementById('c-retired').checked = false;
+  document.getElementById('c-retired-date').value = '';
   toggleInvoiceInput('c-invoicenum', 'no');
+  toggleRetiredDateInput('c-retired', 'c-retired-date-wrap');
   const errEl = document.getElementById('caster-error'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
-  await dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'' });
+  await dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null });
   renderAll();
 }
 
@@ -3764,7 +3792,10 @@ function renderCasters() {
   const refOpts = '<option value="">なし</option>' + state.referrers.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
   if (refSel) refSel.innerHTML = refOpts;
   if (editRefSel) editRefSel.innerHTML = refOpts;
-  document.getElementById('casters-table').innerHTML = state.casters.map(c => {
+  document.getElementById('casters-table').innerHTML = [...state.casters].sort((a, b) => {
+    if (!!a.retired !== !!b.retired) return a.retired ? 1 : -1;
+    return (a.name||'').localeCompare(b.name||'', 'ja');
+  }).map(c => {
     const ref = c.refId ? getReferrer(c.refId) : null;
     const invBadge = c.invoice === 'yes'
       ? '<span class="badge badge-green">✅ 登録済</span>'
@@ -3775,8 +3806,12 @@ function renderCasters() {
     const memoCell = c.memo
       ? `<td style="max-width:160px"><span style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:4px;padding:2px 8px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.memo}">📝 ${c.memo}</span></td>`
       : `<td style="color:var(--muted)">-</td>`;
-    return `<tr>
+    const statusBadge = c.retired
+      ? `<span class="badge" style="background:rgba(148,163,184,0.15);color:var(--muted);border:1px solid var(--border)">⚫ 退所済${c.retiredDate ? `（${c.retiredDate}）` : ''}</span>`
+      : `<span class="badge badge-green">🟢 在籍中</span>`;
+    return `<tr${c.retired ? ' style="opacity:0.55"' : ''}>
       <td><strong>${c.name}</strong></td>
+      <td>${statusBadge}</td>
       <td class="num"><span class="badge badge-blue">${c.rate}%</span></td>
       <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
       <td>${invBadge}</td>
@@ -3812,7 +3847,10 @@ function openEditModal(id) {
   document.getElementById('edit-acnum').value = _acParts.slice(1).join(' ')||'';
   document.getElementById('edit-holder').value  = c.holder  || '';
   document.getElementById('edit-memo').value = c.memo || '';
+  document.getElementById('edit-retired').checked = !!c.retired;
+  document.getElementById('edit-retired-date').value = c.retiredDate || '';
   toggleInvoiceInput('edit-invoicenum', c.invoice);
+  toggleRetiredDateInput('edit-retired', 'edit-retired-date-wrap');
   const modal = document.getElementById('edit-modal');
   modal.style.display = 'flex';
 }
@@ -3843,8 +3881,10 @@ async function saveEdit() {
     const account = _et + ' ' + _en;
     const holder  = document.getElementById('edit-holder').value.trim();
     const memo    = document.getElementById('edit-memo').value.trim();
-    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo };
-    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo });
+    const retired     = document.getElementById('edit-retired').checked;
+    const retiredDate = retired ? document.getElementById('edit-retired-date').value.trim() : '';
+    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate };
+    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null });
   }
   closeEditModal();
   renderAll();
@@ -5054,9 +5094,10 @@ function sortDpTable(key) {
 
 function renderSales() {
   const { y, m } = state;
+  const activeCasters = state.casters.filter(c => !c.retired);
   const sCasterSel = document.getElementById('s-caster');
   if (sCasterSel) {
-    sCasterSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    sCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     sCasterSel.onchange = updateSalePreview;
     document.getElementById('s-coins').oninput = updateSalePreview;
   }
@@ -5064,7 +5105,7 @@ function renderSales() {
   // 前払いセレクト
   const dpCasterSel = document.getElementById('dp-caster');
   if (dpCasterSel) {
-    dpCasterSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    dpCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
     dpCasterSel.onchange = updateDpSaleList;
     document.getElementById('dp-amount').oninput = updateDpPreview;
     updateDpSaleList(); // 初期表示時も即反映
