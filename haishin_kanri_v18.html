@@ -1372,23 +1372,6 @@
       <div class="page-header"><div class="page-title">源泉税管理</div></div>
       <div id="tax-alerts"></div>
 
-      <div class="table-wrap" style="margin-bottom:16px">
-        <details>
-          <summary style="cursor:pointer;padding:14px 20px;font-size:13px;font-weight:600;color:var(--accent)">📌 役員報酬（髙橋）源泉徴収の e-Tax操作手順</summary>
-          <div style="padding:0 20px 18px 20px">
-            <div style="background:rgba(79,156,249,0.08);border-radius:6px;padding:12px 16px;font-size:12px;line-height:1.9">
-              ①「申告・申請・納税」→「徴収高計算書を提出する」<br>
-              ②「給与所得・退職所得等の所得税徴収高計算書（<strong>一般</strong>）」を選択<br>
-              ③ 納期等の区分は、<strong>実際に役員報酬を支払った月</strong>を入力<br>
-              ④ 区分は「<strong>俸給・給料等</strong>」を選択<br>
-              ⑤ 給与明細をもとに、<strong>支払日・人員・支給額・所得税額</strong>を入力して送信<br>
-              <span style="color:var(--yellow)">※ 毎月固定の役員報酬は「役員賞与」ではなく「俸給・給料等」</span><br>
-              <span style="color:var(--yellow)">※ 納付期限は原則、支払月の翌月10日</span>
-            </div>
-          </div>
-        </details>
-      </div>
-
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">源泉税納付スケジュール</div></div>
         <table><thead><tr><th>対象月</th><th class="num">源泉税合計</th><th>納付期限</th><th>残日数</th><th>状態</th><th></th></tr></thead>
@@ -1429,6 +1412,24 @@
           </div>
         </div>
       </div>
+
+      <div class="table-wrap" style="margin-bottom:16px">
+        <details>
+          <summary style="cursor:pointer;padding:14px 20px;font-size:13px;font-weight:600;color:var(--accent)">📌 役員報酬（髙橋）源泉徴収の e-Tax操作手順</summary>
+          <div style="padding:0 20px 18px 20px">
+            <div style="background:rgba(79,156,249,0.08);border-radius:6px;padding:12px 16px;font-size:12px;line-height:1.9">
+              ①「申告・申請・納税」→「徴収高計算書を提出する」<br>
+              ②「給与所得・退職所得等の所得税徴収高計算書（<strong>一般</strong>）」を選択<br>
+              ③ 納期等の区分は、<strong>実際に役員報酬を支払った月</strong>を入力<br>
+              ④ 区分は「<strong>俸給・給料等</strong>」を選択<br>
+              ⑤ 給与明細をもとに、<strong>支払日・人員・支給額・所得税額</strong>を入力して送信<br>
+              <span style="color:var(--yellow)">※ 毎月固定の役員報酬は「役員賞与」ではなく「俸給・給料等」</span><br>
+              <span style="color:var(--yellow)">※ 納付期限は原則、支払月の翌月10日</span>
+            </div>
+          </div>
+        </details>
+      </div>
+
       <div class="table-wrap" style="margin-bottom:24px">
         <div class="table-header"><div class="table-title">登録済み役員報酬（髙橋）</div></div>
         <div style="padding:16px" id="officer-pay-list"></div>
@@ -6473,12 +6474,14 @@ function renderTax() {
     }
   }
 
-  // 役員報酬（髙橋）分：支払月の翌月10日が納付期限。登録済みの全レコードが対象（月次ループとは独立）
+  // 役員報酬（髙橋）分：支払月（＝支払日の月）の翌月10日が納付期限。登録済みの全レコードが対象（月次ループとは独立）
   state.officerPays.forEach(op => {
-    if (!op.srcTax || op.srcTax <= 0 || !op.targetY || !op.targetM) return;
-    const dlM = op.targetM+1>12?1:op.targetM+1; const dlY = op.targetM+1>12?op.targetY+1:op.targetY;
+    if (!op.srcTax || op.srcTax <= 0 || !op.payDate) return;
+    const [py, pm] = op.payDate.split('-').map(Number);
+    const dlM = pm+1>12?1:pm+1; const dlY = pm+1>12?py+1:py;
     const key = `op-${op.id}`;
-    rows.push(makeTaxRow(`${op.targetY}年${op.targetM}月分　役員報酬（髙橋）`, op.srcTax, new Date(dlY, dlM-1, 10), key, today, { payMonth: op.targetM, payYear: op.targetY, persons: 1, payAmount: op.grossAmount, payType: 'officer' }));
+    const targetLabel = (op.targetY && op.targetM) ? `${op.targetY}年${op.targetM}月分　` : '';
+    rows.push(makeTaxRow(`${targetLabel}役員報酬（髙橋）【${pm}月支払い】`, op.srcTax, new Date(dlY, dlM-1, 10), key, today, { payMonth: pm, payYear: py, persons: 1, payAmount: op.grossAmount, payType: 'officer' }));
   });
 
   rows.sort((a,b) => a.deadline - b.deadline);
