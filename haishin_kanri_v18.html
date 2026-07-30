@@ -343,8 +343,14 @@
           <div style="margin-bottom:20px">
             <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑥ 在籍状況</div>
             <div class="form-grid form-grid-4">
-              <div class="form-group"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="c-retired" style="width:auto" onchange="toggleRetiredDateInput('c-retired','c-retired-date-wrap')"> 退所済み</label></div>
-              <div class="form-group" id="c-retired-date-wrap" style="display:none"><label>退所日</label><input type="date" id="c-retired-date"></div>
+              <div class="form-group"><label>状況</label>
+                <select id="c-status" onchange="toggleStatusDateInput('c-status','c-status-date-wrap','c-status-date-label')">
+                  <option value="active">🟢 在籍中</option>
+                  <option value="onhold">🟡 休止中</option>
+                  <option value="retired">⚫ 退所済み</option>
+                </select>
+              </div>
+              <div class="form-group" id="c-status-date-wrap" style="display:none"><label id="c-status-date-label">日付</label><input type="date" id="c-status-date"></div>
             </div>
           </div>
           <button class="btn btn-primary" onclick="addCaster()">＋ 登録する</button>
@@ -426,8 +432,14 @@
         <div style="margin-bottom:24px">
           <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">⑥ 在籍状況</div>
           <div class="form-grid form-grid-4">
-            <div class="form-group"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="edit-retired" style="width:auto" onchange="toggleRetiredDateInput('edit-retired','edit-retired-date-wrap')"> 退所済み</label></div>
-            <div class="form-group" id="edit-retired-date-wrap" style="display:none"><label>退所日</label><input type="date" id="edit-retired-date"></div>
+            <div class="form-group"><label>状況</label>
+              <select id="edit-status" onchange="toggleStatusDateInput('edit-status','edit-status-date-wrap','edit-status-date-label')">
+                <option value="active">🟢 在籍中</option>
+                <option value="onhold">🟡 休止中</option>
+                <option value="retired">⚫ 退所済み</option>
+              </select>
+            </div>
+            <div class="form-group" id="edit-status-date-wrap" style="display:none"><label id="edit-status-date-label">日付</label><input type="date" id="edit-status-date"></div>
           </div>
         </div>
 
@@ -1825,7 +1837,8 @@ async function loadFromDB() {
         invoice: r.invoice, invoiceNo: r.invoice_no,
         address: r.address, bank: r.bank, branch: r.branch, account: r.account, holder: r.holder,
         realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||'',
-        retired: !!r.retired, retiredDate: r.retired_date || ''
+        retired: !!r.retired, retiredDate: r.retired_date || '',
+        onHold: !!r.on_hold, onHoldDate: r.on_hold_date || ''
       }));
     }
     if (referrersR.data?.length > 0) {
@@ -3717,10 +3730,12 @@ function toggleInvoiceInput(wrapperId, val) {
   if (el) el.style.display = val === 'yes' ? 'grid' : 'none';
 }
 
-function toggleRetiredDateInput(checkboxId, wrapperId) {
-  const checked = document.getElementById(checkboxId).checked;
-  const el = document.getElementById(wrapperId);
-  if (el) el.style.display = checked ? 'block' : 'none';
+function toggleStatusDateInput(selectId, wrapperId, labelId) {
+  const val = document.getElementById(selectId).value;
+  const wrapEl = document.getElementById(wrapperId);
+  const labelEl = document.getElementById(labelId);
+  if (wrapEl) wrapEl.style.display = val === 'active' ? 'none' : 'block';
+  if (labelEl) labelEl.textContent = val === 'retired' ? '退所日' : val === 'onhold' ? '休止開始日' : '日付';
 }
 
 function showCasterError(msg) {
@@ -3750,9 +3765,13 @@ async function addCaster() {
   const account   = actype + ' ' + acnum;
   const holder    = document.getElementById('c-holder').value.trim();
   const memo      = document.getElementById('c-memo').value.trim();
-  const retired     = document.getElementById('c-retired').checked;
-  const retiredDate = retired ? document.getElementById('c-retired-date').value.trim() : '';
-  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate };
+  const statusVal = document.getElementById('c-status').value;
+  const statusDate = statusVal !== 'active' ? document.getElementById('c-status-date').value.trim() : '';
+  const retired = statusVal === 'retired';
+  const retiredDate = retired ? statusDate : '';
+  const onHold = statusVal === 'onhold';
+  const onHoldDate = onHold ? statusDate : '';
+  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
   state.casters.push(newCaster);
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
@@ -3770,12 +3789,12 @@ async function addCaster() {
   document.getElementById('c-holder').value = '';
   document.getElementById('c-memo').value = '';
   document.getElementById('c-invoice').value = 'no';
-  document.getElementById('c-retired').checked = false;
-  document.getElementById('c-retired-date').value = '';
+  document.getElementById('c-status').value = 'active';
+  document.getElementById('c-status-date').value = '';
   toggleInvoiceInput('c-invoicenum', 'no');
-  toggleRetiredDateInput('c-retired', 'c-retired-date-wrap');
+  toggleStatusDateInput('c-status', 'c-status-date-wrap', 'c-status-date-label');
   const errEl = document.getElementById('caster-error'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
-  await dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null });
+  await dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null });
   renderAll();
 }
 
@@ -3792,8 +3811,9 @@ function renderCasters() {
   const refOpts = '<option value="">なし</option>' + state.referrers.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
   if (refSel) refSel.innerHTML = refOpts;
   if (editRefSel) editRefSel.innerHTML = refOpts;
+  const statusRank = c => c.retired ? 2 : (c.onHold ? 1 : 0);
   document.getElementById('casters-table').innerHTML = [...state.casters].sort((a, b) => {
-    if (!!a.retired !== !!b.retired) return a.retired ? 1 : -1;
+    if (statusRank(a) !== statusRank(b)) return statusRank(a) - statusRank(b);
     return (a.name||'').localeCompare(b.name||'', 'ja');
   }).map(c => {
     const ref = c.refId ? getReferrer(c.refId) : null;
@@ -3808,8 +3828,10 @@ function renderCasters() {
       : `<td style="color:var(--muted)">-</td>`;
     const statusBadge = c.retired
       ? `<span class="badge" style="background:rgba(148,163,184,0.15);color:var(--muted);border:1px solid var(--border)">⚫ 退所済${c.retiredDate ? `（${c.retiredDate}）` : ''}</span>`
-      : `<span class="badge badge-green">🟢 在籍中</span>`;
-    return `<tr${c.retired ? ' style="opacity:0.55"' : ''}>
+      : c.onHold
+        ? `<span class="badge badge-yellow">🟡 休止中${c.onHoldDate ? `（${c.onHoldDate}〜）` : ''}</span>`
+        : `<span class="badge badge-green">🟢 在籍中</span>`;
+    return `<tr${(c.retired || c.onHold) ? ' style="opacity:0.55"' : ''}>
       <td><strong>${c.name}</strong></td>
       <td>${statusBadge}</td>
       <td class="num"><span class="badge badge-blue">${c.rate}%</span></td>
@@ -3847,10 +3869,11 @@ function openEditModal(id) {
   document.getElementById('edit-acnum').value = _acParts.slice(1).join(' ')||'';
   document.getElementById('edit-holder').value  = c.holder  || '';
   document.getElementById('edit-memo').value = c.memo || '';
-  document.getElementById('edit-retired').checked = !!c.retired;
-  document.getElementById('edit-retired-date').value = c.retiredDate || '';
+  const currentStatus = c.retired ? 'retired' : (c.onHold ? 'onhold' : 'active');
+  document.getElementById('edit-status').value = currentStatus;
+  document.getElementById('edit-status-date').value = (c.retired ? c.retiredDate : c.onHold ? c.onHoldDate : '') || '';
   toggleInvoiceInput('edit-invoicenum', c.invoice);
-  toggleRetiredDateInput('edit-retired', 'edit-retired-date-wrap');
+  toggleStatusDateInput('edit-status', 'edit-status-date-wrap', 'edit-status-date-label');
   const modal = document.getElementById('edit-modal');
   modal.style.display = 'flex';
 }
@@ -3881,10 +3904,14 @@ async function saveEdit() {
     const account = _et + ' ' + _en;
     const holder  = document.getElementById('edit-holder').value.trim();
     const memo    = document.getElementById('edit-memo').value.trim();
-    const retired     = document.getElementById('edit-retired').checked;
-    const retiredDate = retired ? document.getElementById('edit-retired-date').value.trim() : '';
-    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate };
-    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null });
+    const statusVal = document.getElementById('edit-status').value;
+    const statusDate = statusVal !== 'active' ? document.getElementById('edit-status-date').value.trim() : '';
+    const retired = statusVal === 'retired';
+    const retiredDate = retired ? statusDate : '';
+    const onHold = statusVal === 'onhold';
+    const onHoldDate = onHold ? statusDate : '';
+    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
+    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null });
   }
   closeEditModal();
   renderAll();
@@ -5094,7 +5121,7 @@ function sortDpTable(key) {
 
 function renderSales() {
   const { y, m } = state;
-  const activeCasters = state.casters.filter(c => !c.retired);
+  const activeCasters = state.casters.filter(c => !c.retired && !c.onHold);
   const sCasterSel = document.getElementById('s-caster');
   if (sCasterSel) {
     sCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
