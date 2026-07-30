@@ -1371,10 +1371,54 @@
     <div class="page" id="page-tax">
       <div class="page-header"><div class="page-title">源泉税管理</div></div>
       <div id="tax-alerts"></div>
+
+      <div class="table-wrap" style="margin-bottom:16px">
+        <details>
+          <summary style="cursor:pointer;padding:14px 20px;font-size:13px;font-weight:600;color:var(--accent)">📌 役員報酬（髙橋）源泉徴収の e-Tax操作手順</summary>
+          <div style="padding:0 20px 18px 20px">
+            <div style="background:rgba(79,156,249,0.08);border-radius:6px;padding:12px 16px;font-size:12px;line-height:1.9">
+              ①「申告・申請・納税」→「徴収高計算書を提出する」<br>
+              ②「給与所得・退職所得等の所得税徴収高計算書（<strong>一般</strong>）」を選択<br>
+              ③ 納期等の区分は、<strong>実際に役員報酬を支払った月</strong>を入力<br>
+              ④ 区分は「<strong>俸給・給料等</strong>」を選択<br>
+              ⑤ 給与明細をもとに、<strong>支払日・人員・支給額・所得税額</strong>を入力して送信<br>
+              <span style="color:var(--yellow)">※ 毎月固定の役員報酬は「役員賞与」ではなく「俸給・給料等」</span><br>
+              <span style="color:var(--yellow)">※ 納付期限は原則、支払月の翌月10日</span>
+            </div>
+          </div>
+        </details>
+      </div>
+
       <div class="table-wrap">
         <div class="table-header"><div class="table-title">源泉税納付スケジュール</div></div>
         <table><thead><tr><th>対象月</th><th class="num">源泉税合計</th><th>納付期限</th><th>残日数</th><th>状態</th><th></th></tr></thead>
         <tbody id="tax-table"></tbody></table>
+      </div>
+
+      <!-- 役員報酬（髙橋）：支払い記録 -->
+      <div class="table-wrap" id="officer-pay-form-wrap" style="margin-top:16px;margin-bottom:16px">
+        <div class="table-header"><div class="table-title">💰 役員報酬（髙橋）源泉徴収の登録</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <input type="hidden" id="op-edit-id">
+          <div style="font-size:12px;font-weight:600;color:var(--muted)" id="op-form-title">支払いを記録</div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>支払日 <span style="color:var(--red)">*</span></label><input id="op-date" type="date"></div>
+            <div class="form-group"><label>対象月 <span style="color:var(--red)">*</span></label><input id="op-target" type="month"></div>
+          </div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>支給額 <span style="color:var(--red)">*</span></label><input id="op-gross" type="number" placeholder="例：500000"></div>
+            <div class="form-group"><label>所得税額（源泉徴収額） <span style="color:var(--red)">*</span></label><input id="op-srctax" type="number" placeholder="例：40840"></div>
+          </div>
+          <div class="form-group"><label>メモ</label><input id="op-note" placeholder="任意"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="op-cancel-btn" style="display:none" onclick="resetOfficerPayForm()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveOfficerPay()">登録</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:24px">
+        <div class="table-header"><div class="table-title">登録済み役員報酬（髙橋）</div></div>
+        <div style="padding:16px" id="officer-pay-list"></div>
       </div>
     </div>
 
@@ -1814,7 +1858,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR, officerPayR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1829,6 +1873,7 @@ async function loadFromDB() {
       fetchAll('prepaid_expenses', 'id'),
       fetchAll('referrer_pays', 'id'),
       fetchAll('manager_pays', 'id'),
+      fetchAll('officer_pays', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -1905,7 +1950,7 @@ async function loadFromDB() {
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||'',
         dailyPayId: r.daily_pay_id || null, monthEndPayId: r.month_end_pay_id || null,
         referrerPayId: r.referrer_pay_id || null, managerPayId: r.manager_pay_id || null,
-        taxKey: r.tax_key || null, exchangeId: r.exchange_id || null
+        taxKey: r.tax_key || null, exchangeId: r.exchange_id || null, officerPayId: r.officer_pay_id || null
       }));
     }
     if (mepR.data?.length > 0) {
@@ -1943,6 +1988,12 @@ async function loadFromDB() {
         targetY: r.target_y, targetM: r.target_m, note: r.note || ''
       }));
     }
+    if (officerPayR.data?.length > 0) {
+      state.officerPays = officerPayR.data.map(r => ({
+        id: r.id, payDate: r.pay_date, grossAmount: Number(r.gross_amount), srcTax: Number(r.src_tax),
+        targetY: r.target_y, targetM: r.target_m, note: r.note || ''
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -1957,6 +2008,7 @@ async function loadFromDB() {
       ...state.prepaidExpenses.map(r => r.id),
       ...state.referrerPays.map(r => r.id),
       ...state.managerPays.map(r => r.id),
+      ...state.officerPays.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -2001,7 +2053,7 @@ async function dbDelete(table, id) {
 // 既存レコードの編集（idが確定済みのupsert）はこれまで通りdbSave()を使う（変更なし）。
 // 他のテーブルの新規作成（casters/referrers/sales/expenses等）も理論上は同じリスクを持つが、
 // まずは今回バグが実際に発生した支払い記録系テーブルから対応する。
-const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays'];
+const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays'];
 
 async function fetchFreshMaxId() {
   const results = await Promise.all(
@@ -2119,6 +2171,7 @@ let state = {
   prepaidExpenses: [], // 前払費用マスター
   referrerPays: [], // 紹介者への支払い記録
   managerPays: [], // 管理人への支払い記録
+  officerPays: [], // 役員報酬（髙橋）源泉徴収の登録記録
   nextId: 300,
 };
 
@@ -2630,6 +2683,7 @@ const PAY_ATTACH_CONFIG = {
   manager_pay:   { stateField: 'managerPayId',  dbCol: 'manager_pay_id',   r2Prefix: 'manager_pays' },
   tax_paid:      { stateField: 'taxKey',        dbCol: 'tax_key',          r2Prefix: 'tax_paid' },
   exchange:      { stateField: 'exchangeId',    dbCol: 'exchange_id',      r2Prefix: 'exchanges' },
+  officer_pay:   { stateField: 'officerPayId',  dbCol: 'officer_pay_id',   r2Prefix: 'officer_pays' },
 };
 
 let payAttachTarget = null; // { type, id }
@@ -2663,6 +2717,11 @@ function payAttachInfoHtml(type, id) {
     if (!d) return '';
     const period = d.dateFrom && d.dateTo ? d.dateFrom + ' 〜 ' + d.dateTo : d.dateFrom || d.dateTo || d.date;
     return `<span style="color:var(--muted)">${d.date}</span>　<strong>両替</strong>　<span class="badge badge-purple">${period}</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(d.jpy)}</span>`;
+  }
+  if (type === 'officer_pay') {
+    const d = state.officerPays.find(x => x.id === id);
+    if (!d) return '';
+    return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>役員報酬（髙橋）</strong>　${d.targetY ? `<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　` : ''}支給額 <span style="font-family:var(--mono);color:var(--accent)">${yen(d.grossAmount)}</span>　源泉税 <span style="font-family:var(--mono);color:var(--accent)">${yen(d.srcTax)}</span>`;
   }
   return '';
 }
@@ -2734,7 +2793,7 @@ async function uploadFileToPayTarget(type, id, file, note) {
     uploadedAt: recData.uploaded_at, note: recData.note || '',
     dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
     referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null,
-    taxKey: recData.tax_key || null, exchangeId: recData.exchange_id || null
+    taxKey: recData.tax_key || null, exchangeId: recData.exchange_id || null, officerPayId: recData.officer_pay_id || null
   });
 }
 
@@ -3594,7 +3653,7 @@ async function addCheckedReceipts() {
 // ===== RENDER ALL =====
 function renderAll() {
   renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
-  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger();
+  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderOfficerPayList(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger();
 }
 
 // ===== DASHBOARD =====
@@ -6401,6 +6460,14 @@ function renderTax() {
     }
   }
 
+  // 役員報酬（髙橋）分：支払月の翌月10日が納付期限。登録済みの全レコードが対象（月次ループとは独立）
+  state.officerPays.forEach(op => {
+    if (!op.srcTax || op.srcTax <= 0 || !op.targetY || !op.targetM) return;
+    const dlM = op.targetM+1>12?1:op.targetM+1; const dlY = op.targetM+1>12?op.targetY+1:op.targetY;
+    const key = `op-${op.id}`;
+    rows.push(makeTaxRow(`${op.targetY}年${op.targetM}月分　役員報酬（髙橋）`, op.srcTax, new Date(dlY, dlM-1, 10), key, today, { payMonth: op.targetM, payYear: op.targetY, persons: 1, payAmount: op.grossAmount, payType: 'officer' }));
+  });
+
   rows.sort((a,b) => a.deadline - b.deadline);
 
   let alerts = '';
@@ -6466,10 +6533,10 @@ function renderTax() {
       </tr>`;
     });
 
-    // 納付書記入ガイド（支払月ごとに集約）
+    // 納付書記入ガイド（支払月ごとに集約）※配信者への報酬・料金等の源泉税のみが対象（役員報酬は別フォームのため別枠で表示）
     if (!allPaid) {
       const payMonthMap = {};
-      group.forEach(x => {
+      group.filter(x => x.payType === 'daily' || x.payType === 'settle').forEach(x => {
         if (x.payMonth == null) return;
         const pmk = `${x.payYear}-${String(x.payMonth).padStart(2,'0')}`;
         if (!payMonthMap[pmk]) payMonthMap[pmk] = { payYear: x.payYear, payMonth: x.payMonth, payAmount: 0, srcTax: 0, casterIds: new Set() };
@@ -6513,6 +6580,37 @@ function renderTax() {
                 税務署名：湯沢税務署　／　徴収義務者：それいけ合同会社　〒012-0055 秋田県湯沢市山田字荻生田26-2
               </div>
               ${guideRows}
+            </div>
+          </details>
+        </td></tr>`;
+      }
+
+      // 役員報酬（髙橋）分のガイド（給与所得・退職所得等の所得税徴収高計算書「一般」。報酬・料金等とはフォームが別のため合算しない）
+      const officerRows = group.filter(x => x.payType === 'officer');
+      if (officerRows.length > 0) {
+        const opGuideRows = officerRows.map(x => {
+          return `<div style="display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:12px;padding:4px 0">
+            <span style="color:var(--muted)">納期等の区分</span><span>${x.payYear}年 ${x.payMonth}月 支払分</span>
+            <span style="color:var(--muted)">区分</span><span>俸給・給料等</span>
+            <span style="color:var(--muted)">人員</span><span style="font-family:var(--mono)">1</span>
+            <span style="color:var(--muted)">支給額</span><span style="font-family:var(--mono)">${fmt(x.payAmount)}</span>
+            <span style="color:var(--muted)">税額</span><span style="font-family:var(--mono)">${fmt(x.srcTax)}</span>
+          </div>`;
+        }).join('<hr style="border:none;border-top:1px dashed var(--border);margin:4px 0">');
+        html += `<tr><td colspan="6" style="padding:8px 20px">
+          <details style="cursor:pointer">
+            <summary style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">📝 納付書記入ガイド（給与所得・退職所得等の所得税徴収高計算書　一般／役員報酬・髙橋）</summary>
+            <div style="background:var(--surface2);border-radius:8px;padding:12px 16px;border:1px solid var(--border)">
+              <div style="background:rgba(79,156,249,0.08);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:11px;line-height:1.7">
+                <strong style="color:var(--accent)">📌 e-Tax操作手順</strong><br>
+                ①「申告・申請・納税」→「徴収高計算書を提出する」<br>
+                ②「給与所得・退職所得等の所得税徴収高計算書（<strong>一般</strong>）」を選択<br>
+                ③ 納期等の区分は、実際に役員報酬を支払った月を入力<br>
+                ④ 区分は「<strong>俸給・給料等</strong>」を選択<br>
+                ⑤ 給与明細をもとに、支払日・人員・支給額・所得税額を入力して送信<br>
+                <span style="color:var(--yellow)">※ 毎月固定の役員報酬は「役員賞与」ではなく「俸給・給料等」</span>
+              </div>
+              ${opGuideRows}
             </div>
           </details>
         </td></tr>`;
@@ -8390,6 +8488,101 @@ async function deleteMgrPay(id) {
   renderMgrPayList();
 }
 
+// ===== 役員報酬（髙橋）：源泉徴収の登録 =====
+function resetOfficerPayForm() {
+  document.getElementById('op-edit-id').value = '';
+  document.getElementById('op-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('op-target').value = '';
+  document.getElementById('op-gross').value = '';
+  document.getElementById('op-srctax').value = '';
+  document.getElementById('op-note').value = '';
+  document.getElementById('op-form-title').textContent = '支払いを記録';
+  document.getElementById('op-cancel-btn').style.display = 'none';
+}
+
+function renderOfficerPayList() {
+  const el = document.getElementById('officer-pay-list');
+  if (!el) return;
+  const pays = [...state.officerPays].sort((a,b) => (b.payDate||'').localeCompare(a.payDate||''));
+  if (pays.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">登録がありません</div>';
+    return;
+  }
+  el.innerHTML = pays.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px">
+          <span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}
+          支給額 <strong style="font-family:var(--mono)">${yen(p.grossAmount)}</strong>　源泉税 <strong style="font-family:var(--mono);color:var(--accent)">${yen(p.srcTax)}</strong>
+        </div>
+        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+      </div>
+      ${payAttachBadge('officer_pay', p.id)}
+      ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editOfficerPay(${p.id})">編集</button>`}
+      <button class="btn btn-danger btn-sm" onclick="deleteOfficerPay(${p.id})">削除</button>
+    </div>`).join('');
+}
+
+function editOfficerPay(id) {
+  const p = state.officerPays.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('op-edit-id').value = id;
+  document.getElementById('op-date').value = p.payDate || '';
+  document.getElementById('op-target').value = (p.targetY && p.targetM) ? `${p.targetY}-${String(p.targetM).padStart(2,'0')}` : '';
+  document.getElementById('op-gross').value = p.grossAmount;
+  document.getElementById('op-srctax').value = p.srcTax;
+  document.getElementById('op-note').value = p.note || '';
+  document.getElementById('op-form-title').textContent = '登録を編集';
+  document.getElementById('op-cancel-btn').style.display = '';
+}
+
+async function saveOfficerPay() {
+  const editId = document.getElementById('op-edit-id').value;
+  const payDate = document.getElementById('op-date').value;
+  const targetStr = document.getElementById('op-target').value; // "YYYY-MM"
+  const grossAmount = parseInt(document.getElementById('op-gross').value) || 0;
+  const srcTax = parseInt(document.getElementById('op-srctax').value) || 0;
+  const note = document.getElementById('op-note').value.trim();
+
+  if (!payDate) { alert('支払日を入力してください'); return; }
+  if (!targetStr) { alert('対象月を入力してください'); return; }
+  if (!grossAmount) { alert('支給額を入力してください'); return; }
+  const [targetY, targetM] = targetStr.split('-').map(Number);
+
+  const record = { payDate, targetY, targetM, grossAmount, srcTax, note };
+
+  if (editId) {
+    const id = parseInt(editId);
+    const idx = state.officerPays.findIndex(p => p.id === id);
+    if (idx !== -1) state.officerPays[idx] = { ...state.officerPays[idx], ...record };
+    await dbSave('officer_pays', { id, pay_date: payDate, target_y: targetY, target_m: targetM, gross_amount: grossAmount, src_tax: srcTax, note });
+  } else {
+    try {
+      const id = await insertWithFreshId('officer_pays', id => ({ id, pay_date: payDate, target_y: targetY, target_m: targetM, gross_amount: grossAmount, src_tax: srcTax, note }));
+      state.officerPays.push({ id, ...record });
+    } catch(e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return;
+    }
+  }
+  resetOfficerPayForm();
+  renderOfficerPayList();
+  renderTax();
+}
+
+async function deleteOfficerPay(id) {
+  const attached = state.receipts.filter(r => r.officerPayId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('この登録を削除しますか？')) return;
+  await dbDelete('officer_pays', id);
+  state.officerPays = state.officerPays.filter(p => p.id !== id);
+  renderOfficerPayList();
+  renderTax();
+}
+
 
 // ===== SECRET: ダッシュボード5回クリックで消費税還付を表示 =====
 let dashClickCount = 0;
@@ -9707,6 +9900,8 @@ function applyRole(role) {
   loadFromDB();
   const pcDateEl = document.getElementById('pc-date');
   if (pcDateEl) pcDateEl.value = new Date().toISOString().slice(0, 10);
+  const opDateEl = document.getElementById('op-date');
+  if (opDateEl) opDateEl.value = new Date().toISOString().slice(0, 10);
 }
 
 function applyViewerRestrictions() {
@@ -9721,6 +9916,7 @@ function applyViewerRestrictions() {
     '#receipt-mgmt-upload-section', // 経費領収書モーダルのアップロード欄（一覧の閲覧・DL・プレビューはreceipt-mgmt-listに残す）
     '#pay-attach-upload-section',   // 汎用添付モーダル（配信者/紹介者/管理人）のアップロード欄（一覧はpay-attach-listに残す）
     '#tax-attach-write-section',    // 源泉税の支払い明細添付モーダルのアップロード欄・日付入力（一覧はtax-attach-listに残す）
+    '#officer-pay-form-wrap',        // 役員報酬（髙橋）登録フォーム（page-taxは自動非表示ロジックの対象外のため明示的に追加）
   ];
   // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
   HIDDEN_SELECTORS.forEach(sel => {
