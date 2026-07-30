@@ -1869,19 +1869,21 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// ===== v29 Phase 3a: Edge Function 呼び出し用の Authorization ヘッダー =====
-// access token は既定で1時間で失効するため、呼び出しの直前に毎回 getSession() で取り直す。
-// （ログイン時に変数へ保存して使い回すと、1時間後に突然AI読み取り・添付機能が止まる）
-// セッションが取得できない場合は anon key にフォールバックし、壊れ得る経路を作らない。
+// ===== v30: Edge Function 呼び出し用の Authorization ヘッダー =====
+// ⚠️ ここに「ユーザーのaccess token」を入れてはならない（v29 Phase 3aで試行し失敗・撤回）。
+//    このプロジェクトのSupabase Authは非対称鍵でaccess tokenを ES256 で署名するが、
+//    Edge Functionsのゲートウェイ（verify_jwt=true）はレガシーHS256しか検証できないため、
+//    関数に到達する前に 401 UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM
+//    （"Unsupported JWT algorithm ES256"）で弾かれる。Supabase側の既知の未解決問題。
+//    → ゲートウェイ通過用のトークンは anon key を維持する。
+//    → 実際の認証・権限チェックは Phase 3b（verify_jwt=false ＋ 関数内でJWKS検証）で行う。
+// 呼び出し側10箇所は `headers: await authHeaders()` に集約済みなので、
+// Phase 3b ではこの関数1つを差し替えるだけで移行できる。
 async function authHeaders(extra) {
-  let token = SUPABASE_ANON_KEY;
-  try {
-    const { data } = await sb.auth.getSession();
-    if (data && data.session && data.session.access_token) token = data.session.access_token;
-  } catch (e) {
-    console.warn('authHeaders: セッション取得に失敗したため anon key にフォールバックします', e);
-  }
-  return Object.assign({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, extra || {});
+  return Object.assign({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+  }, extra || {});
 }
 
 let dbReady = false;
