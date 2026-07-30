@@ -1401,6 +1401,19 @@
         <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
           <input type="hidden" id="op-edit-id">
           <div style="font-size:12px;font-weight:600;color:var(--muted)" id="op-form-title">支払いを記録</div>
+
+          <div id="op-slip-upload" style="border:2px dashed var(--accent);border-radius:8px;padding:14px 6px;text-align:center;cursor:pointer;transition:all 0.15s"
+            onclick="document.getElementById('op-slip-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent2)'"
+            ondragleave="this.style.borderColor='var(--accent)'"
+            ondrop="event.preventDefault();this.style.borderColor='var(--accent)';handleOfficerPaySlipDrop(event)">
+            <div style="font-size:22px;margin-bottom:4px">📄</div>
+            <div style="font-size:12px;font-weight:600">給与支払明細書をドロップ（AI読み取り）</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">支払日・支給額・所得税額を自動入力</div>
+          </div>
+          <input type="file" id="op-slip-file" style="display:none" accept="image/*,.pdf,.heic,.heif" onchange="handleOfficerPaySlipFileSelect(event)">
+          <div id="op-slip-status" style="display:none;font-size:11px;padding:4px;line-height:1.5"></div>
+
           <div class="form-grid form-grid-2">
             <div class="form-group"><label>支払日 <span style="color:var(--red)">*</span></label><input id="op-date" type="date"></div>
             <div class="form-group"><label>対象月 <span style="color:var(--red)">*</span></label><input id="op-target" type="month"></div>
@@ -8489,6 +8502,8 @@ async function deleteMgrPay(id) {
 }
 
 // ===== 役員報酬（髙橋）：源泉徴収の登録 =====
+let pendingOfficerPaySlipFile = null; // AI読み取りでドロップされた給与明細。「登録」押下時にレコードへ添付する
+
 function resetOfficerPayForm() {
   document.getElementById('op-edit-id').value = '';
   document.getElementById('op-date').value = new Date().toISOString().slice(0,10);
@@ -8498,6 +8513,58 @@ function resetOfficerPayForm() {
   document.getElementById('op-note').value = '';
   document.getElementById('op-form-title').textContent = '支払いを記録';
   document.getElementById('op-cancel-btn').style.display = 'none';
+  pendingOfficerPaySlipFile = null;
+  const statusEl = document.getElementById('op-slip-status');
+  if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
+}
+
+async function handleOfficerPaySlipFiles(fileList) {
+  const file = fileList[0];
+  if (!file) return;
+  const statusEl = document.getElementById('op-slip-status');
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = '⏳ 給与支払明細書を解析中...';
+  try {
+    const { base64, contentType, _origFile } = await prepareFileForMepAI(file);
+    let extracted = null;
+    try {
+      extracted = await extractOfficerPaySlip(base64, contentType);
+    } catch(e) {
+      console.warn('給与支払明細書の解析に失敗:', e.message);
+    }
+    pendingOfficerPaySlipFile = _origFile;
+    if (extracted && extracted.payDate) {
+      document.getElementById('op-date').value = extracted.payDate;
+      // 対象月は支給日の前月をデフォルトに（当月分翌月払いが一般的なため）。誤りがあれば手動で修正可能
+      const [py, pm] = extracted.payDate.split('-').map(Number);
+      let ty = py, tm = pm - 1;
+      if (tm <= 0) { tm = 12; ty--; }
+      document.getElementById('op-target').value = `${ty}-${String(tm).padStart(2,'0')}`;
+    }
+    if (extracted && extracted.grossAmount != null) document.getElementById('op-gross').value = extracted.grossAmount;
+    if (extracted && extracted.srcTax != null) document.getElementById('op-srctax').value = extracted.srcTax;
+
+    if (extracted && extracted.payDate && extracted.grossAmount != null && extracted.srcTax != null) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = `✅ 読み取り完了（支給額¥${extracted.grossAmount.toLocaleString()}／所得税¥${extracted.srcTax.toLocaleString()}）。対象月は前月を仮入力しています。内容を確認して「登録」を押してください（ファイルも自動で添付されます）`;
+    } else {
+      statusEl.style.color = 'var(--yellow)';
+      statusEl.textContent = '⚠️ 一部の項目が読み取れませんでした。下の欄を確認・修正してから「登録」を押してください（ファイルは登録時に添付されます）';
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '❌ エラー: ' + e.message;
+  }
+}
+
+function handleOfficerPaySlipFileSelect(event) {
+  handleOfficerPaySlipFiles(event.target.files);
+  event.target.value = '';
+}
+
+function handleOfficerPaySlipDrop(event) {
+  handleOfficerPaySlipFiles(event.dataTransfer.files);
 }
 
 function renderOfficerPayList() {
@@ -8534,6 +8601,9 @@ function editOfficerPay(id) {
   document.getElementById('op-note').value = p.note || '';
   document.getElementById('op-form-title').textContent = '登録を編集';
   document.getElementById('op-cancel-btn').style.display = '';
+  pendingOfficerPaySlipFile = null;
+  const statusEl = document.getElementById('op-slip-status');
+  if (statusEl) { statusEl.style.display = 'none'; statusEl.textContent = ''; }
 }
 
 async function saveOfficerPay() {
@@ -8550,21 +8620,34 @@ async function saveOfficerPay() {
   const [targetY, targetM] = targetStr.split('-').map(Number);
 
   const record = { payDate, targetY, targetM, grossAmount, srcTax, note };
+  let savedId;
 
   if (editId) {
     const id = parseInt(editId);
+    savedId = id;
     const idx = state.officerPays.findIndex(p => p.id === id);
     if (idx !== -1) state.officerPays[idx] = { ...state.officerPays[idx], ...record };
     await dbSave('officer_pays', { id, pay_date: payDate, target_y: targetY, target_m: targetM, gross_amount: grossAmount, src_tax: srcTax, note });
   } else {
     try {
       const id = await insertWithFreshId('officer_pays', id => ({ id, pay_date: payDate, target_y: targetY, target_m: targetM, gross_amount: grossAmount, src_tax: srcTax, note }));
+      savedId = id;
       state.officerPays.push({ id, ...record });
     } catch(e) {
       alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
       return;
     }
   }
+
+  // AI読み取りでドロップされた給与明細があれば、この保存タイミングで自動添付
+  if (pendingOfficerPaySlipFile) {
+    try {
+      await uploadFileToPayTarget('officer_pay', savedId, pendingOfficerPaySlipFile, '給与支払明細書');
+    } catch(e) {
+      alert('給与明細の添付に失敗しました（登録自体は完了しています）: ' + e.message);
+    }
+  }
+
   resetOfficerPayForm();
   renderOfficerPayList();
   renderTax();
@@ -8838,6 +8921,28 @@ async function extractTransferDate(base64, contentType) {
 {"payDate": "YYYY-MM-DD形式の振込日。読み取れない場合はnull"}`;
   const result = await callMepAI(systemPrompt, base64, contentType);
   return { payDate: (typeof result.payDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(result.payDate)) ? result.payDate : null };
+}
+
+// 役員報酬（髙橋）の給与支払明細書を読み取る
+async function extractOfficerPaySlip(base64, contentType) {
+  const systemPrompt = `役員報酬・給与の「給与支払明細書」の画像/PDFを読み取り、以下の3つの値のみをJSON形式で返してください。
+前置き・説明・マークダウン記法（バッククォートなど）は一切不要です。JSONのみ出力してください。
+
+抽出する値：
+- payDate：「支給日」に記載されている日付（YYYY-MM-DD形式）
+- grossAmount：「支給」欄の合計金額（基本給・各種手当等の合計。「支給　合計」に記載されている数値）。差引支給額・振込支給額ではなく、控除前の総支給額を使ってください。
+- srcTax：「控除」欄の「所得税」の金額。
+
+読み取れない値はnullにしてください。給与支払明細書ではないファイルだった場合や、内容が全く読み取れない場合は全てnullにしてください。
+
+出力形式（このJSON以外は何も出力しないこと）：
+{"payDate": "YYYY-MM-DD形式またはnull", "grossAmount": 数値またはnull, "srcTax": 数値またはnull}`;
+  const result = await callMepAI(systemPrompt, base64, contentType);
+  return {
+    payDate: (typeof result.payDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(result.payDate)) ? result.payDate : null,
+    grossAmount: typeof result.grossAmount === 'number' ? Math.round(result.grossAmount) : null,
+    srcTax: typeof result.srcTax === 'number' ? Math.round(result.srcTax) : null
+  };
 }
 
 // レコードを作成/更新し、ファイルを指定のnoteで添付する共通処理
