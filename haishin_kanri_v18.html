@@ -1869,6 +1869,21 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
+// ===== v29 Phase 3a: Edge Function 呼び出し用の Authorization ヘッダー =====
+// access token は既定で1時間で失効するため、呼び出しの直前に毎回 getSession() で取り直す。
+// （ログイン時に変数へ保存して使い回すと、1時間後に突然AI読み取り・添付機能が止まる）
+// セッションが取得できない場合は anon key にフォールバックし、壊れ得る経路を作らない。
+async function authHeaders(extra) {
+  let token = SUPABASE_ANON_KEY;
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data && data.session && data.session.access_token) token = data.session.access_token;
+  } catch (e) {
+    console.warn('authHeaders: セッション取得に失敗したため anon key にフォールバックします', e);
+  }
+  return Object.assign({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, extra || {});
+}
+
 let dbReady = false;
 
 // 全件取得ヘルパー（Supabaseの1000件上限を回避）
@@ -2557,6 +2572,7 @@ async function downloadAuditLog() {
 
 // ===== 領収書管理 =====
 const R2_PROXY = 'https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/r2-proxy';
+const CLAUDE_PROXY = 'https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy';
 
 let receiptMgmtExpenseId = null;
 
@@ -2682,7 +2698,7 @@ async function uploadReceipt(file) {
     // R2アップロード
     const res = await fetch(R2_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: await authHeaders(),
       body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
     });
     const data = await res.json();
@@ -2720,7 +2736,7 @@ async function downloadReceipt(r2Key, filename, contentType) {
   try {
     const res = await fetch(R2_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: await authHeaders(),
       body: JSON.stringify({ action: 'download', key: r2Key, contentType })
     });
     const data = await res.json();
@@ -2741,7 +2757,7 @@ async function deleteReceipt(id, r2Key) {
   try {
     await fetch(R2_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: await authHeaders(),
       body: JSON.stringify({ action: 'delete', key: r2Key })
     });
     await sb.from('receipts').delete().eq('id', id);
@@ -2857,7 +2873,7 @@ async function uploadFileToPayTarget(type, id, file, note) {
   });
   const res = await fetch(R2_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    headers: await authHeaders(),
     body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
   });
   const data = await res.json();
@@ -2909,7 +2925,7 @@ async function deletePayAttach(id, r2Key) {
   try {
     await fetch(R2_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: await authHeaders(),
       body: JSON.stringify({ action: 'delete', key: r2Key })
     });
     await sb.from('receipts').delete().eq('id', id);
@@ -2954,7 +2970,7 @@ async function openFilePreview(r2Key, filename, contentType) {
   try {
     const res = await fetch(R2_PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+      headers: await authHeaders(),
       body: JSON.stringify({ action: 'download', key: r2Key, contentType })
     });
     const data = await res.json();
@@ -3329,12 +3345,9 @@ async function readReceiptFile(file) {
   }
 ]`;
 
-  const resp = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy', {
+  const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5dGh2anVmcW5tdnd3bGVjeWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDA2NzYsImV4cCI6MjA4ODU3NjY3Nn0.LuuchGYqhqWfAcFxP0ZjIckQVeBhOwR7MItaFaUFjBo',
-    },
+    headers: await authHeaders(),
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: 2000,
@@ -3641,7 +3654,7 @@ async function addCheckedReceipts() {
       const r2Key = `expenses/${newExp.id}/${safeR2Filename(r._filename || 'receipt.jpg')}`;
       const res = await fetch(R2_PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+        headers: await authHeaders(),
         body: JSON.stringify({ action: 'upload', key: r2Key, contentType: r._contentType, fileBase64: r._base64 })
       });
       const uploadData = await res.json();
@@ -5813,7 +5826,7 @@ async function addExpense() {
         const r2Key = `expenses/${newExp.id}/${safeR2Filename(filename)}`;
         const res = await fetch(R2_PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          headers: await authHeaders(),
           body: JSON.stringify({ action: 'upload', key: r2Key, contentType, fileBase64: base64 })
         });
         const uploadData = await res.json();
@@ -8905,9 +8918,9 @@ async function callMepAI(systemPrompt, base64, contentType) {
        { type:'text', text:'このファイルを読み取ってください。' }]
     : [{ type:'image', source:{ type:'base64', media_type:contentType, data:base64 } },
        { type:'text', text:'この画像を読み取ってください。' }];
-  const resp = await fetch('https://yythvjufqnmvwwlecygj.supabase.co/functions/v1/claude-proxy', {
+  const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+    headers: await authHeaders(),
     body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: systemPrompt, messages: [{ role: 'user', content }] })
   });
   if (!resp.ok) throw new Error(`API Error ${resp.status}`);
