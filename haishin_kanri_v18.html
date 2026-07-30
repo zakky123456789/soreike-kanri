@@ -251,6 +251,7 @@
     <div class="nav-item" onclick="showPage('prepaid')"><span>📅</span>前払費用管理</div>
     <div class="nav-item" onclick="showPage('ledger')"><span>📒</span>総勘定元帳</div>
     <div id="nav-refund" class="nav-item" onclick="showPage('refund')" style="display:none"><span>↩️</span>消費税還付</div>
+    <div id="nav-logout" class="nav-item" onclick="doLogout()" style="display:none"><span>🚪</span>ログアウト</div>
     <div id="role-badge" style="display:none"><div id="role-badge-dot"></div></div>
   </nav>
 
@@ -1845,9 +1846,28 @@
 const SUPABASE_URL = 'https://yythvjufqnmvwwlecygj.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5dGh2anVmcW5tdnd3bGVjeWdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMDA2NzYsImV4cCI6MjA4ODU3NjY3Nn0.LuuchGYqhqWfAcFxP0ZjIckQVeBhOwR7MItaFaUFjBo';
 
-// 閲覧者モードかどうかの判定（sessionStorageを毎回直接読むより使い回せるよう関数化）
-function isViewerRole() { return sessionStorage.getItem('soreike_role') === 'viewer'; }
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ===== ロール管理（v29：Supabase Auth のJWTクレームを唯一の正とする） =====
+// currentRole は applyRole() でのみ設定される。旧来の sessionStorage['soreike_role'] は廃止。
+let currentRole = null;
+function isViewerRole() { return currentRole === 'viewer'; }
+function isAdminRole()  { return currentRole === 'admin';  }
+// JWTの app_metadata.role からロールを判定する。
+// app_metadata はサーバー側（Dashboard / service_role）でしか書き換えられない。
+// user_metadata は本人が自由に書き換えられるため、ロール判定には絶対に使わない。
+// クレームが無い・壊れている場合は安全側に倒して「閲覧者」として扱う。
+function roleFromSession(session) {
+  return session?.user?.app_metadata?.role === 'admin' ? 'admin' : 'viewer';
+}
+// v29: Supabase Auth へ移行。セッションは sessionStorage に保存する
+// （タブを閉じるとログアウト＝従来の挙動を維持。localStorage 既定のままだと挙動が変わってしまう）
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    storage: window.sessionStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+});
 
 let dbReady = false;
 
@@ -2041,16 +2061,60 @@ async function loadFromDB() {
   }
 }
 
+// ===== RLS / 認証エラーの明示的な通知（v29） =====
+// 背景：従来は保存失敗時に画面右上の小さな「⚠️ 保存失敗」表示のみだったため、
+// 入力内容が画面上（ローカル状態）には残ったまま保存されておらず、リロードで消える危険があった。
+// RLS導入後は「権限による拒否」が起こり得るので、見落とせない形で警告する。
+function isAuthOrRlsError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg  = String(error.message || '');
+  return code === '42501' || code === 'PGRST301' || code === '401' || code === '403'
+      || /row-level security|permission denied|JWT|not authorized|Unauthorized/i.test(msg);
+}
+let dbBlockedNotified = false;
+function closeDbBlocked() {
+  const el = document.getElementById('db-blocked-overlay');
+  if (el) el.remove();
+  dbBlockedNotified = false;
+}
+function notifyDbBlocked(action, table, error) {
+  if (dbBlockedNotified) return;
+  dbBlockedNotified = true;
+  const msg = String((error && error.message) || '').slice(0, 200);
+  const div = document.createElement('div');
+  div.id = 'db-blocked-overlay';
+  div.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:24px';
+  div.innerHTML = '<div style="background:var(--surface);border:2px solid var(--red);border-radius:12px;max-width:520px;padding:24px;color:var(--text);line-height:1.7">'
+    + '<div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:12px">\u26a0\ufe0f サーバー側で拒否されました</div>'
+    + '<div style="font-size:14px">この操作は権限エラーで失敗しました。<b>入力した内容は保存されていません。</b>画面に表示されている内容は保存前の一時的なものなので、リロードすると消えます。</div>'
+    + '<div style="font-size:13px;color:var(--muted);margin-top:12px">考えられる原因：<br>・閲覧専用アカウントでログインしている<br>・ログインの有効期限が切れた（再ログインしてください）<br>・RLSポリシーの設定に誤りがある</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-top:12px;word-break:break-all">対象: ' + action + ' / ' + table + '<br>' + msg + '</div>'
+    + '<button onclick="closeDbBlocked()" style="margin-top:18px;width:100%;padding:10px;border-radius:8px;border:none;background:var(--red);color:#fff;font-size:14px;font-weight:600;cursor:pointer">閉じる</button>'
+    + '</div>';
+  document.body.appendChild(div);
+}
+
 // state→DB 保存ヘルパー
 async function dbSave(table, data) {
   const { error } = await sb.from(table).upsert(data, { onConflict: 'id' });
-  if (error) { console.error('DB save error:', table, JSON.stringify(error)); showSyncStatus('error'); return false; }
+  if (error) {
+    console.error('DB save error:', table, JSON.stringify(error));
+    showSyncStatus('error');
+    if (isAuthOrRlsError(error)) notifyDbBlocked('保存', table, error);
+    return false;
+  }
   showSyncStatus('ok');
   return true;
 }
 async function dbDelete(table, id) {
   const { error } = await sb.from(table).delete().eq('id', id);
-  if (error) { console.error('DB delete error:', table, error); showSyncStatus('error'); return false; }
+  if (error) {
+    console.error('DB delete error:', table, JSON.stringify(error));
+    showSyncStatus('error');
+    if (isAuthOrRlsError(error)) notifyDbBlocked('削除', table, error);
+    return false;
+  }
   showSyncStatus('ok');
   return true;
 }
@@ -2098,6 +2162,7 @@ async function insertWithFreshId(table, buildRow, maxRetries = 5) {
     }
     console.error('DB insert error:', table, JSON.stringify(error));
     showSyncStatus('error');
+    if (isAuthOrRlsError(error)) notifyDbBlocked('新規登録', table, error);
     throw error;
   }
   showSyncStatus('error');
@@ -5229,7 +5294,7 @@ function renderSales() {
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
     const existingMep = state.monthEndPays.find(p => p.casterId === c.id && p.targetY === y && p.targetM === m);
-    const isViewerRole = sessionStorage.getItem('soreike_role') === 'viewer';
+    const isViewer = isViewerRole();
     const mepAttachCount = existingMep ? state.receipts.filter(rec => rec.monthEndPayId === existingMep.id).length : 0;
     const mepAttachBadge = mepAttachCount > 0
       ? `<div style="font-size:10px;color:var(--green);margin-top:3px">📎 ${mepAttachCount}件</div>`
@@ -5237,12 +5302,12 @@ function renderSales() {
     const mepBtn = remaining > 0
       ? existingMep
         ? `<div style="display:flex;flex-direction:column;align-items:center">` +
-            (isViewerRole
+            (isViewer
               ? `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green);font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">👁️ 内容を確認</button>`
               : `<button class="btn btn-sm" style="background:var(--green);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},${existingMep.id})">✏️ 確認・編集</button>`) +
             mepAttachBadge +
           `</div>`
-        : (isViewerRole
+        : (isViewer
             ? `<span style="color:var(--muted);font-size:11px">未登録</span>`
             : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 支払いを記録</button>`)
       : '<span style="color:var(--muted);font-size:11px">-</span>';
@@ -5321,8 +5386,8 @@ function renderSales() {
     const deadline = `${dlY}年${dlM}月10日`;
     const targetY = d.targetY ?? d.y; const targetM = d.targetM ?? d.m;
     const isCross = (targetY !== d.y || targetM !== d.m);
-    const isViewerRole = sessionStorage.getItem('soreike_role') === 'viewer';
-    const dpEditBtn = isViewerRole ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button>`;
+    const isViewer = isViewerRole();
+    const dpEditBtn = isViewer ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openDpEditModal(${d.id})">編集</button>`;
     return `<tr>
       <td style="color:var(--muted);font-size:12px">${d.date}</td>
       <td style="font-size:12px"><span class="badge ${isCross?'badge-orange':'badge-purple'}">${targetY}年${targetM}月分${isCross?'　⚡':''}
@@ -9924,28 +9989,81 @@ async function downloadLedgerXlsx() {
   }
 }
 
-// ===== ログイン・閲覧者制御 =====
-const PASS_ADMIN  = '12251225';
-const PASS_VIEWER = 'kuramoto';
+// ===== ログイン・閲覧者制御（v29：Supabase Auth） =====
+// パスワードのハードコード判定（旧 PASS_ADMIN / PASS_VIEWER）は廃止。認証はSupabase側で行う。
+// 画面は従来どおり「パスワード欄1つだけ」を維持するため、候補アカウントを順に試行する。
+// メールアドレスはシステム内部専用の識別子（実際のメール送信は行わない）。
+// ※アカウントを追加する場合はこの配列に1行追記する。
+//   ただし同じパスワードを複数アカウントに設定すると区別できないため、パスワードは必ず別にすること。
+const AUTH_ACCOUNTS = [
+  'admin@soreike-kanri.local',     // 管理者（髙橋・管理人 共用）
+  'kuramoto@soreike-kanri.local',  // 閲覧者（倉本／経理担当）
+];
+const LAST_EMAIL_KEY = 'soreike_last_email';
 
-function doLogin() {
-  const pass = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-err');
-  if (pass === PASS_ADMIN) {
-    sessionStorage.setItem('soreike_role', 'admin');
-    applyRole('admin');
-  } else if (pass === PASS_VIEWER) {
-    sessionStorage.setItem('soreike_role', 'viewer');
-    applyRole('viewer');
-  } else {
-    errEl.textContent = 'パスワードが正しくありません';
-    document.getElementById('login-pass').value = '';
+function isBadCredentialError(error) {
+  return !!error && /invalid login credentials|invalid_credentials/i.test(error.message || '');
+}
+
+async function doLogin() {
+  const passEl = document.getElementById('login-pass');
+  const errEl  = document.getElementById('login-err');
+  const btnEl  = document.querySelector('.login-btn');
+  const pass = passEl.value;
+  if (!pass) { errEl.textContent = 'パスワードを入力してください'; return; }
+
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = '認証中...'; }
+  errEl.textContent = '';
+
+  // 前回ログインに成功したアカウントを先に試す（無駄な試行と待ち時間を減らす）
+  const last = localStorage.getItem(LAST_EMAIL_KEY);
+  const candidates = (last && AUTH_ACCOUNTS.includes(last))
+    ? [last].concat(AUTH_ACCOUNTS.filter(e => e !== last))
+    : AUTH_ACCOUNTS.slice();
+
+  let lastError = null;
+  try {
+    for (const email of candidates) {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (!error && data && data.session) {
+        localStorage.setItem(LAST_EMAIL_KEY, email);
+        passEl.value = '';
+        applyRole(roleFromSession(data.session));
+        return;
+      }
+      lastError = error;
+      // 「認証情報が違う」以外のエラー（通信不良・設定不備等）は
+      // 他アカウントを試しても同じなので、即座に中断して原因を表示する
+      if (error && !isBadCredentialError(error)) break;
+    }
+    if (lastError && !isBadCredentialError(lastError)) {
+      errEl.textContent = 'ログインできません：' + (lastError.message || '不明なエラー');
+    } else {
+      errEl.textContent = 'パスワードが正しくありません';
+      passEl.value = '';
+    }
+  } catch (e) {
+    console.error('login error:', e);
+    errEl.textContent = '通信エラー：' + (e.message || e);
+  } finally {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'ログイン'; }
   }
 }
 
+async function doLogout() {
+  if (!confirm('ログアウトしますか？')) return;
+  try { await sb.auth.signOut(); } catch (e) { console.error('signOut error:', e); }
+  location.reload();
+}
+
 function applyRole(role) {
+  // ロールはここでのみ確定させる（isViewerRole() が参照する唯一の場所）
+  currentRole = role;
   // ログイン画面を隠す
   document.getElementById('login-screen').classList.add('hidden');
+  // ログアウト項目を表示
+  const logoutEl = document.getElementById('nav-logout');
+  if (logoutEl) logoutEl.style.display = '';
 
   if (role === 'viewer') {
     // 閲覧者バナー表示
@@ -10056,12 +10174,25 @@ function applyViewerRestrictions() {
 // ※ loadFromDB()・pcDateEl設定はapplyRole()内で実行
 
 // セッション復元（全関数定義後に実行）
-(function initAuth() {
-  const role = sessionStorage.getItem('soreike_role');
-  if (role === 'admin' || role === 'viewer') {
-    applyRole(role);
+(async function initAuth() {
+  try {
+    const { data, error } = await sb.auth.getSession();
+    if (!error && data && data.session) {
+      applyRole(roleFromSession(data.session));
+    }
+    // セッションなし → ログイン画面がそのまま表示される
+  } catch (e) {
+    console.error('セッション復元に失敗:', e);
   }
-  // セッションなし → ログイン画面がそのまま表示される
+
+  // トークン更新の失敗やサインアウトを検知したらログイン画面へ戻す
+  sb.auth.onAuthStateChange((event) => {
+    if (event === 'SIGNED_OUT') {
+      currentRole = null;
+      const ls = document.getElementById('login-screen');
+      if (ls) ls.classList.remove('hidden');
+    }
+  });
 })();
 </script>
 </body>
