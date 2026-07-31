@@ -1870,19 +1870,30 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 });
 
 // ===== v30: Edge Function 呼び出し用の Authorization ヘッダー =====
-// ⚠️ ここに「ユーザーのaccess token」を入れてはならない（v29 Phase 3aで試行し失敗・撤回）。
+// ⚠️ Authorization には「ユーザーのaccess token」を入れてはならない（v29 Phase 3aで試行し失敗・撤回）。
 //    このプロジェクトのSupabase Authは非対称鍵でaccess tokenを ES256 で署名するが、
 //    Edge Functionsのゲートウェイ（verify_jwt=true）はレガシーHS256しか検証できないため、
 //    関数に到達する前に 401 UNAUTHORIZED_UNSUPPORTED_TOKEN_ALGORITHM
 //    （"Unsupported JWT algorithm ES256"）で弾かれる。Supabase側の既知の未解決問題。
 //    → ゲートウェイ通過用のトークンは anon key を維持する。
-//    → 実際の認証・権限チェックは Phase 3b（verify_jwt=false ＋ 関数内でJWKS検証）で行う。
+// v30 Phase 3b（Step 3）：関数側の自前認証用に x-user-token を追加。
+//    access tokenは1時間で失効するため、呼び出しの直前に毎回 getSession() で取り直す。
+//    （変数に保存して使い回すと1時間後に突然全ての添付・AI機能が停止するため厳禁）
+//    現時点では REQUIRE_AUTH_USER が未設定（false）なので、送っても拒否は発生しない。
 // 呼び出し側10箇所は `headers: await authHeaders()` に集約済みなので、
-// Phase 3b ではこの関数1つを差し替えるだけで移行できる。
+// この関数1つの変更だけで全箇所に反映される。
 async function authHeaders(extra) {
+  let userToken = '';
+  try {
+    const { data } = await sb.auth.getSession();
+    userToken = data?.session?.access_token || '';
+  } catch (e) {
+    console.error('authHeaders: getSession失敗（x-user-tokenなしで続行）:', e);
+  }
   return Object.assign({
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    'x-user-token': userToken,
   }, extra || {});
 }
 
