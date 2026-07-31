@@ -2375,6 +2375,38 @@ function sortIcon(key) {
     : '<span style="color:var(--accent);margin-left:4px">↓</span>';
 }
 
+// ===== v30 Phase 4: XSS対策 =====
+// DB由来の自由記述フィールド（配信者名・メモ・備考・ファイル名等）を
+// innerHTMLへ埋め込む前に必ずこの関数を通す。
+// 対象：& < > " ' /（/ を含めるのは "</script>" 等によるタグ終端の偽装を防ぐため）
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\//g, '&#47;');
+}
+
+// onclick="foo('${...}')" のように、HTML属性の中でさらにJS文字列リテラルとして
+// 埋め込む値には escapeHtml() だけでは不十分（ブラウザはHTML実体参照をJSとして
+// 解釈する前に一度デコードするため、&#39; は結局 ' に戻ってシングルクォートを
+// 抜け出せてしまう）。JSエスケープ → HTML属性エスケープの2段階を行う。
+// 例：ファイル名を openFilePreview('...') の引数として埋め込む箇所で使用
+function escapeJsAttr(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/\r?\n/g, '\\n')
+    .replace(/'/g, "\\'")
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // ===== CALC =====
 const fmt = n => Math.round(n).toLocaleString('ja-JP');
 const yen = n => '¥' + fmt(n);
@@ -2594,7 +2626,7 @@ function openReceiptModal(expenseId) {
   const exp = state.expenses.find(e => e.id === expenseId);
   if (!exp) return;
   document.getElementById('receipt-mgmt-expense-info').innerHTML =
-    `<span style="color:var(--muted)">${exp.date}</span>　<strong>${exp.name}</strong>　<span style="font-family:var(--mono);color:var(--accent)">${yen(exp.amount)}</span>　${getCatBadge(exp.cat)}`;
+    `<span style="color:var(--muted)">${exp.date}</span>　<strong>${escapeHtml(exp.name)}</strong>　<span style="font-family:var(--mono);color:var(--accent)">${yen(exp.amount)}</span>　${getCatBadge(exp.cat)}`;
   document.getElementById('receipt-mgmt-note').value = '';
   renderReceiptList();
   document.getElementById('receipt-mgmt-modal').style.display = 'flex';
@@ -2617,14 +2649,14 @@ function renderReceiptList() {
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.filename)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">
             ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
-            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+            ${r.note ? `　<span style="color:var(--yellow)">📝 ${escapeHtml(r.note)}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
-        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">👁️</button>
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">⬇️</button>
         <button class="btn btn-danger btn-sm" onclick="deleteReceipt(${r.id},'${r.r2Key}')">削除</button>
       </div>`).join('');
 }
@@ -2861,14 +2893,14 @@ function renderPayAttachList() {
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.filename)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">
             ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
-            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+            ${r.note ? `　<span style="color:var(--yellow)">📝 ${escapeHtml(r.note)}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
-        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">👁️</button>
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">⬇️</button>
         <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
       </div>`).join('');
 }
@@ -3061,7 +3093,7 @@ function renderRefPayList() {
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="flex:1;min-width:0">
           <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong></div>
-          ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+          ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(p.note)}</div>` : ''}
         </div>
         ${payAttachBadge('referrer_pay', p.id)}
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editRefPay(${p.id})">編集</button>`}
@@ -3972,7 +4004,7 @@ async function deleteCaster(id) {
 function renderCasters() {
   const refSel = document.getElementById('c-ref');
   const editRefSel = document.getElementById('edit-ref');
-  const refOpts = '<option value="">なし</option>' + state.referrers.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  const refOpts = '<option value="">なし</option>' + state.referrers.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
   if (refSel) refSel.innerHTML = refOpts;
   if (editRefSel) editRefSel.innerHTML = refOpts;
   const statusRank = c => c.retired ? 2 : (c.onHold ? 1 : 0);
@@ -3985,10 +4017,10 @@ function renderCasters() {
       ? '<span class="badge badge-green">✅ 登録済</span>'
       : '<span class="badge badge-yellow">⚠️ 未登録</span>';
     const invNo = c.invoice === 'yes' && c.invoiceNo
-      ? `<span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.invoiceNo}</span>`
+      ? `<span style="font-family:var(--mono);font-size:12px;color:var(--accent)">${escapeHtml(c.invoiceNo)}</span>`
       : '<span style="color:var(--muted)">-</span>';
     const memoCell = c.memo
-      ? `<td style="max-width:160px"><span style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:4px;padding:2px 8px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.memo}">📝 ${c.memo}</span></td>`
+      ? `<td style="max-width:160px"><span style="font-size:11px;color:var(--muted);background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:4px;padding:2px 8px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.memo)}">📝 ${escapeHtml(c.memo)}</span></td>`
       : `<td style="color:var(--muted)">-</td>`;
     const statusBadge = c.retired
       ? `<span class="badge" style="background:rgba(148,163,184,0.15);color:var(--muted);border:1px solid var(--border)">⚫ 退所済${c.retiredDate ? `（${c.retiredDate}）` : ''}</span>`
@@ -3996,10 +4028,10 @@ function renderCasters() {
         ? `<span class="badge badge-yellow">🟡 休止中${c.onHoldDate ? `（${c.onHoldDate}〜）` : ''}</span>`
         : `<span class="badge badge-green">🟢 在籍中</span>`;
     return `<tr${(c.retired || c.onHold) ? ' style="opacity:0.55"' : ''}>
-      <td><strong>${c.name}</strong></td>
+      <td><strong>${escapeHtml(c.name)}</strong></td>
       <td>${statusBadge}</td>
       <td class="num"><span class="badge badge-blue">${c.rate}%</span></td>
-      <td>${ref ? `<span class="badge badge-orange">${ref.name}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
+      <td>${ref ? `<span class="badge badge-orange">${escapeHtml(ref.name)}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
       <td>${invBadge}</td>
       <td>${invNo}</td>
       ${memoCell}
@@ -4244,12 +4276,12 @@ function renderReferrers() {
       ? `税込報酬×${(r.r1pct*100).toFixed(2)}%`
       : `①コイン×7×${(r.r1pct*100).toFixed(2)}%　②コイン×7×${((r.r2a||0)*100).toFixed(0)}%×${((r.r2b||0)*100).toFixed(0)}%`;
     return `<tr>
-      <td><strong>${r.name}</strong></td>
+      <td><strong>${escapeHtml(r.name)}</strong></td>
       <td>${patternLabel}</td>
       <td style="font-size:12px;color:var(--muted)">${rateLabel}</td>
-      <td>${casters.length > 0 ? casters.map(c => `<span class="badge badge-blue" style="margin-right:4px">${c.name}</span>`).join('') : '<span style="color:var(--muted)">なし</span>'}</td>
-      <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo||'<span style="color:var(--muted)">-</span>'}</td>
-      <td style="color:var(--muted);font-size:12px">${r.note||'-'}</td>
+      <td>${casters.length > 0 ? casters.map(c => `<span class="badge badge-blue" style="margin-right:4px">${escapeHtml(c.name)}</span>`).join('') : '<span style="color:var(--muted)">なし</span>'}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo ? escapeHtml(r.invoiceNo) : '<span style="color:var(--muted)">-</span>'}</td>
+      <td style="color:var(--muted);font-size:12px">${r.note ? escapeHtml(r.note) : '-'}</td>
       <td style="display:flex;gap:6px">
         <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="openRefPayModal(${r.id})">💰 支払い記録</button>
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openRefEditModal(${r.id})">編集</button>`}
@@ -4715,10 +4747,10 @@ function updateSalePreview() {
   document.getElementById('p-transfer').textContent = yen(transfer);
   document.getElementById('p-ref-rows').innerHTML = ref ? `
     ${ref.refType==='B' ? `
-      <div class="sim-row"><div class="sim-label">紹介料（税込報酬×${(ref.r1pct*100).toFixed(2)}%）→ ${ref.name}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r2)}</div></div>
+      <div class="sim-row"><div class="sim-label">紹介料（税込報酬×${(ref.r1pct*100).toFixed(2)}%）→ ${escapeHtml(ref.name)}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r2)}</div></div>
     ` : `
-      <div class="sim-row"><div class="sim-label">紹介料① （コイン×7×${(ref.r1pct*100).toFixed(2)}%）→ ${ref.name}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r1)}</div></div>
-      <div class="sim-row"><div class="sim-label">紹介料② （コイン×7×${((ref.r2a||0)*100).toFixed(0)}%×${((ref.r2b||0)*100).toFixed(0)}%）→ ${ref.name}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r2)}</div></div>
+      <div class="sim-row"><div class="sim-label">紹介料① （コイン×7×${(ref.r1pct*100).toFixed(2)}%）→ ${escapeHtml(ref.name)}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r1)}</div></div>
+      <div class="sim-row"><div class="sim-label">紹介料② （コイン×7×${((ref.r2a||0)*100).toFixed(0)}%×${((ref.r2b||0)*100).toFixed(0)}%）→ ${escapeHtml(ref.name)}</div><div style="font-family:var(--mono);color:#fb923c">${yen(r2)}</div></div>
     `}
     <div class="sim-row"><div class="sim-label">紹介料合計</div><div style="font-family:var(--mono);color:#fb923c;font-weight:700">${yen(refTotal)}</div></div>
   ` : '';
@@ -4779,7 +4811,7 @@ function sgeRenderRow(container, s, num) {
     </div>
     <div style="margin-top:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
-      <input type="text" class="form-control sge-note" value="${s.note||''}" placeholder="任意" style="width:100%">
+      <input type="text" class="form-control sge-note" value="${escapeHtml(s.note||'')}" placeholder="任意" style="width:100%">
     </div>
     <div style="margin-top:8px">
       <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
@@ -4927,7 +4959,7 @@ function openSaleEditModal(id) {
   const s = state.sales.find(x => x.id === id);
   if (!s) return;
   document.getElementById('se-id').value = id;
-  document.getElementById('se-caster').innerHTML = state.casters.map(c => `<option value="${c.id}"${c.id===s.casterId?' selected':''}>${c.name}</option>`).join('');
+  document.getElementById('se-caster').innerHTML = state.casters.map(c => `<option value="${c.id}"${c.id===s.casterId?' selected':''}>${escapeHtml(c.name)}</option>`).join('');
   document.getElementById('se-date').value = s.date;
   document.getElementById('se-coins').value = s.coins;
   document.getElementById('se-rate').value = s.rate || '';
@@ -5163,7 +5195,7 @@ function openDpEditModal(id) {
 
   // 配信者セレクト
   const cSel = document.getElementById('dp-edit-caster');
-  cSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  cSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   cSel.value = d.casterId;
   cSel.onchange = () => updateDpEditSaleList(parseInt(cSel.value), []);
 
@@ -5288,7 +5320,7 @@ function renderSales() {
   const activeCasters = state.casters.filter(c => !c.retired && !c.onHold);
   const sCasterSel = document.getElementById('s-caster');
   if (sCasterSel) {
-    sCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    sCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
     sCasterSel.onchange = updateSalePreview;
     document.getElementById('s-coins').oninput = updateSalePreview;
   }
@@ -5296,7 +5328,7 @@ function renderSales() {
   // 前払いセレクト
   const dpCasterSel = document.getElementById('dp-caster');
   if (dpCasterSel) {
-    dpCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    dpCasterSel.innerHTML = activeCasters.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
     dpCasterSel.onchange = updateDpSaleList;
     document.getElementById('dp-amount').oninput = updateDpPreview;
     updateDpSaleList(); // 初期表示時も即反映
@@ -5362,7 +5394,7 @@ function renderSales() {
   </tr>` : '';
 
   document.getElementById('settlement-table').innerHTML = settlementRows.map(r => `<tr>
-    <td><strong>${r.name}</strong></td>
+    <td><strong>${escapeHtml(r.name)}</strong></td>
     <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
     <td class="num" style="color:var(--yellow)">${r.totalDailyAmt>0?yen(r.totalDailyAmt):'-'}</td>
     <td class="num" style="color:var(--green);font-weight:600">${r.totalDailyTransfer>0?yen(r.totalDailyTransfer):'-'}</td>
@@ -5423,7 +5455,7 @@ function renderSales() {
       <td class="num" style="color:var(--red)">${yen(d.amount)}</td>
       <td class="num" style="color:var(--yellow)">${yen(d.srcTax)}</td>
       <td class="num" style="color:var(--green)">${yen(d.amount - d.srcTax)}</td>
-      <td style="color:var(--muted);font-size:12px">${d.note||'-'}</td>
+      <td style="color:var(--muted);font-size:12px">${d.note?escapeHtml(d.note):'-'}</td>
       <td style="font-size:12px;color:var(--accent)">${deadline}</td>
       <td style="display:flex;gap:6px">${payAttachBadge('daily_pay', d.id)}${dpEditBtn}<button class="btn btn-danger btn-sm" onclick="deleteDailyPay(${d.id})">削除</button></td>
     </tr>`;
@@ -5535,7 +5567,7 @@ function renderSales() {
       <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}</td>
       <td class="num" style="color:var(--yellow);${fw}">${yen(sumSrc)}</td>
       <td class="num" style="color:var(--green);${fw}">${yen(sumTransfer)}</td>
-      <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
+      <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
       <td class="num" style="color:var(--muted);${fw}">${sumR1!==0?yen(sumR1):'-'}</td>
       <td class="num" style="color:var(--muted);${fw}">${sumR2!==0?yen(sumR2):'-'}</td>
       <td class="num" style="color:#fb923c;${fw}">${sumRcTotal!==0?yen(sumRcTotal):'-'}</td>
@@ -5573,7 +5605,7 @@ function renderSales() {
           <td class="num" style="color:var(--red)">${yen(reward)}</td>
           <td class="num" style="color:var(--yellow)">${yen(src)}</td>
           <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
-          <td>${ref?`<span class="badge badge-orange">${ref.name}</span>`:'-'}</td>
+          <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${r1!==0?yen(r1):'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${r2!==0?yen(r2):'-'}</td>
           <td class="num" style="color:#fb923c;font-weight:700">${rcTotal!==0?yen(rcTotal):'-'}</td>
@@ -6201,11 +6233,11 @@ function renderPettyCash() {
     const badgeLabel = e.badge === 'initial' ? '初期残高' : e.badge === 'replenish' ? '補充' : '支出';
     return `<tr>
       <td>${e.date}</td>
-      <td><span style="font-size:11px;padding:1px 6px;border-radius:4px;${badgeStyle};margin-right:6px">${badgeLabel}</span>${e.label}</td>
+      <td><span style="font-size:11px;padding:1px 6px;border-radius:4px;${badgeStyle};margin-right:6px">${badgeLabel}</span>${escapeHtml(e.label)}</td>
       <td class="num" style="color:var(--green)">${e.isIncome ? yen(e.amount) : ''}</td>
       <td class="num" style="color:var(--red)">${!e.isIncome ? yen(e.amount) : ''}</td>
       <td class="num" style="color:${e.runningBalance >= 0 ? 'var(--accent)' : 'var(--red)'}; font-weight:600">${yen(e.runningBalance)}</td>
-      <td style="font-size:12px;color:var(--muted)">${e.note || '-'}</td>
+      <td style="font-size:12px;color:var(--muted)">${e.note ? escapeHtml(e.note) : '-'}</td>
       <td>${e.canDelete ? `<button class="btn btn-danger btn-sm" onclick="deletePettyCash(${e.id})">削除</button>` : ''}</td>
     </tr>`;
   }).join('')}</tbody></table>`;
@@ -6267,9 +6299,9 @@ function renderExpenses() {
   document.getElementById('expenses-table').innerHTML = sortedExps.map(e => {
     const taxAmt = calcExpTax(e.amount, e.tax);
     const entertainInfo = (e.cat === '接待交際費' || e.cat === '会議費') && (e.participants || e.purpose)
-      ? `<span style="font-size:11px;color:var(--muted)">${[e.participants, e.purpose].filter(Boolean).join('　')}</span>` : '-';
+      ? `<span style="font-size:11px;color:var(--muted)">${escapeHtml([e.participants, e.purpose].filter(Boolean).join('　'))}</span>` : '-';
     const invBadge = e.invoiceNo
-      ? `<span style="font-size:11px;font-family:var(--mono);color:var(--accent)">${e.invoiceNo}</span>` : '-';
+      ? `<span style="font-size:11px;font-family:var(--mono);color:var(--accent)">${escapeHtml(e.invoiceNo)}</span>` : '-';
     const grp = splitGroups[e.id];
     const grpStyle = grp
       ? `border-left:3px solid var(--accent2);background:${grp.idx % 2 === 1 ? 'rgba(124,92,252,0.04)' : 'rgba(124,92,252,0.02)'}`
@@ -6286,9 +6318,9 @@ function renderExpenses() {
             (isFirst
               ? `<span style="font-size:10px;background:rgba(124,92,252,0.18);color:var(--accent2);border:1px solid rgba(124,92,252,0.35);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">🔗 ${total}件分割</span>`
               : `<span style="font-size:10px;color:var(--accent2);padding:1px 6px;white-space:nowrap">└ ${idx}/${total}</span>`) +
-            `${dispName}</span>`;
+            `${escapeHtml(dispName)}</span>`;
         } else {
-          nameHtml = e.name;
+          nameHtml = escapeHtml(e.name);
         }
         if (e.excludeManager) {
           nameHtml += ` <span style="font-size:10px;background:rgba(124,92,252,0.15);color:var(--accent2);border:1px solid rgba(124,92,252,0.3);border-radius:4px;padding:1px 6px;font-weight:700;white-space:nowrap">報酬除外</span>`;
@@ -6301,15 +6333,15 @@ function renderExpenses() {
         }
         return nameHtml;
       })()}</td>
-      <td data-label="支払先" style="font-size:12px;color:var(--muted)">${e.payee||'-'}</td>
+      <td data-label="支払先" style="font-size:12px;color:var(--muted)">${e.payee ? escapeHtml(e.payee) : '-'}</td>
       <td data-label="勘定科目">${getCatBadge(e.cat)}</td>
       <td data-label="金額" class="num">${yen(e.amount)}</td>
       <td data-label="消費税区分"><span class="badge ${e.tax>0?'badge-blue':'badge-yellow'}">${e.tax===10?'10%':e.tax===8?'8%軽減':e.tax===0?'非課税':'対象外'}</span></td>
       <td data-label="消費税額" class="num" style="color:var(--accent)">${taxAmt>0?yen(taxAmt):'-'}</td>
       <td data-label="インボイス">${invBadge}</td>
       <td data-label="参加者・目的">${entertainInfo}</td>
-      <td data-label="支払方法" style="font-size:12px;color:var(--muted)">${e.method}</td>
-      <td data-label="備考" style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${e.note||''}">${e.note||'-'}</td>
+      <td data-label="支払方法" style="font-size:12px;color:var(--muted)">${escapeHtml(e.method)}</td>
+      <td data-label="備考" style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(e.note||'')}">${e.note ? escapeHtml(e.note) : '-'}</td>
       <td>${(() => {
         const recs = state.receipts.filter(r => r.expenseId === e.id);
         if (recs.length > 0) {
@@ -6359,8 +6391,8 @@ function renderExpenses() {
           <tbody>
             ${items.map(e => `<tr style="border-top:1px solid var(--border)">
               <td style="padding:6px 10px;color:var(--muted)">${e.date}</td>
-              <td style="padding:6px 10px">${e.name}</td>
-              <td style="padding:6px 10px;color:var(--muted)">${e.payee||'-'}</td>
+              <td style="padding:6px 10px">${escapeHtml(e.name)}</td>
+              <td style="padding:6px 10px;color:var(--muted)">${e.payee ? escapeHtml(e.payee) : '-'}</td>
               <td style="padding:6px 10px;text-align:right;font-family:var(--mono);color:${color};font-weight:600">${yen(e.amount)}</td>
               <td style="padding:6px 10px">
                 ${e.settled
@@ -6778,14 +6810,14 @@ function renderTaxAttachList() {
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="font-size:20px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+          <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.filename)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">
             ${new Date(r.uploadedAt).toLocaleString('ja-JP')}　${r.fileSize ? Math.round(r.fileSize/1024) + 'KB' : ''}
-            ${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+            ${r.note ? `　<span style="color:var(--yellow)">📝 ${escapeHtml(r.note)}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
-        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+        <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">👁️</button>
+        <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">⬇️</button>
         <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
       </div>`).join('');
 }
@@ -6896,7 +6928,7 @@ function renderInvoiceSelects() {
   const cSel = document.getElementById('inv-caster');
   if (!cSel) return;
   const prev = cSel.value;
-  cSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  cSel.innerHTML = state.casters.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   if (prev) cSel.value = prev;
 
   // 配信者切替時に前払い選択を更新
@@ -7099,12 +7131,12 @@ function updateInvoicePreview() {
 
   // 振込先
   const bankInfo = (c.bank && c.account)
-    ? `${c.bank}　${c.branch}　${c.account}　${c.holder||c.name}`
+    ? `${escapeHtml(c.bank)}　${escapeHtml(c.branch)}　${escapeHtml(c.account)}　${escapeHtml(c.holder||c.name)}`
     : '振込先未登録（配信者管理で登録してください）';
 
   // インボイス備考
   const invoiceNote = c.invoice === 'yes' && c.invoiceNo
-    ? `登録番号：${c.invoiceNo}`
+    ? `登録番号：${escapeHtml(c.invoiceNo)}`
     : '当方は適格請求書発行事業者ではありません（登録番号なし）。\n本書は適格請求書（インボイス）ではありません。';
 
 
@@ -7115,7 +7147,7 @@ function updateInvoicePreview() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div style="font-size:24px;font-weight:700;letter-spacing:0.18em">請　求　書</div>
         <div style="font-size:12px;color:#444;text-align:right">
-          No.&nbsp;<strong>${invNo}</strong><br>
+          No.&nbsp;<strong>${escapeHtml(invNo)}</strong><br>
           請求日&nbsp;&nbsp;${fmtDate(invDate)}
         </div>
       </div>
@@ -7127,18 +7159,18 @@ function updateInvoicePreview() {
           <div style="font-size:15px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:5px;margin-bottom:10px">${officeName}&emsp;御中</div>
           ${officeAddr ? `<div style="font-size:12px;color:#555;margin-bottom:6px">${officeAddr}</div>` : ''}
           <table style="border:none;font-size:12px;color:#333;margin-top:8px">
-            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${subject}</strong></td></tr>
+            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${escapeHtml(subject)}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">支払期限</td><td style="border:none"><strong>${payDeadline}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">振込先</td><td style="border:none">${bankInfo}</td></tr>
           </table>
         </div>
         <!-- 右：請求者情報 -->
         <div style="text-align:right;font-size:12px;color:#333;min-width:220px">
-          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${c.realname || c.name}</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(c.realname || c.name)}</div>
           ${c.zip ? `<div style="color:#555">${fmtZip(c.zip)}</div>` : ''}
-          ${c.address ? `<div style="color:#555">${c.address}</div>` : ''}
-          ${c.tel ? `<div style="color:#555;margin-top:2px">TEL：${c.tel}</div>` : ''}
-          ${c.invoice==='yes'&&c.invoiceNo ? `<div style="color:#555;margin-top:4px">登録番号：${c.invoiceNo}</div>` : ''}
+          ${c.address ? `<div style="color:#555">${escapeHtml(c.address)}</div>` : ''}
+          ${c.tel ? `<div style="color:#555;margin-top:2px">TEL：${escapeHtml(c.tel)}</div>` : ''}
+          ${c.invoice==='yes'&&c.invoiceNo ? `<div style="color:#555;margin-top:4px">登録番号：${escapeHtml(c.invoiceNo)}</div>` : ''}
         </div>
       </div>
 
@@ -7163,7 +7195,7 @@ function updateInvoicePreview() {
         <tbody>
           ${rows.map((r,i) => `
             <tr style="background:${i%2===0?'#fff':'#f8fafc'};${r.deduct?'color:#c0392b':''}">
-              <td style="padding:8px 10px;border-bottom:1px solid #e8ecf0">${r.label}${r.taxRate===8?' ※':''}${!r.deduct&&r.taxRate!==0?' ':''}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #e8ecf0">${escapeHtml(r.label)}${r.taxRate===8?' ※':''}${!r.deduct&&r.taxRate!==0?' ':''}</td>
               <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8ecf0">${r.qty}</td>
               <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8ecf0">件</td>
               <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #e8ecf0;font-family:monospace">${r.unitPrice<0?'('+fmt(-r.unitPrice)+')':fmt(r.unitPrice)}</td>
@@ -7464,7 +7496,7 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
       const hasExcl = r.hasExcludedRecs || r.allCount > r.liveCount;
       const countDiff = r.allCount > r.liveCount;
       return `<tr>
-      <td><strong>${r.c.name}</strong></td>
+      <td><strong>${escapeHtml(r.c.name)}</strong></td>
       <td class="num" style="color:var(--muted)">${r.liveCount}回${countDiff?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${r.allCount}回)</span>`:''}</td>
       <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span>${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${fmt(r.allCoins)}C)</span>`:''}</td>
       <td class="num" style="color:var(--red)">${yen(r.totalReward)}${hasExcl?`<span style="font-size:10px;color:var(--yellow);margin-left:4px">(${yen(r.allReward)})</span>`:''}</td>
@@ -7561,7 +7593,7 @@ function renderReport() {
       const hasSales = sales.some(s => s.casterId === c.id);
       if (!hasSales) return '';
       const active = reportTab === String(c.id);
-      return `<button class="btn btn-sm" style="background:${active?'var(--accent2)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border)" onclick="setReportTab('${c.id}')">${c.name}</button>`;
+      return `<button class="btn btn-sm" style="background:${active?'var(--accent2)':'var(--surface2)'};color:${active?'#fff':'var(--muted)'};border:1px solid var(--border)" onclick="setReportTab('${c.id}')">${escapeHtml(c.name)}</button>`;
     }).join('');
   }
   const allBtn = document.getElementById('report-tab-all');
@@ -7606,7 +7638,7 @@ function renderReport() {
           <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
-          <td><strong>${r.c.name}</strong></td>
+          <td><strong>${escapeHtml(r.c.name)}</strong></td>
           <td class="num"><span class="coin-badge">${fmt(r.totalCoins)}C</span></td>
           <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
           <td class="num" style="color:var(--yellow)">${yen(r.totalSrc)}</td>
@@ -7717,7 +7749,7 @@ function renderRefReportSelects() {
   const sel = document.getElementById('refReport-sel');
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = state.referrers.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+  sel.innerHTML = state.referrers.map(r => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
   if (prev) sel.value = prev;
   renderRefReport();
 }
@@ -7770,7 +7802,7 @@ function renderRefReport() {
 
   const rowsHTML = rows.map(r => `
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:16px 20px;margin-bottom:12px;font-size:13px;line-height:2">
-      <div><strong>配信者名：${r.c.name}</strong></div>
+      <div><strong>配信者名：${escapeHtml(r.c.name)}</strong></div>
       <div>獲得コイン数：${fmt(r.totalCoins)}コイン</div>
       <div>報酬額：${yen(r.totalReward)}</div>
       ${isA ? `<div>${r2label}：${yen(r.r2)}</div><div>${r1label}：${yen(r.r1)}</div>` : `<div>${r2label}：${yen(r.r2)}</div>`}
@@ -7792,7 +7824,7 @@ function renderRefReport() {
   const payDeadline = `${nextY}年${nextM}月22日`;
   const invNo = genInvoiceNumber(ref.name, invDate);
   const bankInfo = (ref.bank && ref.account)
-    ? `${ref.bank}　${ref.branch}<br>${ref.account}　${ref.holder||ref.name}`
+    ? `${escapeHtml(ref.bank)}　${escapeHtml(ref.branch)}<br>${escapeHtml(ref.account)}　${escapeHtml(ref.holder||ref.name)}`
     : '<span style="color:#e53e3e">振込先未登録（紹介者管理で登録してください）</span>';
 
   // 請求書ボタン表示制御
@@ -7802,7 +7834,7 @@ function renderRefReport() {
   el.innerHTML = `
     <div id="refReport-print-area" style="background:#fff;padding:32px;max-width:600px;border:1px solid #dde3ec;border-radius:8px;font-family:'Noto Sans JP',sans-serif;color:#1a1a1a">
       <div style="font-size:11px;color:#888;margin-bottom:4px">${y}年${m}月分</div>
-      <div style="font-size:18px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:8px;margin-bottom:16px">${ref.company ? ref.company + (ref.honorific !== 'なし' ? '&emsp;' + ref.honorific : '') : ref.name + (ref.honorific !== 'なし' ? '&emsp;' + ref.honorific : '')}</div>
+      <div style="font-size:18px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:8px;margin-bottom:16px">${ref.company ? escapeHtml(ref.company) + (ref.honorific !== 'なし' ? '&emsp;' + escapeHtml(ref.honorific) : '') : escapeHtml(ref.name) + (ref.honorific !== 'なし' ? '&emsp;' + escapeHtml(ref.honorific) : '')}</div>
       ${rowsHTML}
       ${summaryHTML}
     </div>`;
@@ -7819,7 +7851,7 @@ function renderRefReport() {
   const subject   = `${y}年${m}月分 営業協力業務委託料`;
   const fmtDateRef = d => { if(!d) return ''; const [yy,mm,dd]=d.split('-'); return `${yy}年${parseInt(mm)}月${parseInt(dd)}日`; };
   const invoiceNoteRef = ref.invoiceNo
-    ? `登録番号：${ref.invoiceNo}`
+    ? `登録番号：${escapeHtml(ref.invoiceNo)}`
     : '当方は適格請求書発行事業者ではありません（登録番号なし）。\n本書は適格請求書（インボイス）ではありません。';
 
   invEl.innerHTML = `
@@ -7829,7 +7861,7 @@ function renderRefReport() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div style="font-size:24px;font-weight:700;letter-spacing:0.18em">請　求　書</div>
         <div style="font-size:12px;color:#444;text-align:right">
-          No.&nbsp;<strong>${invNo}</strong><br>
+          No.&nbsp;<strong>${escapeHtml(invNo)}</strong><br>
           請求日&nbsp;&nbsp;${fmtDateRef(invDate)}
         </div>
       </div>
@@ -7841,18 +7873,18 @@ function renderRefReport() {
           <div style="font-size:15px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:5px;margin-bottom:10px">${officeName}&emsp;御中</div>
           ${officeAddr ? `<div style="font-size:12px;color:#555;margin-bottom:6px">${officeAddr}</div>` : ''}
           <table style="border:none;font-size:12px;color:#333;margin-top:8px">
-            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${subject}</strong></td></tr>
+            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${escapeHtml(subject)}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">支払期限</td><td style="border:none"><strong>${payDeadline}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">振込先</td><td style="border:none">${bankInfo}</td></tr>
           </table>
         </div>
         <!-- 右：請求者情報 -->
         <div style="text-align:right;font-size:12px;color:#333;min-width:220px">
-          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${ref.name}</div>
+          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${escapeHtml(ref.name)}</div>
           ${ref.zip ? `<div style="color:#555">${fmtZip(ref.zip)}</div>` : ''}
-          ${ref.address ? `<div style="color:#555">${ref.address}</div>` : ''}
-          ${ref.tel ? `<div style="color:#555;margin-top:2px">TEL：${ref.tel}</div>` : ''}
-          ${ref.invoiceNo ? `<div style="color:#555;margin-top:4px">登録番号：${ref.invoiceNo}</div>` : ''}
+          ${ref.address ? `<div style="color:#555">${escapeHtml(ref.address)}</div>` : ''}
+          ${ref.tel ? `<div style="color:#555;margin-top:2px">TEL：${escapeHtml(ref.tel)}</div>` : ''}
+          ${ref.invoiceNo ? `<div style="color:#555;margin-top:4px">登録番号：${escapeHtml(ref.invoiceNo)}</div>` : ''}
         </div>
       </div>
 
@@ -7878,7 +7910,7 @@ function renderRefReport() {
           ${rows.map((r,i) => `
             <tr style="background:${i%2===0?'#fff':'#f8fafc'}">
               <td style="padding:8px 10px;border-bottom:1px solid #e8ecf0">
-                ${ref.invDesc || '営業協力業務委託料'}
+                ${ref.invDesc ? escapeHtml(ref.invDesc) : '営業協力業務委託料'}
                 ${isA ? `<span style="font-size:11px;color:#888">　顧問料 ¥${fmt(r.r1)} ＋ 紹介料 ¥${fmt(r.r2)}</span>` : ''}
               </td>
               <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8ecf0">1</td>
@@ -8129,9 +8161,9 @@ function renderRefund() {
           <table><thead><tr><th>名前</th><th>インボイス</th><th>番号</th><th class="num">控除率</th></tr></thead>
           <tbody>
             ${state.casters.map(c => `<tr>
-              <td>${c.name}</td>
+              <td>${escapeHtml(c.name)}</td>
               <td><span class="badge ${c.invoice==='yes'?'badge-green':'badge-yellow'}">${c.invoice==='yes'?'✅ 登録済':'⚠️ 未登録'}</span></td>
-              <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.invoiceNo||'<span style="color:var(--muted)">-</span>'}</td>
+              <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${c.invoiceNo?escapeHtml(c.invoiceNo):'<span style="color:var(--muted)">-</span>'}</td>
               <td class="num">${c.invoice==='yes'?'100%':transitLabel}</td>
             </tr>`).join('')}
           </tbody></table>
@@ -8141,9 +8173,9 @@ function renderRefund() {
           <table><thead><tr><th>名前</th><th>インボイス</th><th>番号</th><th class="num">控除率</th></tr></thead>
           <tbody>
             ${state.referrers.map(r => `<tr>
-              <td>${r.name}</td>
+              <td>${escapeHtml(r.name)}</td>
               <td><span class="badge ${r.invoiceNo?'badge-green':'badge-yellow'}">${r.invoiceNo?'✅ 登録済':'⚠️ 未登録'}</span></td>
-              <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo||'<span style="color:var(--muted)">-</span>'}</td>
+              <td style="font-family:var(--mono);font-size:12px;color:var(--accent)">${r.invoiceNo?escapeHtml(r.invoiceNo):'<span style="color:var(--muted)">-</span>'}</td>
               <td class="num">${r.invoiceNo?'100%':transitLabel}</td>
             </tr>`).join('')}
           </tbody></table>
@@ -8251,7 +8283,7 @@ function renderManagerReward() {
     </tr></thead><tbody>
     ${r.replaceExps.map(e => `<tr>
       <td style="padding:6px 10px;font-size:12px;color:var(--muted)">${e.date}</td>
-      <td style="padding:6px 10px;font-size:12px">${e.name}</td>
+      <td style="padding:6px 10px;font-size:12px">${escapeHtml(e.name)}</td>
       <td style="padding:6px 10px;font-size:12px;text-align:right;font-family:var(--mono)">${yen(e.amount)}</td>
     </tr>`).join('')}
     </tbody></table>
@@ -8284,7 +8316,7 @@ function renderManagerInvoice() {
   const payDeadline = `${py}年${pm2}月${lastDayOfNextMonth}日`;
 
   const bankInfo = (mgr.bank && mgr.account)
-    ? `${mgr.bank}　${mgr.branch}　${mgr.accountType||'普通'}　${mgr.account}　${mgr.holder||mgr.name}`
+    ? `${escapeHtml(mgr.bank)}　${escapeHtml(mgr.branch)}　${escapeHtml(mgr.accountType||'普通')}　${escapeHtml(mgr.account)}　${escapeHtml(mgr.holder||mgr.name)}`
     : '<span style="color:#e53e3e">口座未登録</span>';
 
   const subject = `${y}年${m}月分　管理報酬`;
@@ -8316,7 +8348,7 @@ function renderManagerInvoice() {
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <div style="font-size:24px;font-weight:700;letter-spacing:0.18em">請　求　書</div>
         <div style="font-size:12px;color:#444;text-align:right">
-          No.&nbsp;<strong>${invNo}</strong><br>
+          No.&nbsp;<strong>${escapeHtml(invNo)}</strong><br>
           請求日&nbsp;&nbsp;${fmtDate(invDate)}
         </div>
       </div>
@@ -8328,17 +8360,17 @@ function renderManagerInvoice() {
           <div style="font-size:15px;font-weight:700;border-bottom:2px solid #1a1a1a;padding-bottom:5px;margin-bottom:10px">${officeName}&emsp;御中</div>
           ${officeAddr ? `<div style="font-size:12px;color:#555;margin-bottom:6px">${officeAddr}</div>` : ''}
           <table style="border:none;font-size:12px;color:#333;margin-top:8px">
-            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${subject}</strong></td></tr>
+            <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">件名</td><td style="border:none"><strong>${escapeHtml(subject)}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">支払期限</td><td style="border:none"><strong>${payDeadline}</strong></td></tr>
             <tr><td style="padding:2px 8px 2px 0;color:#666;white-space:nowrap;border:none">振込先</td><td style="border:none">${bankInfo}</td></tr>
           </table>
         </div>
         <!-- 右：請求者情報 -->
         <div style="text-align:right;font-size:12px;color:#333;min-width:220px">
-          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${mgr.name || '（管理人名未登録）'}</div>
-          ${mgr.address ? `<div style="color:#555">${mgr.address}</div>` : ''}
-          ${mgr.tel   ? `<div style="color:#555;margin-top:2px">TEL：${mgr.tel}</div>` : ''}
-          ${mgr.email ? `<div style="color:#555">Email：${mgr.email}</div>` : ''}
+          <div style="font-size:14px;font-weight:700;margin-bottom:4px">${mgr.name ? escapeHtml(mgr.name) : '（管理人名未登録）'}</div>
+          ${mgr.address ? `<div style="color:#555">${escapeHtml(mgr.address)}</div>` : ''}
+          ${mgr.tel   ? `<div style="color:#555;margin-top:2px">TEL：${escapeHtml(mgr.tel)}</div>` : ''}
+          ${mgr.email ? `<div style="color:#555">Email：${escapeHtml(mgr.email)}</div>` : ''}
         </div>
       </div>
 
@@ -8363,7 +8395,7 @@ function renderManagerInvoice() {
         <tbody>
           ${rows.map((row,i) => `
             <tr style="background:${i%2===0?'#fff':'#f8fafc'}">
-              <td style="padding:8px 10px;border-bottom:1px solid #e8ecf0">${row.label}${row.taxRate===8?' ※':''}</td>
+              <td style="padding:8px 10px;border-bottom:1px solid #e8ecf0">${escapeHtml(row.label)}${row.taxRate===8?' ※':''}</td>
               <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8ecf0">1</td>
               <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #e8ecf0">件</td>
               <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #e8ecf0;font-family:monospace">${fmt(row.amount)}</td>
@@ -8492,7 +8524,7 @@ function renderMgrPayList() {
     <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong></div>
-        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(p.note)}</div>` : ''}
       </div>
       ${payAttachBadge('manager_pay', p.id)}
       ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrPay(${p.id})">編集</button>`}
@@ -8637,7 +8669,7 @@ function renderOfficerPayList() {
           <span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}
           支給額 <strong style="font-family:var(--mono)">${yen(p.grossAmount)}</strong>　源泉税 <strong style="font-family:var(--mono);color:var(--accent)">${yen(p.srcTax)}</strong>
         </div>
-        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${p.note}</div>` : ''}
+        ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(p.note)}</div>` : ''}
       </div>
       ${payAttachBadge('officer_pay', p.id)}
       ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editOfficerPay(${p.id})">編集</button>`}
@@ -8768,13 +8800,13 @@ function renderMepAttachList() {
     <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
       <div style="font-size:18px">${r.contentType === 'application/pdf' ? '📄' : '🖼️'}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.filename}</div>
+        <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.filename)}</div>
         <div style="font-size:10px;color:var(--muted);margin-top:1px">
-          ${new Date(r.uploadedAt).toLocaleString('ja-JP')}${r.note ? `　<span style="color:var(--yellow)">📝 ${r.note}</span>` : ''}
+          ${new Date(r.uploadedAt).toLocaleString('ja-JP')}${r.note ? `　<span style="color:var(--yellow)">📝 ${escapeHtml(r.note)}</span>` : ''}
         </div>
       </div>
-      <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${r.r2Key}','${r.filename}','${r.contentType}')">👁️</button>
-      <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${r.r2Key}','${r.filename}','${r.contentType}')">⬇️</button>
+      <button class="btn btn-sm" style="background:rgba(124,92,252,0.15);border:1px solid var(--accent2);color:var(--accent2)" onclick="openFilePreview('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">👁️</button>
+      <button class="btn btn-sm" style="background:rgba(79,156,249,0.15);border:1px solid var(--accent);color:var(--accent)" onclick="downloadReceipt('${escapeJsAttr(r.r2Key)}','${escapeJsAttr(r.filename)}','${escapeJsAttr(r.contentType)}')">⬇️</button>
       <button class="btn btn-danger btn-sm" onclick="deletePayAttach(${r.id},'${r.r2Key}')">削除</button>
     </div>`).join('');
 }
@@ -9133,7 +9165,7 @@ function renderWithholdingSelects() {
   const casterSel = document.getElementById('wh-caster');
   if (!casterSel) return;
   const prevCaster = casterSel.value;
-  casterSel.innerHTML = state.casters.map(c => `<option value="${c.id}" ${String(c.id)===prevCaster?'selected':''}>${c.name}</option>`).join('');
+  casterSel.innerHTML = state.casters.map(c => `<option value="${c.id}" ${String(c.id)===prevCaster?'selected':''}>${escapeHtml(c.name)}</option>`).join('');
 
   // 作成日の初期値
   const whDate = document.getElementById('wh-date');
@@ -9194,7 +9226,7 @@ function renderWithholding() {
   const tekiyoLines = monthRows.map(r =>
     `${r.m}月：報酬${yen(r.mReward)}／源泉${yen(r.mDailySrc + r.remainingSrc)}`
   ).join('　');
-  const invoiceInfo = (caster.invoice === 'yes' && caster.invoiceNo) ? `適格請求書番号：${caster.invoiceNo}` : '';
+  const invoiceInfo = (caster.invoice === 'yes' && caster.invoiceNo) ? `適格請求書番号：${escapeHtml(caster.invoiceNo)}` : '';
   const tekiyo = [invoiceInfo, tekiyoLines].filter(Boolean).join('\n');
 
   // 共通スタイル
@@ -9239,7 +9271,7 @@ function renderWithholding() {
           <td colspan="5">
             <div class="wh-cell">
               <div class="wh-label">住所（居所）又は所在地</div>
-              <div class="wh-val">${caster.zip ? '〒' + caster.zip + '　' : ''}${caster.address || '　'}</div>
+              <div class="wh-val">${caster.zip ? '〒' + caster.zip + '　' : ''}${caster.address ? escapeHtml(caster.address) : '　'}</div>
             </div>
           </td>
         </tr>
@@ -9247,7 +9279,7 @@ function renderWithholding() {
           <td colspan="3">
             <div class="wh-cell">
               <div class="wh-label">氏名又は名称</div>
-              <div class="wh-val">${caster.realname || caster.name}</div>
+              <div class="wh-val">${escapeHtml(caster.realname || caster.name)}</div>
             </div>
           </td>
           <td colspan="2">
