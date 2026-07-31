@@ -2378,7 +2378,7 @@ function sortIcon(key) {
 // ===== v30 Phase 4: XSS対策 =====
 // DB由来の自由記述フィールド（配信者名・メモ・備考・ファイル名等）を
 // innerHTMLへ埋め込む前に必ずこの関数を通す。
-// 対象：& < > " ' /（/ を含めるのは "</script>" 等によるタグ終端の偽装を防ぐため）
+// 対象：& < > " ' /（/ を含めるのはスクリプト終了タグの偽装を防ぐため）
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
