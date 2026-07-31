@@ -1232,7 +1232,7 @@
           </div>
         </div>
       </div>
-      <div class="table-wrap" id="exp-table-wrap">
+      <div class="table-wrap" id="exp-table-wrap" data-viewer-keep="1">
         <div class="table-header">
           <div class="table-title">経費明細</div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -6304,6 +6304,8 @@ function renderExpenses() {
         if (recs.length > 0) {
           return `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);border:1px solid var(--green);color:var(--green)" onclick="openReceiptModal(${e.id})">📎 ${recs.length}件</button>`;
         }
+        // 閲覧者は添付できないため、0件のときは押しても何もできないボタンを出さない
+        if (isViewerRole()) return '<span style="color:var(--muted);font-size:12px">-</span>';
         return `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--muted)" onclick="openReceiptModal(${e.id})">📎 追加</button>`;
       })()}</td>
       <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openExpEditModal(${e.id})">編集</button>`}<button class="btn btn-danger btn-sm" onclick="deleteExpense(${e.id})">削除</button></td>
@@ -10149,6 +10151,9 @@ function applyViewerRestrictions() {
       if (!page) return;
       const wraps = page.querySelectorAll('.table-wrap');
       wraps.forEach(wrap => {
+        // data-viewer-keep が付いたブロックは閲覧者にも表示する
+        // （絞り込みプルダウン等、書き込みではない入力要素を含む一覧のため）
+        if (wrap.hasAttribute('data-viewer-keep')) return;
         if (wrap.querySelector('input:not([readonly]), select, textarea')) {
           if (!wrap.classList.contains('viewer-hidden')) {
             wrap.classList.add('viewer-hidden');
@@ -10162,6 +10167,7 @@ function applyViewerRestrictions() {
       const wraps = mgrPage.querySelectorAll('.table-wrap');
       wraps.forEach(wrap => {
         // 請求書プレビューを含むtable-wrapは除外
+        if (wrap.hasAttribute('data-viewer-keep')) return;
         if (wrap.querySelector('#mgr-invoice-preview')) return;
         if (wrap.querySelector('input:not([readonly]), select, textarea')) {
           if (!wrap.classList.contains('viewer-hidden')) {
