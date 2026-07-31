@@ -582,6 +582,12 @@
             <div class="form-group"><label>対象月</label><input id="ref-pay-target-m" type="number" min="1" max="12" placeholder="例：6"></div>
           </div>
           <div class="form-group" style="margin-bottom:10px"><label>メモ</label><input id="ref-pay-note" placeholder="任意"></div>
+          <div class="form-group" style="margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="ref-pay-petty" style="width:auto">
+              🪙 小口現金から支払った（小口現金残高から自動で差し引きます）
+            </label>
+          </div>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button class="btn" id="ref-pay-cancel-btn" style="display:none" onclick="resetRefPayForm()">キャンセル</button>
             <button class="btn btn-primary" onclick="saveRefPay()">登録</button>
@@ -2041,7 +2047,7 @@ async function loadFromDB() {
     if (refPayR.data?.length > 0) {
       state.referrerPays = refPayR.data.map(r => ({
         id: r.id, referrerId: r.referrer_id, payDate: r.pay_date, amount: Number(r.amount),
-        targetY: r.target_y, targetM: r.target_m, note: r.note || ''
+        targetY: r.target_y, targetM: r.target_m, note: r.note || '', viaPettyCash: !!r.via_petty_cash
       }));
     }
     if (mgrPayR.data?.length > 0) {
@@ -3076,6 +3082,7 @@ function resetRefPayForm() {
   document.getElementById('ref-pay-target-y').value = state.y;
   document.getElementById('ref-pay-target-m').value = state.m;
   document.getElementById('ref-pay-note').value = '';
+  document.getElementById('ref-pay-petty').checked = false;
   document.getElementById('ref-pay-form-title').textContent = '支払いを記録';
   document.getElementById('ref-pay-cancel-btn').style.display = 'none';
 }
@@ -3092,7 +3099,7 @@ function renderRefPayList() {
     pays.map(p => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong></div>
+          <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong>${p.viaPettyCash ? `　<span style="font-size:11px;padding:1px 6px;border-radius:4px;background:rgba(251,191,36,0.15);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)">🪙 小口現金</span>` : ''}</div>
           ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(p.note)}</div>` : ''}
         </div>
         ${payAttachBadge('referrer_pay', p.id)}
@@ -3110,6 +3117,7 @@ function editRefPay(id) {
   document.getElementById('ref-pay-target-y').value = p.targetY || '';
   document.getElementById('ref-pay-target-m').value = p.targetM || '';
   document.getElementById('ref-pay-note').value = p.note || '';
+  document.getElementById('ref-pay-petty').checked = !!p.viaPettyCash;
   document.getElementById('ref-pay-form-title').textContent = '支払い記録を編集';
   document.getElementById('ref-pay-cancel-btn').style.display = '';
 }
@@ -3122,20 +3130,21 @@ async function saveRefPay() {
   const targetY = parseInt(document.getElementById('ref-pay-target-y').value) || null;
   const targetM = parseInt(document.getElementById('ref-pay-target-m').value) || null;
   const note = document.getElementById('ref-pay-note').value.trim();
+  const viaPettyCash = document.getElementById('ref-pay-petty').checked;
 
   if (!payDate) { alert('支払日を入力してください'); return; }
   if (!amount) { alert('金額を入力してください'); return; }
 
-  const record = { referrerId, payDate, amount, targetY, targetM, note };
+  const record = { referrerId, payDate, amount, targetY, targetM, note, viaPettyCash };
 
   if (editId) {
     const id = parseInt(editId);
     const idx = state.referrerPays.findIndex(p => p.id === id);
     if (idx !== -1) state.referrerPays[idx] = { ...state.referrerPays[idx], ...record };
-    await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note });
+    await dbSave('referrer_pays', { id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note, via_petty_cash: viaPettyCash });
   } else {
     try {
-      const id = await insertWithFreshId('referrer_pays', id => ({ id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note }));
+      const id = await insertWithFreshId('referrer_pays', id => ({ id, referrer_id: referrerId, pay_date: payDate, amount, target_y: targetY, target_m: targetM, note, via_petty_cash: viaPettyCash }));
       state.referrerPays.push({ id, ...record });
     } catch(e) {
       alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
@@ -3144,6 +3153,7 @@ async function saveRefPay() {
   }
   resetRefPayForm();
   renderRefPayList();
+  renderPettyCash();
 }
 
 async function deleteRefPay(id) {
@@ -3156,6 +3166,7 @@ async function deleteRefPay(id) {
   await dbDelete('referrer_pays', id);
   state.referrerPays = state.referrerPays.filter(p => p.id !== id);
   renderRefPayList();
+  renderPettyCash();
 }
 
 // ===== 紹介者フォーム 請求書摘要トグル =====
@@ -6134,7 +6145,10 @@ function getPettyCashBalance() {
   const totalSpent = state.expenses
     .filter(e => e.method === '小口現金')
     .reduce((s, e) => s + e.amount, 0);
-  return totalReplenish - totalSpent;
+  const totalRefPay = state.referrerPays
+    .filter(p => p.viaPettyCash)
+    .reduce((s, p) => s + p.amount, 0);
+  return totalReplenish - totalSpent - totalRefPay;
 }
 
 async function addPettyCash() {
@@ -6205,6 +6219,16 @@ function renderPettyCash() {
     });
   });
 
+  // 小口現金から支払った紹介者報酬
+  state.referrerPays.filter(p => p.viaPettyCash).forEach(p => {
+    const r = state.referrers.find(x => x.id === p.referrerId);
+    entries.push({
+      date: p.payDate, label: `紹介料：${r?.name || '?'}`,
+      amount: p.amount, isIncome: false, note: p.note || '', id: p.id, canDelete: false,
+      badge: 'referrer'
+    });
+  });
+
   // 日付降順
   entries.sort((a, b) => b.date.localeCompare(a.date));
 
@@ -6229,8 +6253,10 @@ function renderPettyCash() {
       ? 'background:rgba(96,165,250,0.15);color:var(--blue);border:1px solid rgba(96,165,250,0.3)'
       : e.badge === 'replenish'
       ? 'background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3)'
+      : e.badge === 'referrer'
+      ? 'background:rgba(251,146,60,0.15);color:#fb923c;border:1px solid rgba(251,146,60,0.3)'
       : 'background:rgba(251,191,36,0.15);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)';
-    const badgeLabel = e.badge === 'initial' ? '初期残高' : e.badge === 'replenish' ? '補充' : '支出';
+    const badgeLabel = e.badge === 'initial' ? '初期残高' : e.badge === 'replenish' ? '補充' : e.badge === 'referrer' ? '紹介料支出' : '支出';
     return `<tr>
       <td>${e.date}</td>
       <td><span style="font-size:11px;padding:1px 6px;border-radius:4px;${badgeStyle};margin-right:6px">${badgeLabel}</span>${escapeHtml(e.label)}</td>
