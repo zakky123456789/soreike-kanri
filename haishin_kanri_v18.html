@@ -186,29 +186,6 @@
   #mobile-header { display: none; position: sticky; top: 0; z-index: 200; background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px; align-items: center; justify-content: space-between; }
   #mobile-camera-btn { display: none; }
 
-  /* 一覧内の省略表示テキストにマウスオーバーで全文を表示するツールチップ（PC想定。タッチ操作での挙動は端末依存） */
-  .cell-tooltip { position: relative; cursor: help; }
-  .cell-tooltip:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: 0;
-    bottom: 100%;
-    margin-bottom: 6px;
-    background: var(--surface2);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-size: 12px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    max-width: 280px;
-    width: max-content;
-    z-index: 500;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
-    pointer-events: none;
-  }
-
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
@@ -761,12 +738,18 @@
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
           <div class="form-group"><label>支払方法</label>
             <select id="exp-edit-method">
-              <option>法人クレジット・デビットカード</option>
+              <optgroup label="法人クレジットカード">
+                <option>法人クレジットカード（三井住友カード）</option>
+                <option>法人クレジットカード（SBIデビット）</option>
+              </optgroup>
               <option>小口現金</option>
-              <option>法人口座銀行振込</option>
-              <option>個人クレジット・デビットカード（立替）</option>
+              <option>法人専用個人口座（SBI）</option>
+              <optgroup label="個人クレジット（立替）">
+                <option>個人クレジット（立替）（Revolut）</option>
+                <option>個人クレジット（立替）（JAL）</option>
+              </optgroup>
               <option>現金（立替）</option>
-              <option>個人口座銀行振込（立替）</option>
+              <option>個人UFJ銀行（立替）</option>
               <option>管理人立替</option>
             </select>
           </div>
@@ -1188,12 +1171,18 @@
             <div class="form-group"><label>支払先名</label><input id="e-payee" placeholder="例：SEIYU川口店"></div>
             <div class="form-group"><label>支払方法</label>
               <select id="e-method">
-                <option>法人クレジット・デビットカード</option>
+                <optgroup label="法人クレジットカード">
+                  <option>法人クレジットカード（三井住友カード）</option>
+                  <option>法人クレジットカード（SBIデビット）</option>
+                </optgroup>
                 <option>小口現金</option>
-                <option>法人口座銀行振込</option>
-                <option>個人クレジット・デビットカード（立替）</option>
+                <option>法人専用個人口座（SBI）</option>
+                <optgroup label="個人クレジット（立替）">
+                  <option>個人クレジット（立替）（Revolut）</option>
+                  <option>個人クレジット（立替）（JAL）</option>
+                </optgroup>
                 <option>現金（立替）</option>
-                <option>個人口座銀行振込（立替）</option>
+                <option>個人UFJ銀行（立替）</option>
                 <option>管理人立替</option>
               </select>
             </div>
@@ -2639,7 +2628,7 @@ function expToLogObj(e) {
 // 対象月（実際の今月）に該当する支払先＋勘定科目の組み合わせが未登録の場合のみ1回登録し、
 // 監査ログにも記録する。閲覧者はRLSでINSERTできないため対象外。
 const RECURRING_EXPENSES = [
-  { name: 'Premium Standard (1ヶ月)', payee: 'Spotify', cat: '通信費', amount: 1080, tax: 10, method: '法人クレジット・デビットカード' },
+  { name: 'Premium Standard (1ヶ月)', payee: 'Spotify', cat: '通信費', amount: 1080, tax: 10, method: '法人クレジットカード（三井住友カード）' },
 ];
 
 async function autoRegisterRecurringExpenses() {
@@ -3291,7 +3280,23 @@ const RECEIPT_CAT_OPTIONS = ['消耗品費','固定資産','接待交際費','�
 // 経費明細の勘定科目フィルター用の選択肢。過去データ用に廃止済みの「機材・設備費」も含める（新規入力の選択肢には出さない）
 const EXP_FILTER_CAT_OPTIONS = [...RECEIPT_CAT_OPTIONS.slice(0, 2), '機材・設備費', ...RECEIPT_CAT_OPTIONS.slice(2)];
 const RECEIPT_TAX_OPTIONS = [{ v:'10', label:'課税10%' },{ v:'8', label:'課税8%（軽減）' },{ v:'0', label:'非課税' },{ v:'-1', label:'対象外' }];
-const RECEIPT_METHOD_OPTIONS = ['法人クレジット・デビットカード','小口現金','法人口座銀行振込','個人クレジット・デビットカード（立替）','現金（立替）','個人口座銀行振込（立替）','管理人立替'];
+// 支払方法：カテゴリによっては具体的なカード・口座名まで選ばせる（各グループの先頭がデフォルト）
+const PAYMENT_METHOD_GROUPS = [
+  { group: '法人クレジットカード', options: ['法人クレジットカード（三井住友カード）', '法人クレジットカード（SBIデビット）'] },
+  { group: null, options: ['小口現金'] },
+  { group: null, options: ['法人専用個人口座（SBI）'] },
+  { group: '個人クレジット（立替）', options: ['個人クレジット（立替）（Revolut）', '個人クレジット（立替）（JAL）'] },
+  { group: null, options: ['現金（立替）'] },
+  { group: null, options: ['個人UFJ銀行（立替）'] },
+  { group: null, options: ['管理人立替'] },
+];
+const RECEIPT_METHOD_OPTIONS = PAYMENT_METHOD_GROUPS.flatMap(g => g.options);
+function paymentMethodOptionsHtml(selected) {
+  return PAYMENT_METHOD_GROUPS.map(g => {
+    const opts = g.options.map(o => `<option value="${o}" ${o===selected?'selected':''}>${o}</option>`).join('');
+    return g.group ? `<optgroup label="${g.group}">${opts}</optgroup>` : opts;
+  }).join('');
+}
 let receiptResults = [];
 
 function handleReceiptDrop(e) {
@@ -3550,7 +3555,7 @@ function renderReceiptResults() {
       }
       const catOpts = RECEIPT_CAT_OPTIONS.map(c => `<option value="${c}" ${c===r.cat?'selected':''}>${c}</option>`).join('');
       const taxOpts = RECEIPT_TAX_OPTIONS.map(t => `<option value="${t.v}" ${t.v===String(r.tax)?'selected':''}>${t.label}</option>`).join('');
-      const methodOpts = RECEIPT_METHOD_OPTIONS.map(m => `<option value="${m}" ${m===r.method?'selected':''}>${m}</option>`).join('');
+      const methodOpts = paymentMethodOptionsHtml(r.method);
       const taxBadge = `<span style="font-size:10px;font-weight:700;background:rgba(79,156,249,0.12);color:${taxColor[String(r.tax)]||'var(--muted)'};padding:1px 7px;border-radius:8px;margin-left:6px">${taxLabel[String(r.tax)]||''}</span>`;
       const cardLabel = hasMultiple
         ? `<span style="font-size:12px;font-weight:700;color:var(--accent2)">カード ${cardIdx+1}</span>${taxBadge}`
@@ -6465,7 +6470,7 @@ function renderExpenses() {
       <td data-label="インボイス">${invBadge}</td>
       <td data-label="参加者・目的">${entertainInfo}</td>
       <td data-label="支払方法" style="font-size:12px;color:var(--muted)">${escapeHtml(e.method)}</td>
-      <td data-label="備考" class="${e.note ? 'cell-tooltip' : ''}" style="font-size:12px;color:var(--muted)" ${e.note ? `data-tooltip="${escapeHtml(e.note)}"` : ''}><span style="display:block;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.note ? escapeHtml(e.note) : '-'}</span></td>
+      <td data-label="備考" style="font-size:12px;color:var(--muted)">${e.note ? escapeHtml(e.note) : '-'}</td>
       <td>${(() => {
         const recs = state.receipts.filter(r => r.expenseId === e.id);
         if (recs.length > 0) {
@@ -6480,7 +6485,7 @@ function renderExpenses() {
   }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">${expCatFilter ? `「${expCatFilter}」に該当する経費データがありません` : 'この月のデータがありません'}</td></tr>`;
 
   // 立替精算サマリー
-  const FURIKAE_METHODS = ['個人クレジット・デビットカード（立替）', '現金（立替）', '個人口座銀行振込（立替）', '管理人立替'];
+  const FURIKAE_METHODS = ['個人クレジット（立替）（Revolut）', '個人クレジット（立替）（JAL）', '現金（立替）', '個人UFJ銀行（立替）', '管理人立替'];
   const furikaeExps = expOfMonth(y, m).filter(e => FURIKAE_METHODS.includes(e.method) && isPlExpense(e));
   const summaryEl = document.getElementById('furikae-summary');
   if (!summaryEl) return;
