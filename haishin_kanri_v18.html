@@ -6465,7 +6465,7 @@ function renderExpenses() {
       <td data-label="インボイス">${invBadge}</td>
       <td data-label="参加者・目的">${entertainInfo}</td>
       <td data-label="支払方法" style="font-size:12px;color:var(--muted)">${escapeHtml(e.method)}</td>
-      <td data-label="備考" class="${e.note ? 'cell-tooltip' : ''}" style="font-size:12px;color:var(--muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" ${e.note ? `data-tooltip="${escapeHtml(e.note)}"` : ''}>${e.note ? escapeHtml(e.note) : '-'}</td>
+      <td data-label="備考" class="${e.note ? 'cell-tooltip' : ''}" style="font-size:12px;color:var(--muted)" ${e.note ? `data-tooltip="${escapeHtml(e.note)}"` : ''}><span style="display:block;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.note ? escapeHtml(e.note) : '-'}</span></td>
       <td>${(() => {
         const recs = state.receipts.filter(r => r.expenseId === e.id);
         if (recs.length > 0) {
