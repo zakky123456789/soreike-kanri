@@ -1102,13 +1102,13 @@
         <div style="flex:1" id="recurring-auto-alert-text"></div>
         <button onclick="document.getElementById('recurring-auto-alert').style.display='none'" style="background:none;border:none;color:var(--accent);font-size:16px;cursor:pointer">✕</button>
       </div>
-      <!-- AI レシート読み込み -->
+      <!-- AI レシート読み込み（圧倒的に使用頻度が高いため、デフォルトで開いた状態にする） -->
       <div class="table-wrap" style="margin-bottom:16px">
         <div class="table-header" style="cursor:pointer" onclick="toggleForm('ai-receipt-form', this)">
           <div class="table-title">🤖 AIレシート読み込み（画像・PDF→自動入力）</div>
-          <span style="color:var(--muted);font-size:12px">▼ 開く</span>
+          <span style="color:var(--muted);font-size:12px">▲ 閉じる</span>
         </div>
-        <div id="ai-receipt-form" style="display:none;padding:20px">
+        <div id="ai-receipt-form" style="display:block;padding:20px">
           <div class="alert alert-blue" style="margin-bottom:16px">
             💡 レシート・領収書の画像またはPDFをアップロードすると、日付・品名・金額・消費税区分を自動で読み取ります。
           </div>
@@ -1154,8 +1154,11 @@
       </div>
 
       <div class="table-wrap" style="margin-bottom:24px">
-        <div class="table-header"><div class="table-title">経費入力</div></div>
-        <div style="padding:16px">
+        <div class="table-header" style="cursor:pointer" onclick="toggleForm('manual-expense-form', this)">
+          <div class="table-title">✍️ 経費入力（手動入力）</div>
+          <span style="color:var(--muted);font-size:12px">▼ 開く</span>
+        </div>
+        <div id="manual-expense-form" style="display:none;padding:16px">
           <!-- 共通項目 -->
           <div class="form-grid form-grid-4">
             <div class="form-group"><label>日付</label><input id="e-date" type="date"></div>
