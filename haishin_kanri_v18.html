@@ -260,6 +260,12 @@
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
       <div id="receipt-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
+      <div id="utility-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
+      <div id="recurring-auto-alert" style="display:none;align-items:center;gap:12px;background:rgba(79,156,249,0.12);border:1px solid var(--accent);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--accent)">
+        <span style="font-size:16px">📅</span>
+        <div style="flex:1" id="recurring-auto-alert-text"></div>
+        <button onclick="document.getElementById('recurring-auto-alert').style.display='none'" style="background:none;border:none;color:var(--accent);font-size:16px;cursor:pointer">✕</button>
+      </div>
       <div class="page-header">
         <div class="page-title">ダッシュボード</div>
         <div class="month-nav">
@@ -2082,6 +2088,7 @@ async function loadFromDB() {
 
     dbReady = true;
     showSyncStatus('ok');
+    await autoRegisterRecurringExpenses();
     renderAll();
     // 経費入力フォームの明細行を初期化
     { const cont = document.getElementById('e-rows-container'); if (cont && cont.children.length === 0) { expRowCount = 0; addExpRow(); } }
@@ -2600,6 +2607,53 @@ async function writeAuditLog(action, recordId, before, after, tableName = 'expen
 function expToLogObj(e) {
   return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null };
 }
+
+// ===== 定期経費の自動登録（v32） =====
+// 毎月内容・金額が固定のサブスク等を、アプリ起動時（月が変わった後の初回ロード時）に自動登録する。
+// 対象月（実際の今月）に該当する支払先＋勘定科目の組み合わせが未登録の場合のみ1回登録し、
+// 監査ログにも記録する。閲覧者はRLSでINSERTできないため対象外。
+const RECURRING_EXPENSES = [
+  { name: 'Premium Standard (1ヶ月)', payee: 'Spotify', cat: '通信費', amount: 1080, tax: 10, method: '法人クレジット・デビットカード' },
+];
+
+async function autoRegisterRecurringExpenses() {
+  if (isViewerRole()) return;
+  const now = new Date();
+  const ry = now.getFullYear(), rm = now.getMonth() + 1;
+  const date = `${ry}-${String(rm).padStart(2,'0')}-01`;
+  const registered = [];
+  for (const item of RECURRING_EXPENSES) {
+    const already = state.expenses.some(e => e.y === ry && e.m === rm && e.payee === item.payee && e.cat === item.cat);
+    if (already) continue;
+    const newExp = {
+      id: state.nextId++, date, name: item.name, payee: item.payee, cat: item.cat,
+      amount: item.amount, tax: item.tax, method: item.method, invoiceNo: '', participants: '',
+      purpose: '', y: ry, m: rm, excludeManager: false, note: '📅 定期経費（自動登録）',
+      entryType: 'normal', prepaidId: null
+    };
+    const ok = await dbSaveAsync('expenses', {
+      id: newExp.id, date, name: item.name, payee: item.payee, cat: item.cat,
+      amount: item.amount, tax: item.tax, method: item.method, invoice_no: '', participants: '',
+      purpose: '', y: ry, m: rm, exclude_manager: false, note: newExp.note,
+      entry_type: 'normal', prepaid_id: null
+    });
+    if (ok) {
+      state.expenses.push(newExp);
+      await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
+      registered.push(`${item.payee}「${item.name}」${yen(item.amount)}`);
+    }
+    // 保存失敗時はstate.nextIdだけ進んだ状態になるが、次回起動時に再度「未登録」として検知され再トライされる
+  }
+  if (registered.length > 0) {
+    const el = document.getElementById('recurring-auto-alert');
+    const textEl = document.getElementById('recurring-auto-alert-text');
+    if (el && textEl) {
+      textEl.innerHTML = `${ry}年${rm}月分の定期経費を自動登録しました：${registered.join('、')}`;
+      el.style.display = 'flex';
+    }
+  }
+}
+
 
 // 小口現金（petty_cash）の監査ログ用スナップショット
 // 補充（replenish）・初期残高（initial）の登録／削除を追跡できるようにする
@@ -3818,6 +3872,23 @@ function renderDashboard() {
       alertEl.innerHTML = `<span style="font-size:16px">📎</span><div><div style="font-weight:600;font-size:13px">領収書未添付の経費が${expWithNoReceipt.length}件あります</div><div style="font-size:11px;color:var(--muted);margin-top:2px">電子帳簿保存法：受領後2ヶ月以内にアップロードしてください</div></div>`;
     } else {
       alertEl.style.display = 'none';
+    }
+  }
+
+  // 電気・ガス料金 未登録アラート（当月分の入力し忘れ防止。ダッシュボードの表示月ではなく実際の今月で判定）
+  const utilNow = new Date();
+  const utilY = utilNow.getFullYear(), utilM = utilNow.getMonth() + 1;
+  const utilExpsThisMonth = state.expenses.filter(e => e.y === utilY && e.m === utilM);
+  const missingUtils = [];
+  if (!utilExpsThisMonth.some(e => e.name.includes('電気料金'))) missingUtils.push('電気料金');
+  if (!utilExpsThisMonth.some(e => e.name.includes('ガス料金'))) missingUtils.push('ガス料金');
+  const utilAlertEl = document.getElementById('utility-alert');
+  if (utilAlertEl) {
+    if (missingUtils.length > 0) {
+      utilAlertEl.style.display = 'flex';
+      utilAlertEl.innerHTML = `<span style="font-size:16px">⚡</span><div><div style="font-weight:600;font-size:13px">${utilY}年${utilM}月分の「${missingUtils.join('」「')}」がまだ経費入力されていません</div><div style="font-size:11px;color:var(--muted);margin-top:2px">品名「${missingUtils.join('」「')}」で経費入力ページから登録してください</div></div>`;
+    } else {
+      utilAlertEl.style.display = 'none';
     }
   }
   const { y, m } = state;
