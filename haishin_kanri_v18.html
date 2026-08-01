@@ -260,12 +260,6 @@
     <!-- Dashboard -->
     <div class="page active" id="page-dashboard">
       <div id="receipt-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
-      <div id="utility-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
-      <div id="recurring-auto-alert" style="display:none;align-items:center;gap:12px;background:rgba(79,156,249,0.12);border:1px solid var(--accent);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--accent)">
-        <span style="font-size:16px">📅</span>
-        <div style="flex:1" id="recurring-auto-alert-text"></div>
-        <button onclick="document.getElementById('recurring-auto-alert').style.display='none'" style="background:none;border:none;color:var(--accent);font-size:16px;cursor:pointer">✕</button>
-      </div>
       <div class="page-header">
         <div class="page-title">ダッシュボード</div>
         <div class="month-nav">
@@ -1101,6 +1095,12 @@
           <div class="month-label" onclick="openMonthPicker()" id="ml-exp"></div>
           <button onclick="changeMonth(1)">▶</button>
         </div>
+      </div>
+      <div id="utility-alert" style="display:none;align-items:center;gap:12px;background:rgba(251,191,36,0.12);border:1px solid var(--yellow);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--yellow)"></div>
+      <div id="recurring-auto-alert" style="display:none;align-items:center;gap:12px;background:rgba(79,156,249,0.12);border:1px solid var(--accent);border-radius:8px;padding:12px 16px;margin-bottom:16px;color:var(--accent)">
+        <span style="font-size:16px">📅</span>
+        <div style="flex:1" id="recurring-auto-alert-text"></div>
+        <button onclick="document.getElementById('recurring-auto-alert').style.display='none'" style="background:none;border:none;color:var(--accent);font-size:16px;cursor:pointer">✕</button>
       </div>
       <!-- AI レシート読み込み -->
       <div class="table-wrap" style="margin-bottom:16px">
@@ -3874,23 +3874,6 @@ function renderDashboard() {
       alertEl.style.display = 'none';
     }
   }
-
-  // 電気・ガス料金 未登録アラート（当月分の入力し忘れ防止。ダッシュボードの表示月ではなく実際の今月で判定）
-  const utilNow = new Date();
-  const utilY = utilNow.getFullYear(), utilM = utilNow.getMonth() + 1;
-  const utilExpsThisMonth = state.expenses.filter(e => e.y === utilY && e.m === utilM);
-  const missingUtils = [];
-  if (!utilExpsThisMonth.some(e => e.name.includes('電気料金'))) missingUtils.push('電気料金');
-  if (!utilExpsThisMonth.some(e => e.name.includes('ガス料金'))) missingUtils.push('ガス料金');
-  const utilAlertEl = document.getElementById('utility-alert');
-  if (utilAlertEl) {
-    if (missingUtils.length > 0) {
-      utilAlertEl.style.display = 'flex';
-      utilAlertEl.innerHTML = `<span style="font-size:16px">⚡</span><div><div style="font-weight:600;font-size:13px">${utilY}年${utilM}月分の「${missingUtils.join('」「')}」がまだ経費入力されていません</div><div style="font-size:11px;color:var(--muted);margin-top:2px">品名「${missingUtils.join('」「')}」で経費入力ページから登録してください</div></div>`;
-    } else {
-      utilAlertEl.style.display = 'none';
-    }
-  }
   const { y, m } = state;
   const sales = salesOfMonth(y, m);
   const exps = expOfMonth(y, m);
@@ -6343,6 +6326,24 @@ function renderPettyCash() {
 
 function renderExpenses() {
   const { y, m } = state;
+
+  // 電気・ガス料金 未登録アラート（当月分の入力し忘れ防止。表示中の月ではなく実際の今月で判定）
+  const utilNow = new Date();
+  const utilY = utilNow.getFullYear(), utilM = utilNow.getMonth() + 1;
+  const utilExpsThisMonth = state.expenses.filter(e => e.y === utilY && e.m === utilM);
+  const missingUtils = [];
+  if (!utilExpsThisMonth.some(e => e.name.includes('電気料金'))) missingUtils.push('電気料金');
+  if (!utilExpsThisMonth.some(e => e.name.includes('ガス料金'))) missingUtils.push('ガス料金');
+  const utilAlertEl = document.getElementById('utility-alert');
+  if (utilAlertEl) {
+    if (missingUtils.length > 0) {
+      utilAlertEl.style.display = 'flex';
+      utilAlertEl.innerHTML = `<span style="font-size:16px">⚡</span><div><div style="font-weight:600;font-size:13px">${utilY}年${utilM}月分の「${missingUtils.join('」「')}」がまだ経費入力されていません</div><div style="font-size:11px;color:var(--muted);margin-top:2px">品名「${missingUtils.join('」「')}」で経費入力ページから登録してください</div></div>`;
+    } else {
+      utilAlertEl.style.display = 'none';
+    }
+  }
+
   // 勘定科目フィルターのプルダウンを初期化（初回のみ・選択中の値は保持）
   const filterSel = document.getElementById('exp-cat-filter');
   if (filterSel && filterSel.options.length === 1) {
