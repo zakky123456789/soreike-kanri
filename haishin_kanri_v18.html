@@ -2104,13 +2104,13 @@ async function loadFromDB() {
     dbReady = true;
     showSyncStatus('ok');
     await autoRegisterRecurringExpenses();
-    renderAll();
+    restoreLastPage();
     // 経費入力フォームの明細行を初期化
     { const cont = document.getElementById('e-rows-container'); if (cont && cont.children.length === 0) { expRowCount = 0; addExpRow(); } }
   } catch(e) {
     console.error('DB load error:', e);
     showSyncStatus('error');
-    renderAll(); // DBなしでも初期データで表示
+    restoreLastPage(); // DBなしでも初期データで表示
     { const cont = document.getElementById('e-rows-container'); if (cont && cont.children.length === 0) { expRowCount = 0; addExpRow(); } }
     const el = document.getElementById('dash-alerts');
     if (el) el.innerHTML += `<div class="alert alert-red">⚠️ DBロード失敗（オフライン/エラー）: ${e.message}</div>`;
@@ -2518,6 +2518,8 @@ function toggleMobileNav() {
   sidebar.classList.toggle('open');
 }
 function showPage(id) {
+  // 現在のページをセッション内で記憶（ブラウザ更新後も同じページに留まるため）
+  try { sessionStorage.setItem('currentPage', id); } catch (e) {}
   // モバイルナビを閉じる
   document.querySelector('.sidebar')?.classList.remove('open');
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -2534,6 +2536,18 @@ function showPage(id) {
   if (id === 'sales') {
     const date = document.getElementById('s-date').value;
     if (date) fetchRate(date);
+  }
+}
+
+// ブラウザ更新（F5等）前に見ていたページへ復元する。
+// 記憶がない/無効なページIDの場合はダッシュボードを表示する。
+function restoreLastPage() {
+  let saved = null;
+  try { saved = sessionStorage.getItem('currentPage'); } catch (e) {}
+  if (saved && document.getElementById('page-' + saved)) {
+    showPage(saved);
+  } else {
+    showPage('dashboard');
   }
 }
 
