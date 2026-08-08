@@ -2183,10 +2183,9 @@ async function dbDelete(table, id) {
 // 対処：①新規作成のたびに全テーブルの最新の最大IDを再取得してから採番（衝突自体を減らす）
 //      ②upsertではなくinsertを使い、万一衝突してもDB側の一意制約違反(23505)として検知
 //      ③衝突を検知した場合は自動でIDを取り直して再試行（ユーザーには何も見せない）
-// 対象：referrer_pays・manager_pays・daily_pays・month_end_pays の新規作成のみ。
+// 対象：referrer_pays・manager_pays・daily_pays・month_end_pays・expenses（v33〜）の新規作成。
 // 既存レコードの編集（idが確定済みのupsert）はこれまで通りdbSave()を使う（変更なし）。
-// 他のテーブルの新規作成（casters/referrers/sales/expenses等）も理論上は同じリスクを持つが、
-// まずは今回バグが実際に発生した支払い記録系テーブルから対応する。
+// 他のテーブルの新規作成（casters/referrers/sales等）も理論上は同じリスクを持つが未対応。
 const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays'];
 
 async function fetchFreshMaxId() {
@@ -2654,24 +2653,27 @@ async function autoRegisterRecurringExpenses() {
   for (const item of RECURRING_EXPENSES) {
     const already = state.expenses.some(e => e.y === ry && e.m === rm && e.payee === item.payee && e.cat === item.cat);
     if (already) continue;
+    let newId;
+    try {
+      newId = await insertWithFreshId('expenses', id => ({
+        id, date, name: item.name, payee: item.payee, cat: item.cat,
+        amount: item.amount, tax: item.tax, method: item.method, invoice_no: '', participants: '',
+        purpose: '', y: ry, m: rm, exclude_manager: false, note: '📅 定期経費（自動登録）',
+        entry_type: 'normal', prepaid_id: null
+      }));
+    } catch(e) {
+      console.warn('定期経費自動登録失敗:', item.payee, e.message);
+      continue; // 失敗時は次回起動時に「未登録」として再検知・再トライされる
+    }
     const newExp = {
-      id: state.nextId++, date, name: item.name, payee: item.payee, cat: item.cat,
+      id: newId, date, name: item.name, payee: item.payee, cat: item.cat,
       amount: item.amount, tax: item.tax, method: item.method, invoiceNo: '', participants: '',
       purpose: '', y: ry, m: rm, excludeManager: false, note: '📅 定期経費（自動登録）',
       entryType: 'normal', prepaidId: null
     };
-    const ok = await dbSaveAsync('expenses', {
-      id: newExp.id, date, name: item.name, payee: item.payee, cat: item.cat,
-      amount: item.amount, tax: item.tax, method: item.method, invoice_no: '', participants: '',
-      purpose: '', y: ry, m: rm, exclude_manager: false, note: newExp.note,
-      entry_type: 'normal', prepaid_id: null
-    });
-    if (ok) {
-      state.expenses.push(newExp);
-      await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
-      registered.push(`${item.payee}「${item.name}」${yen(item.amount)}`);
-    }
-    // 保存失敗時はstate.nextIdだけ進んだ状態になるが、次回起動時に再度「未登録」として検知され再トライされる
+    state.expenses.push(newExp);
+    await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
+    registered.push(`${item.payee}「${item.name}」${yen(item.amount)}`);
   }
   if (registered.length > 0) {
     const el = document.getElementById('recurring-auto-alert');
@@ -3818,17 +3820,26 @@ async function addCheckedReceipts() {
 
   document.getElementById('receipt-add-msg').textContent = '⏳ 保存中...';
 
-  // 全経費をDBに一括保存（並列）
-  const expRows = toAdd.map(item => {
+  // 全経費をDBに保存（ID衝突防止のため直列処理。DBの最新IDを都度取得し直してから採番する）
+  for (const item of toAdd) {
     const actualCat = item.isPrepaid ? item.prepaidConfig.assetCat : applyFixedAssetRule(item.cat, item.amount);
     const entryType = item.isPrepaid ? 'prepaid_payment' : 'normal';
-    const newExp = { id: state.nextId++, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null };
+    let newId;
+    try {
+      newId = await insertWithFreshId('expenses', id => ({
+        id, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax,
+        method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'',
+        y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: entryType, prepaid_id: null
+      }));
+    } catch(e) {
+      document.getElementById('receipt-add-msg').textContent = `⚠️ 「${item.name}」の保存に失敗しました: ${e.message}`;
+      return;
+    }
+    const newExp = { id: newId, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null };
     state.expenses.push(newExp);
     item.newExp = newExp;
-    return sb.from('expenses').upsert({ id: newExp.id, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: entryType, prepaid_id: null })
-      .then(({ error }) => { if (error) throw new Error('経費保存失敗: ' + error.message); });
-  });
-  await Promise.all(expRows);
+    await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
+  }
 
   // 領収書を並列アップロード
   await Promise.all(toAdd.map(async item => {
@@ -3864,7 +3875,13 @@ async function addCheckedReceipts() {
     const totalAmt = item.amount;
     const monthly = Math.floor(totalAmt / months);
     const final = totalAmt - monthly * (months - 1);
-    const masterId = state.nextId++;
+    const masterId = await insertWithFreshId('prepaid_expenses', id => ({
+      id, payment_expense_id: item.newExp.id,
+      asset_account: assetCat, expense_account: expCat,
+      total_amount: totalAmt, start_date: startDate, end_date: endDate,
+      months, monthly_amount: monthly, final_amount: final,
+      amortization_day: amorDay, status: 'active', note: item.note || ''
+    }));
     const masterRec = {
       id: masterId, paymentExpenseId: item.newExp.id,
       assetAccount: assetCat, expenseAccount: expCat,
@@ -3873,13 +3890,6 @@ async function addCheckedReceipts() {
       amortizationDay: amorDay, status: 'active', note: item.note || '', createdAt: new Date().toISOString()
     };
     state.prepaidExpenses.push(masterRec);
-    await sb.from('prepaid_expenses').insert({
-      id: masterId, payment_expense_id: item.newExp.id,
-      asset_account: assetCat, expense_account: expCat,
-      total_amount: totalAmt, start_date: startDate, end_date: endDate,
-      months, monthly_amount: monthly, final_amount: final,
-      amortization_day: amorDay, status: 'active', note: item.note || ''
-    });
     const startParts = startDate.split('-').map(Number);
     let curY = startParts[0], curM = startParts[1];
     for (let i = 0; i < months; i++) {
@@ -3889,22 +3899,23 @@ async function addCheckedReceipts() {
       const day = Math.min(amorDay, maxDay);
       const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
       const amorName = `【前払費用按分 ${i+1}/${months}】${item.name}`;
-      const amorId = state.nextId++;
+      const amorNote = `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`;
+      const amorId = await insertWithFreshId('expenses', id => ({
+        id, date: amorDate, name: amorName, payee: item.payee||'',
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+        exclude_manager: false, note: amorNote,
+        entry_type: 'amortization', prepaid_id: masterId
+      }));
       const amorExp = {
         id: amorId, date: amorDate, name: amorName, payee: item.payee||'',
         cat: expCat, amount: amt, tax: -1, method: '振替',
         invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
-        excludeManager: false, note: `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`,
+        excludeManager: false, note: amorNote,
         entryType: 'amortization', prepaidId: masterId
       };
       state.expenses.push(amorExp);
-      await dbSaveAsync('expenses', {
-        id: amorId, date: amorDate, name: amorName, payee: item.payee||'',
-        cat: expCat, amount: amt, tax: -1, method: '振替',
-        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
-        exclude_manager: false, note: amorExp.note,
-        entry_type: 'amortization', prepaid_id: masterId
-      });
+      await writeAuditLog('add', amorExp.id, null, expToLogObj(amorExp));
       curM++; if (curM > 12) { curM = 1; curY++; }
     }
     // payment側にprepaid_idを更新
@@ -4106,7 +4117,15 @@ async function addCaster() {
   const retiredDate = retired ? statusDate : '';
   const onHold = statusVal === 'onhold';
   const onHoldDate = onHold ? statusDate : '';
-  const newCaster = { id: state.nextId++, name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
+  const casterRefId = refId ? parseInt(refId) : null;
+  let newCasterId;
+  try {
+    newCasterId = await insertWithFreshId('casters', id => ({ id, name, rate, ref_id: casterRefId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null }));
+  } catch(e) {
+    showCasterError(`保存に失敗しました: ${e.message}`);
+    return;
+  }
+  const newCaster = { id: newCasterId, name, rate, refId: casterRefId, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
   state.casters.push(newCaster);
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
@@ -4129,7 +4148,6 @@ async function addCaster() {
   toggleInvoiceInput('c-invoicenum', 'no');
   toggleStatusDateInput('c-status', 'c-status-date-wrap', 'c-status-date-label');
   const errEl = document.getElementById('caster-error'); if(errEl){ errEl.style.display='none'; errEl.textContent=''; }
-  await dbSave('casters', { id: newCaster.id, name, rate, ref_id: newCaster.refId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null });
   renderAll();
 }
 
@@ -4291,9 +4309,15 @@ async function addReferrer() {
   const accountType = document.getElementById('r-accountType').value;
   const accountNo   = document.getElementById('r-accountNo').value.trim();
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
-  const newRef = { id: state.nextId++, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
+  let newRefId;
+  try {
+    newRefId = await insertWithFreshId('referrers', id => ({ id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account }));
+  } catch(e) {
+    alert(`保存に失敗しました: ${e.message}`);
+    return;
+  }
+  const newRef = { id: newRefId, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
   state.referrers.push(newRef);
-  await dbSave('referrers', { id: newRef.id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
   document.getElementById('r-invoiceno').value = '';
   document.getElementById('r-createInvoice').value = 'false';
   document.getElementById('r-name').value = '';
@@ -4590,9 +4614,15 @@ async function addFxRecord() {
   const [y, m] = date.split('-').map(Number);
   const usdFrom = parseFloat(document.getElementById('fx-usd-from').value) || null;
   const usdTo   = parseFloat(document.getElementById('fx-usd-to').value)   || null;
-  const newFx = { id: state.nextId++, date, dateFrom, dateTo, usd, rate, jpy, note, y, m, usdFrom, usdTo };
+  let newFxId;
+  try {
+    newFxId = await insertWithFreshId('exchanges', id => ({ id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m, usd_from: usdFrom, usd_to: usdTo }));
+  } catch(e) {
+    alert(`保存に失敗しました: ${e.message}`);
+    return;
+  }
+  const newFx = { id: newFxId, date, dateFrom, dateTo, usd, rate, jpy, note, y, m, usdFrom, usdTo };
   state.fxRecords.push(newFx);
-  await dbSave('exchanges', { id: newFx.id, date, date_from: dateFrom||null, date_to: dateTo||null, usd, rate, jpy, note, y, m, usd_from: usdFrom, usd_to: usdTo });
   document.getElementById('fx-usd').value  = '';
   document.getElementById('fx-date-from').value = '';
   document.getElementById('fx-date-to').value   = '';
@@ -4849,9 +4879,15 @@ async function addSale() {
   const type = document.getElementById('s-type')?.value || 'normal';
   if (!casterId || isNaN(coins) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newSale = { id: state.nextId++, casterId, coins, date, note, y, m, rate, type, excludeReport: false };
+  let newSaleId;
+  try {
+    newSaleId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type, exclude_report: false }));
+  } catch(e) {
+    alert(`保存に失敗しました: ${e.message}`);
+    return;
+  }
+  const newSale = { id: newSaleId, casterId, coins, date, note, y, m, rate, type, excludeReport: false };
   state.sales.push(newSale);
-  await dbSave('sales', { id: newSale.id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type, exclude_report: false });
   document.getElementById('s-coins').value = '';
   document.getElementById('s-note').value = '';
   document.getElementById('s-rate').value = '';
@@ -5067,12 +5103,11 @@ async function saveSaleGroupEdit() {
     const isNew = row.dataset.isNew === 'true';
 
     if (isNew) {
-      const newId = state.nextId++;
       const type = row.querySelector('.sge-type')?.value || 'normal';
       const excludeReport = row.querySelector('.sge-exclude-report')?.checked || false;
+      const newId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport }));
       const rec = { id: newId, casterId, coins, date, note, y, m, rate, type, excludeReport };
       state.sales.push(rec);
-      await dbSaveAsync('sales', { id: newId, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport });
     } else {
       const id = parseInt(row.dataset.saleId);
       const type = row.querySelector('.sge-type')?.value || state.sales.find(s=>s.id===id)?.type || 'normal';
@@ -5986,19 +6021,26 @@ async function addExpense() {
     // 期間按分の場合：支払時は資産計上科目で登録、entry_type='prepaid_payment'
     const actualCat = isPrepaid ? prepaidConfig.assetCat : applyFixedAssetRule(r.cat, r.amount);
     const entryType = isPrepaid ? 'prepaid_payment' : 'normal';
+    // ID衝突防止：DBの最新IDを取得し直してから採番（複数タブ・複数端末での同時登録対策）
+    let newId;
+    try {
+      newId = await insertWithFreshId('expenses', id => ({
+        id, date, name: r.name, payee, cat: actualCat, amount: r.amount,
+        tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants,
+        purpose: r.purpose, y, m, exclude_manager: excludeManager, note,
+        entry_type: entryType, prepaid_id: null
+      }));
+    } catch(e) {
+      alert(`明細「${r.name}」の保存に失敗しました: ${e.message}`);
+      return;
+    }
     const newExp = {
-      id: state.nextId++, date, name: r.name, payee, cat: actualCat,
+      id: newId, date, name: r.name, payee, cat: actualCat,
       amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants,
       purpose: r.purpose, y, m, excludeManager, note,
       entryType, prepaidId: null
     };
     state.expenses.push(newExp);
-    await dbSaveAsync('expenses', {
-      id: newExp.id, date, name: r.name, payee, cat: actualCat, amount: r.amount,
-      tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants,
-      purpose: r.purpose, y, m, exclude_manager: excludeManager, note,
-      entry_type: entryType, prepaid_id: null
-    });
     await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
     if (i === 0) firstExpenseId = newExp.id;
 
@@ -6034,7 +6076,13 @@ async function addExpense() {
     const monthly = Math.floor(totalAmt / months);
     const final = totalAmt - monthly * (months - 1);
     // マスター登録
-    const masterId = state.nextId++;
+    const masterId = await insertWithFreshId('prepaid_expenses', id => ({
+      id, payment_expense_id: firstExpenseId,
+      asset_account: assetCat, expense_account: expCat,
+      total_amount: totalAmt, start_date: startDate, end_date: endDate,
+      months, monthly_amount: monthly, final_amount: final,
+      amortization_day: amorDay, status: 'active', note
+    }));
     const masterRec = {
       id: masterId, paymentExpenseId: firstExpenseId,
       assetAccount: assetCat, expenseAccount: expCat,
@@ -6043,13 +6091,6 @@ async function addExpense() {
       amortizationDay: amorDay, status: 'active', note, createdAt: new Date().toISOString()
     };
     state.prepaidExpenses.push(masterRec);
-    await sb.from('prepaid_expenses').insert({
-      id: masterId, payment_expense_id: firstExpenseId,
-      asset_account: assetCat, expense_account: expCat,
-      total_amount: totalAmt, start_date: startDate, end_date: endDate,
-      months, monthly_amount: monthly, final_amount: final,
-      amortization_day: amorDay, status: 'active', note
-    });
     // 月次振替仕訳を全件（months件）生成
     const startParts = startDate.split('-').map(Number);
     let curY = startParts[0], curM = startParts[1];
@@ -6061,22 +6102,23 @@ async function addExpense() {
       const day = Math.min(amorDay, maxDay);
       const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
       const amorName = `【前払費用按分 ${i+1}/${months}】${rows[0].name}`;
-      const amorId = state.nextId++;
+      const amorNote = `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`;
+      const amorId = await insertWithFreshId('expenses', id => ({
+        id, date: amorDate, name: amorName, payee,
+        cat: expCat, amount: amt, tax: -1, method: '振替',
+        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+        exclude_manager: false, note: amorNote,
+        entry_type: 'amortization', prepaid_id: masterId
+      }));
       const amorExp = {
         id: amorId, date: amorDate, name: amorName, payee,
         cat: expCat, amount: amt, tax: -1, method: '振替',
         invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
-        excludeManager: false, note: `前払費用按分（${startDate}〜${endDate}）${i+1}回目/${months}回`,
+        excludeManager: false, note: amorNote,
         entryType: 'amortization', prepaidId: masterId
       };
       state.expenses.push(amorExp);
-      await dbSaveAsync('expenses', {
-        id: amorId, date: amorDate, name: amorName, payee,
-        cat: expCat, amount: amt, tax: -1, method: '振替',
-        invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
-        exclude_manager: false, note: amorExp.note,
-        entry_type: 'amortization', prepaid_id: masterId
-      });
+      await writeAuditLog('add', amorExp.id, null, expToLogObj(amorExp));
       // 月を進める
       curM++;
       if (curM > 12) { curM = 1; curY++; }
@@ -6286,9 +6328,15 @@ async function addPettyCash() {
   const note = document.getElementById('pc-note').value;
   if (!date || isNaN(amount) || amount <= 0) { alert('日付と金額を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  const newPc = { id: state.nextId++, date, amount, type, note, y, m };
+  let newPcId;
+  try {
+    newPcId = await insertWithFreshId('petty_cash', id => ({ id, date, amount, type, note, y, m }));
+  } catch(e) {
+    alert(`保存に失敗しました: ${e.message}`);
+    return;
+  }
+  const newPc = { id: newPcId, date, amount, type, note, y, m };
   state.pettyCash.push(newPc);
-  await dbSave('petty_cash', { id: newPc.id, date, amount, type, note, y, m });
   await writeAuditLog('add', newPc.id, null, pcToLogObj(newPc), 'petty_cash');
   document.getElementById('pc-date').value = '';
   document.getElementById('pc-amount').value = '';
@@ -9859,22 +9907,23 @@ async function execRebuild() {
     const amorDate = `${String(curY).padStart(4,'0')}-${String(curM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const seqNo = doneAmorts.length + i + 1;
     const amorName = `【前払費用按分 ${seqNo}/${totalNew}】${baseName}`;
-    const amorId = state.nextId++;
+    const amorNote = `前払費用按分（${p.startDate}〜${p.endDate}）${seqNo}回目/${totalNew}回`;
+    const amorId = await insertWithFreshId('expenses', id => ({
+      id, date: amorDate, name: amorName, payee: payExp?.payee||'',
+      cat: p.expenseAccount, amount: amt, tax: -1, method: '振替',
+      invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
+      exclude_manager: false, note: amorNote,
+      entry_type: 'amortization', prepaid_id: masterId
+    }));
     const amorExp = {
       id: amorId, date: amorDate, name: amorName, payee: payExp?.payee||'',
       cat: p.expenseAccount, amount: amt, tax: -1, method: '振替',
       invoiceNo: '', participants: '', purpose: '', y: curY, m: curM,
-      excludeManager: false, note: `前払費用按分（${p.startDate}〜${p.endDate}）${seqNo}回目/${totalNew}回`,
+      excludeManager: false, note: amorNote,
       entryType: 'amortization', prepaidId: masterId
     };
     state.expenses.push(amorExp);
-    await dbSaveAsync('expenses', {
-      id: amorId, date: amorDate, name: amorName, payee: payExp?.payee||'',
-      cat: p.expenseAccount, amount: amt, tax: -1, method: '振替',
-      invoice_no: '', participants: '', purpose: '', y: curY, m: curM,
-      exclude_manager: false, note: amorExp.note,
-      entry_type: 'amortization', prepaid_id: masterId
-    });
+    await writeAuditLog('add', amorExp.id, null, expToLogObj(amorExp));
     curM++; if (curM > 12) { curM = 1; curY++; }
   }
   // マスターの費用化日を更新
