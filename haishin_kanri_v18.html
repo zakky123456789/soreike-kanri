@@ -1601,6 +1601,29 @@
         <div class="table-header"><div class="table-title">登録済み支払い記録</div></div>
         <div style="padding:16px" id="mgr-pay-list"></div>
       </div>
+      <!-- 管理人：追加報酬（過去分調整等） -->
+      <div class="table-wrap" id="mgr-adj-form-wrap" style="margin-bottom:16px">
+        <div class="table-header"><div class="table-title">➕ 追加報酬</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-size:11px;color:var(--muted)">指定した請求月の報酬計算・請求書に「追加報酬」として加算されます（過去分の再計算差額など、任意の調整に利用）</div>
+          <input type="hidden" id="mgr-adj-edit-id">
+          <div style="font-size:12px;font-weight:600;color:var(--muted)" id="mgr-adj-form-title">追加報酬を登録</div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>対象年 <span style="color:var(--red)">*</span></label><input id="mgr-adj-target-y" type="number" placeholder="例：2026"></div>
+            <div class="form-group"><label>対象月 <span style="color:var(--red)">*</span></label><input id="mgr-adj-target-m" type="number" min="1" max="12" placeholder="例：7"></div>
+          </div>
+          <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="mgr-adj-amount" type="number" placeholder="例：15000"></div>
+          <div class="form-group"><label>メモ</label><input id="mgr-adj-note" placeholder="例：6月分紹介料除外による差額"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="mgr-adj-cancel-btn" style="display:none" onclick="resetMgrAdjForm()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveMgrAdj()">登録</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-bottom:24px">
+        <div class="table-header"><div class="table-title">登録済み追加報酬</div></div>
+        <div style="padding:16px" id="mgr-adj-list"></div>
+      </div>
       <!-- 請求書プレビュー -->
       <div id="mgr-invoice-grid" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
         <div class="table-wrap">
@@ -1947,7 +1970,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR, officerPayR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR, officerPayR, mgrAdjR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1963,6 +1986,7 @@ async function loadFromDB() {
       fetchAll('referrer_pays', 'id'),
       fetchAll('manager_pays', 'id'),
       fetchAll('officer_pays', 'id'),
+      fetchAll('manager_reward_adjustments', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -2084,6 +2108,11 @@ async function loadFromDB() {
         targetY: r.target_y, targetM: r.target_m, note: r.note || ''
       }));
     }
+    if (mgrAdjR.data?.length > 0) {
+      state.managerRewardAdjustments = mgrAdjR.data.map(r => ({
+        id: r.id, targetY: r.target_y, targetM: r.target_m, amount: Number(r.amount), note: r.note || ''
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -2099,6 +2128,7 @@ async function loadFromDB() {
       ...state.referrerPays.map(r => r.id),
       ...state.managerPays.map(r => r.id),
       ...state.officerPays.map(r => r.id),
+      ...state.managerRewardAdjustments.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -2187,7 +2217,7 @@ async function dbDelete(table, id) {
 // 対象：referrer_pays・manager_pays・daily_pays・month_end_pays・expenses（v33〜）の新規作成。
 // 既存レコードの編集（idが確定済みのupsert）はこれまで通りdbSave()を使う（変更なし）。
 // 他のテーブルの新規作成（casters/referrers/sales等）も理論上は同じリスクを持つが未対応。
-const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays'];
+const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays', 'manager_reward_adjustments'];
 
 async function fetchFreshMaxId() {
   const results = await Promise.all(
@@ -2307,6 +2337,7 @@ let state = {
   referrerPays: [], // 紹介者への支払い記録
   managerPays: [], // 管理人への支払い記録
   officerPays: [], // 役員報酬（髙橋）源泉徴収の登録記録
+  managerRewardAdjustments: [], // 管理人：追加報酬（過去分調整等、任意の請求月に加算）
   nextId: 300,
 };
 
@@ -8502,7 +8533,11 @@ function calcManagerReward(y, m) {
   const replaceExps = exps.filter(e => replaceMethods.includes(e.method));
   const replaceTotal = replaceExps.reduce((s,e) => s + e.amount, 0);
 
-  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, totalPayment: mgrReward + replaceTotal };
+  // 追加報酬（過去分調整等、任意の請求月に加算されるもの）
+  const adjustments = state.managerRewardAdjustments.filter(a => a.targetY === y && a.targetM === m);
+  const adjustmentTotal = adjustments.reduce((s,a) => s + a.amount, 0);
+
+  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, adjustments, adjustmentTotal, totalPayment: mgrReward + replaceTotal + adjustmentTotal };
 }
 
 function renderManagerReward() {
@@ -8531,6 +8566,7 @@ function renderManagerReward() {
     </div>
     <div class="sim-row"><div class="sim-label">管理人報酬（×50%）</div><div style="font-family:var(--mono);color:var(--accent2);font-weight:700">${yen(r.mgrReward)}</div></div>
     <div class="sim-row"><div class="sim-label">立替経費精算</div><div style="font-family:var(--mono);color:var(--yellow)">${yen(r.replaceTotal)}</div></div>
+    ${r.adjustmentTotal !== 0 ? `<div class="sim-row"><div class="sim-label">追加報酬</div><div style="font-family:var(--mono);color:var(--green)">${yen(r.adjustmentTotal)}</div></div>` : ''}
     <div class="sim-row total"><div>支払合計</div><div style="font-family:var(--mono)">${yen(r.totalPayment)}</div></div>
   </div>
   ${r.replaceExps.length > 0 ? `
@@ -8583,6 +8619,11 @@ function renderManagerInvoice() {
   // 明細行：管理報酬
   const rows = [
     { label: `管理報酬（${y}年${m}月分　営業利益 ${yen(r.opProfit)} × 50%）`, amount: r.mgrReward, taxRate: 10 },
+    ...r.adjustments.map(a => ({
+      label: `追加報酬${a.note ? '　' + a.note : ''}`,
+      amount: a.amount,
+      taxRate: 10
+    })),
     ...r.replaceExps.map(e => ({
       label: `立替経費精算　${e.date}　${e.name}`,
       amount: e.amount,
@@ -8593,7 +8634,7 @@ function renderManagerInvoice() {
   const totalAmt = r.totalPayment;
 
   // 消費税計算
-  const taxable10 = r.mgrReward + r.replaceExps.filter(e=>e.tax===10).reduce((s,e)=>s+e.amount, 0);
+  const taxable10 = r.mgrReward + r.adjustmentTotal + r.replaceExps.filter(e=>e.tax===10).reduce((s,e)=>s+e.amount, 0);
   const taxable8  = r.replaceExps.filter(e=>e.tax===8).reduce((s,e)=>s+e.amount, 0);
   const nonTaxable  = r.replaceExps.filter(e=>e.tax===0).reduce((s,e)=>s+e.amount, 0);  // 非課税
   const outOfScope  = r.replaceExps.filter(e=>e.tax===-1).reduce((s,e)=>s+e.amount, 0); // 対象外
@@ -8757,6 +8798,7 @@ function renderManager() {
   if (ml) ml.textContent = lbl;
   renderManagerReward();
   renderMgrPayList();
+  renderMgrAdjList();
 }
 
 // ===== 管理人：支払い記録 =====
@@ -8845,6 +8887,87 @@ async function deleteMgrPay(id) {
   await dbDelete('manager_pays', id);
   state.managerPays = state.managerPays.filter(p => p.id !== id);
   renderMgrPayList();
+}
+
+// ===== 管理人：追加報酬（過去分調整等） =====
+function resetMgrAdjForm() {
+  document.getElementById('mgr-adj-edit-id').value = '';
+  document.getElementById('mgr-adj-target-y').value = state.y;
+  document.getElementById('mgr-adj-target-m').value = state.m;
+  document.getElementById('mgr-adj-amount').value = '';
+  document.getElementById('mgr-adj-note').value = '';
+  document.getElementById('mgr-adj-form-title').textContent = '追加報酬を登録';
+  document.getElementById('mgr-adj-cancel-btn').style.display = 'none';
+}
+
+function renderMgrAdjList() {
+  const el = document.getElementById('mgr-adj-list');
+  if (!el) return;
+  const adjs = [...state.managerRewardAdjustments].sort((a,b) => (b.targetY*100+b.targetM) - (a.targetY*100+a.targetM));
+  if (adjs.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">追加報酬の登録がありません</div>';
+    return;
+  }
+  el.innerHTML = adjs.map(a => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px"><span class="badge badge-purple">${a.targetY}年${a.targetM}月分</span>　<strong style="font-family:var(--mono);color:var(--accent)">${yen(a.amount)}</strong></div>
+        ${a.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(a.note)}</div>` : ''}
+      </div>
+      ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrAdj(${a.id})">編集</button>`}
+      <button class="btn btn-danger btn-sm" onclick="deleteMgrAdj(${a.id})">削除</button>
+    </div>`).join('');
+}
+
+function editMgrAdj(id) {
+  const a = state.managerRewardAdjustments.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('mgr-adj-edit-id').value = id;
+  document.getElementById('mgr-adj-target-y').value = a.targetY || '';
+  document.getElementById('mgr-adj-target-m').value = a.targetM || '';
+  document.getElementById('mgr-adj-amount').value = a.amount;
+  document.getElementById('mgr-adj-note').value = a.note || '';
+  document.getElementById('mgr-adj-form-title').textContent = '追加報酬を編集';
+  document.getElementById('mgr-adj-cancel-btn').style.display = '';
+}
+
+async function saveMgrAdj() {
+  const editId = document.getElementById('mgr-adj-edit-id').value;
+  const targetY = parseInt(document.getElementById('mgr-adj-target-y').value) || null;
+  const targetM = parseInt(document.getElementById('mgr-adj-target-m').value) || null;
+  const amount = parseInt(document.getElementById('mgr-adj-amount').value) || 0;
+  const note = document.getElementById('mgr-adj-note').value.trim();
+
+  if (!targetY || !targetM) { alert('対象年・対象月を入力してください'); return; }
+  if (!amount) { alert('金額を入力してください'); return; }
+
+  const record = { targetY, targetM, amount, note };
+
+  if (editId) {
+    const id = parseInt(editId);
+    const idx = state.managerRewardAdjustments.findIndex(a => a.id === id);
+    if (idx !== -1) state.managerRewardAdjustments[idx] = { ...state.managerRewardAdjustments[idx], ...record };
+    await dbSave('manager_reward_adjustments', { id, target_y: targetY, target_m: targetM, amount, note });
+  } else {
+    try {
+      const id = await insertWithFreshId('manager_reward_adjustments', id => ({ id, target_y: targetY, target_m: targetM, amount, note }));
+      state.managerRewardAdjustments.push({ id, ...record });
+    } catch(e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return;
+    }
+  }
+  resetMgrAdjForm();
+  renderMgrAdjList();
+  renderManagerReward();
+}
+
+async function deleteMgrAdj(id) {
+  if (!confirm('この追加報酬を削除しますか？')) return;
+  await dbDelete('manager_reward_adjustments', id);
+  state.managerRewardAdjustments = state.managerRewardAdjustments.filter(a => a.id !== id);
+  renderMgrAdjList();
+  renderManagerReward();
 }
 
 // ===== 役員報酬（髙橋）：源泉徴収の登録 =====
