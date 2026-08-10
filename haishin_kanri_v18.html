@@ -8620,7 +8620,7 @@ function renderManagerInvoice() {
   const rows = [
     { label: `管理報酬（${y}年${m}月分　営業利益 ${yen(r.opProfit)} × 50%）`, amount: r.mgrReward, taxRate: 10 },
     ...r.adjustments.map(a => ({
-      label: `追加報酬${a.note ? '　' + a.note : ''}`,
+      label: `追加報酬`,
       amount: a.amount,
       taxRate: 10
     })),
