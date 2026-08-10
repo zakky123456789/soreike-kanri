@@ -1990,7 +1990,8 @@ async function loadFromDB() {
         id: r.id, casterId: r.caster_id, coins: Number(r.coins),
         date: r.date, note: r.note, y: r.y, m: r.m, rate: r.rate ? Number(r.rate) : null,
         type: r.type || 'normal',
-        excludeReport: r.exclude_report || false
+        excludeReport: r.exclude_report || false,
+        excludeRef: r.exclude_ref || false
       }));
     }
     if (expensesR.data?.length > 0) {
@@ -3972,7 +3973,7 @@ function renderDashboard() {
   const totalRef = sales.reduce((s, x) => {
     const c = getCaster(x.casterId);
     if (!c?.refId) return s;
-    const _ref = getReferrer(c.refId); const _rw = calcReward(coinToYen(x.coins), c.rate); return s + calcRefTotal(x.coins, _rw, _ref).total;
+    const _ref = getReferrer(c.refId); const _rw = calcReward(coinToYen(x.coins), c.rate); return s + calcRefTotal(x.excludeRef ? 0 : x.coins, x.excludeRef ? 0 : _rw, _ref).total;
   }, 0);
   const profit = totalSales - totalReward - totalRef - totalExp;
 
@@ -4881,12 +4882,12 @@ async function addSale() {
   const [y, m] = date.split('-').map(Number);
   let newSaleId;
   try {
-    newSaleId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type, exclude_report: false }));
+    newSaleId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate: rate || null, type, exclude_report: false, exclude_ref: false }));
   } catch(e) {
     alert(`保存に失敗しました: ${e.message}`);
     return;
   }
-  const newSale = { id: newSaleId, casterId, coins, date, note, y, m, rate, type, excludeReport: false };
+  const newSale = { id: newSaleId, casterId, coins, date, note, y, m, rate, type, excludeReport: false, excludeRef: false };
   state.sales.push(newSale);
   document.getElementById('s-coins').value = '';
   document.getElementById('s-note').value = '';
@@ -4988,10 +4989,14 @@ function sgeRenderRow(container, s, num) {
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
       <input type="text" class="form-control sge-note" value="${escapeHtml(s.note||'')}" placeholder="任意" style="width:100%">
     </div>
-    <div style="margin-top:8px">
+    <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">
       <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
         <input type="checkbox" class="sge-exclude-report" ${s.excludeReport?'checked':''} style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
         <span>レポート除外（平均値の計算から除外）</span>
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
+        <input type="checkbox" class="sge-exclude-ref" ${s.excludeRef?'checked':''} style="width:14px;height:14px;accent-color:#fb923c;cursor:pointer">
+        <span>紹介料除外（紹介料の計算対象から除外）</span>
       </label>
     </div>`;
   container.appendChild(div);
@@ -5033,10 +5038,14 @@ function sgeAddRow() {
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">備考</label>
       <input type="text" class="form-control sge-note" placeholder="任意" style="width:100%">
     </div>
-    <div style="margin-top:8px">
+    <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap">
       <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
         <input type="checkbox" class="sge-exclude-report" style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
         <span>レポート除外（平均値の計算から除外）</span>
+      </label>
+      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
+        <input type="checkbox" class="sge-exclude-ref" style="width:14px;height:14px;accent-color:#fb923c;cursor:pointer">
+        <span>紹介料除外（紹介料の計算対象から除外）</span>
       </label>
     </div>`;
   container.appendChild(div);
@@ -5105,17 +5114,19 @@ async function saveSaleGroupEdit() {
     if (isNew) {
       const type = row.querySelector('.sge-type')?.value || 'normal';
       const excludeReport = row.querySelector('.sge-exclude-report')?.checked || false;
-      const newId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport }));
-      const rec = { id: newId, casterId, coins, date, note, y, m, rate, type, excludeReport };
+      const excludeRef = row.querySelector('.sge-exclude-ref')?.checked || false;
+      const newId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef }));
+      const rec = { id: newId, casterId, coins, date, note, y, m, rate, type, excludeReport, excludeRef };
       state.sales.push(rec);
     } else {
       const id = parseInt(row.dataset.saleId);
       const type = row.querySelector('.sge-type')?.value || state.sales.find(s=>s.id===id)?.type || 'normal';
       const excludeReport = row.querySelector('.sge-exclude-report')?.checked || false;
+      const excludeRef = row.querySelector('.sge-exclude-ref')?.checked || false;
       const idx = state.sales.findIndex(s => s.id === id);
       if (idx !== -1) {
-        state.sales[idx] = { ...state.sales[idx], coins, rate, note, type, excludeReport };
-        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport });
+        state.sales[idx] = { ...state.sales[idx], coins, rate, note, type, excludeReport, excludeRef };
+        await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef });
       }
     }
   }
@@ -5158,8 +5169,9 @@ async function saveSaleEdit() {
   if (idx !== -1) {
     const type = state.sales[idx].type || 'normal';
     const excludeReport = state.sales[idx].excludeReport || false;
-    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type, excludeReport };
-    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type, exclude_report: excludeReport });
+    const excludeRef = state.sales[idx].excludeRef || false;
+    state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type, excludeReport, excludeRef };
+    await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef });
   }
   closeSaleEditModal();
   renderAll();
@@ -5189,6 +5201,26 @@ function reportExcludeControl(saleId, excluded) {
       : '';
   }
   return `<button class="btn btn-sm" style="background:${excluded?'rgba(251,191,36,0.2)':'var(--surface2)'};border:1px solid ${excluded?'var(--yellow)':'var(--border)'};color:${excluded?'var(--yellow)':'var(--muted)'};font-size:10px" onclick="toggleExcludeReport(${saleId})" title="レポートの平均値計算から除外">${excluded?'📊除外中':'📊'}</button>`;
+}
+
+async function toggleExcludeRef(id) {
+  const idx = state.sales.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  const s = state.sales[idx];
+  s.excludeRef = !s.excludeRef;
+  await dbSave('sales', { id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport, exclude_ref: s.excludeRef });
+  renderAll();
+}
+
+// 紹介料除外の表示：管理者はON/OFF切替ボタン、閲覧者は状態を示す読み取り専用バッジ（クリック不可）。
+// 除外されていない通常の配信は閲覧者には何も表示しない（特に伝える情報がないため）。
+function refExcludeControl(saleId, excluded) {
+  if (isViewerRole()) {
+    return excluded
+      ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:5px 10px;display:inline-flex;align-items:center" title="紹介料の計算対象から除外されています">🤝除外中</span>`
+      : '';
+  }
+  return `<button class="btn btn-sm" style="background:${excluded?'rgba(251,146,60,0.2)':'var(--surface2)'};border:1px solid ${excluded?'#fb923c':'var(--border)'};color:${excluded?'#fb923c':'var(--muted)'};font-size:10px" onclick="toggleExcludeRef(${saleId})" title="紹介料の計算対象から除外">${excluded?'🤝除外中':'🤝'}</button>`;
 }
 
 // ===== DAILY PAY =====
@@ -5643,7 +5675,7 @@ function renderSales() {
     const rw = c ? calcReward(sa, c.rate) : 0;
     const src = calcSrcTax(rw);
     const ref = c?.refId ? getReferrer(c.refId) : null;
-    const rc = calcRefTotal(s.coins, rw, ref).total;
+    const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref).total;
     const office = calcOfficeSales(s.coins, s.rate, rw, rc);
     return { sa, rw, src, transfer: rw - src, jpy: office?.jpy||0, office: office?.office||0, refamt: rc, rate: s.rate||0 };
   };
@@ -5663,13 +5695,13 @@ function renderSales() {
     if (k === 'transfer') return d * (va.transfer - vb.transfer);
     if (k === 'refamt')   return d * (va.refamt - vb.refamt);
     if (k === 'ref1') {
-      const ra = calcRefTotal(a.coins, getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0, getReferrer(getCaster(a.casterId)?.refId)).r1;
-      const rb = calcRefTotal(b.coins, getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0, getReferrer(getCaster(b.casterId)?.refId)).r1;
+      const ra = calcRefTotal(a.excludeRef ? 0 : a.coins, a.excludeRef ? 0 : (getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0), getReferrer(getCaster(a.casterId)?.refId)).r1;
+      const rb = calcRefTotal(b.excludeRef ? 0 : b.coins, b.excludeRef ? 0 : (getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0), getReferrer(getCaster(b.casterId)?.refId)).r1;
       return d * (ra - rb);
     }
     if (k === 'ref2') {
-      const ra = calcRefTotal(a.coins, getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0, getReferrer(getCaster(a.casterId)?.refId)).r2;
-      const rb = calcRefTotal(b.coins, getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0, getReferrer(getCaster(b.casterId)?.refId)).r2;
+      const ra = calcRefTotal(a.excludeRef ? 0 : a.coins, a.excludeRef ? 0 : (getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0), getReferrer(getCaster(a.casterId)?.refId)).r2;
+      const rb = calcRefTotal(b.excludeRef ? 0 : b.coins, b.excludeRef ? 0 : (getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0), getReferrer(getCaster(b.casterId)?.refId)).r2;
       return d * (ra - rb);
     }
     return 0;
@@ -5707,7 +5739,7 @@ function renderSales() {
       const sa = coinToYen(s.coins);
       const rw = c ? calcReward(sa, c.rate) : 0;
       const src = calcSrcTax(rw);
-      const rc = calcRefTotal(s.coins, rw, ref);
+      const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref);
       const office = calcOfficeSales(s.coins, s.rate, rw, rc.total);
       sumCoins   += s.coins;
       sumReward  += rw;
@@ -5730,6 +5762,7 @@ function renderSales() {
         <strong>${c?.name||'?'}</strong>
         ${g.sales.length===1 && g.sales[0].type==='adjust' ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">調整</span>` : ''}
         ${g.sales.length===1 && g.sales[0].excludeReport ? `<span style="font-size:10px;background:rgba(251,191,36,0.2);color:var(--yellow);border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">レポート除外</span>` : ''}
+        ${g.sales.length===1 && g.sales[0].excludeRef ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">紹介料除外</span>` : ''}
       </td>
       <td>
         ${isMulti
@@ -5752,6 +5785,7 @@ function renderSales() {
       <td style="display:flex;gap:6px;flex-wrap:nowrap">
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>`}
         ${!isMulti ? reportExcludeControl(g.sales[0].id, g.sales[0].excludeReport) : ''}
+        ${!isMulti ? refExcludeControl(g.sales[0].id, g.sales[0].excludeRef) : ''}
         ${!isMulti ? `<button class="btn btn-danger btn-sm" onclick="deleteSale(${g.sales[0].id})">削除</button>` : ''}
       </td>
     </tr>`);
@@ -5762,7 +5796,7 @@ function renderSales() {
         const sa = coinToYen(s.coins);
         const reward = c ? calcReward(sa, c.rate) : 0;
         const src = calcSrcTax(reward);
-        const rc = calcRefTotal(s.coins, reward, ref);
+        const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : reward, ref);
         const r1=rc.r1, r2=rc.r2, rcTotal=rc.total;
         const office = calcOfficeSales(s.coins, s.rate, reward, rcTotal);
         const isRefund = s.coins < 0;
@@ -5773,6 +5807,7 @@ function renderSales() {
 
             ${(s.type||'normal')==='adjust'?'<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">調整</span>':''}
             ${s.excludeReport?'<span style="font-size:10px;background:rgba(251,191,36,0.2);color:var(--yellow);border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">レポート除外</span>':''}
+            ${s.excludeRef?'<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 5px;font-weight:700;margin-left:4px">紹介料除外</span>':''}
           </td>
           <td><span class="badge badge-blue">${c?.rate||0}%</span></td>
           <td class="num"><span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}">${coins(s.coins)}</span></td>
@@ -5787,7 +5822,7 @@ function renderSales() {
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
           <td class="num" style="color:var(--green);font-weight:700">${office?yen(office.office):'-'}</td>
-          <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button>`}${reportExcludeControl(s.id, s.excludeReport)}<button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
+          <td style="display:flex;gap:6px">${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleEditModal(${s.id})">編集</button>`}${reportExcludeControl(s.id, s.excludeReport)}${refExcludeControl(s.id, s.excludeRef)}<button class="btn btn-danger btn-sm" onclick="deleteSale(${s.id})">削除</button></td>
         </tr>`);
       });
     }
@@ -6647,7 +6682,7 @@ function renderPL() {
   const totalRef = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); if (!c?.refId) return s;
     const ref = getReferrer(c.refId); const rw = calcReward(coinToYen(x.coins), c.rate);
-    return s + calcRefTotal(x.coins, rw, ref).total;
+    return s + calcRefTotal(x.excludeRef ? 0 : x.coins, x.excludeRef ? 0 : rw, ref).total;
   }, 0);
   const totalSrc = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcSrcTax(calcReward(coinToYen(x.coins), c.rate)) : 0);
@@ -6697,7 +6732,7 @@ function renderPL() {
     }
     const rw = calcReward(coinToYen(s.coins), c.rate);
     const ref = byId[c.id].ref;
-    const {r1, r2, total: refTot} = calcRefTotal(s.coins, rw, ref);
+    const {r1, r2, total: refTot} = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref);
     byId[c.id].totalCoins += s.coins;
     byId[c.id].reward += rw;
     byId[c.id].src += calcSrcTax(rw);
@@ -7831,7 +7866,7 @@ function renderReport() {
       const totalReward = cSales.reduce((s,x) => s+calcReward(coinToYen(x.coins),c.rate), 0);
       const totalSrc = calcSrcTax(totalReward);
       const ref = c.refId ? getReferrer(c.refId) : null;
-      const totalRef = cSales.reduce((s,x) => { const rw=calcReward(coinToYen(x.coins),c.rate); return s+calcRefTotal(x.coins,rw,ref).total; }, 0);
+      const totalRef = cSales.reduce((s,x) => { const rw=calcReward(coinToYen(x.coins),c.rate); return s+calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total; }, 0);
       const cDp = dailyPays.filter(d => d.casterId === c.id);
       const dpTotal = cDp.reduce((s,d)=>s+d.amount,0);
       const dpSrc = cDp.reduce((s,d)=>s+d.srcTax,0);
@@ -7841,7 +7876,7 @@ function renderReport() {
       const ratesValid = cSales.filter(s=>s.rate);
       const officeTotal = ratesValid.reduce((s,x) => {
         const rw=calcReward(coinToYen(x.coins),c.rate);
-        const rc=calcRefTotal(x.coins,rw,ref).total;
+        const rc=calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total;
         const o=calcOfficeSales(x.coins,x.rate,rw,rc);
         return s+(o?o.office:0);
       }, 0);
@@ -7882,7 +7917,7 @@ function renderReport() {
     const totCoins = cSales.reduce((s,x)=>s+x.coins,0);
     const totReward = cSales.reduce((s,x)=>s+calcReward(coinToYen(x.coins),c.rate),0);
     const totSrc = calcSrcTax(totReward);
-    const totRef = cSales.reduce((s,x)=>{const rw=calcReward(coinToYen(x.coins),c.rate);return s+calcRefTotal(x.coins,rw,ref).total;},0);
+    const totRef = cSales.reduce((s,x)=>{const rw=calcReward(coinToYen(x.coins),c.rate);return s+calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total;},0);
     const dpAmt = cDp.reduce((s,d)=>s+d.amount,0);
     const dpSrc = cDp.reduce((s,d)=>s+d.srcTax,0);
     const remaining = Math.max(0, totReward - dpAmt);
@@ -7905,7 +7940,7 @@ function renderReport() {
             <tbody>${cSales.map(s => {
               const rw = calcReward(coinToYen(s.coins), c.rate);
               const src = calcSrcTax(rw);
-              const rc = calcRefTotal(s.coins, rw, ref).total;
+              const rc = calcRefTotal(s.excludeRef?0:s.coins, s.excludeRef?0:rw, ref).total;
               const office = calcOfficeSales(s.coins, s.rate, rw, rc);
               return `<tr>
                 <td style="font-size:12px;color:var(--muted)">${s.date}</td>
@@ -7997,6 +8032,7 @@ function renderRefReport() {
     let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
     const dateMap = {};
     cSales.forEach(x => {
+      if (x.excludeRef) return; // 紹介料除外フラグが立った売上は日別コイン合計に含めない
       if (!dateMap[x.date]) dateMap[x.date] = 0;
       dateMap[x.date] += x.coins;
     });
@@ -8272,6 +8308,7 @@ function renderRefund() {
   sales.forEach(x => {
     const c = getCaster(x.casterId);
     if (!c?.refId) return;
+    if (x.excludeRef) return;
     const ref = getReferrer(c.refId);
     if (!ref) return;
     const rw = calcReward(coinToYen(x.coins), c.rate);
@@ -8315,6 +8352,7 @@ function renderRefund() {
     sales.forEach(x => {
       const c = getCaster(x.casterId);
       if (!c?.refId) return;
+      if (x.excludeRef) return;
       const key = x.casterId + '_' + x.date;
       if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
       groupMap[key].coins += x.coins;
@@ -8441,6 +8479,7 @@ function calcManagerReward(y, m) {
     sales.forEach(x => {
       const c = getCaster(x.casterId);
       if (!c?.refId) return;
+      if (x.excludeRef) return;
       const key = x.casterId + '_' + x.date;
       if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
       groupMap[key].coins += x.coins;
