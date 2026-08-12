@@ -1401,7 +1401,13 @@
       <div id="tax-alerts"></div>
 
       <div class="table-wrap">
-        <div class="table-header"><div class="table-title">源泉税納付スケジュール</div></div>
+        <div class="table-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+          <div class="table-title">源泉税納付スケジュール（直近1年分）</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+            <span>表示の起点：</span>
+            <input type="month" id="tax-anchor-month" onchange="renderTax()" style="padding:5px 8px;font-size:12px;width:auto">
+          </div>
+        </div>
         <table><thead><tr><th>対象月</th><th class="num">源泉税合計</th><th>納付期限</th><th>残日数</th><th>状態</th><th></th></tr></thead>
         <tbody id="tax-table"></tbody></table>
       </div>
@@ -6839,8 +6845,19 @@ function renderTax() {
   const today = new Date();
   const rows = [];
 
-  for (let i = 0; i < 6; i++) {
-    let y = state.y, m = state.m - i;
+  // 表示の起点年月：ページ専用セレクター（未設定なら現在選択中のグローバル月で初期化）
+  const anchorEl = document.getElementById('tax-anchor-month');
+  let anchorY = state.y, anchorM = state.m;
+  if (anchorEl) {
+    if (!anchorEl.value) {
+      anchorEl.value = `${state.y}-${String(state.m).padStart(2,'0')}`;
+    }
+    const [ay, am] = anchorEl.value.split('-').map(Number);
+    if (ay && am) { anchorY = ay; anchorM = am; }
+  }
+
+  for (let i = 0; i < 12; i++) {
+    let y = anchorY, m = anchorM - i;
     while (m <= 0) { m += 12; y--; }
     const sales = salesOfMonth(y, m);
     const dailyPays = dailyPaysByPayMonth(y, m);
