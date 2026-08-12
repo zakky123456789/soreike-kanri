@@ -5512,7 +5512,12 @@ async function saveDpEdit() {
   const dates = saleIds.map(sid => { const s = state.sales.find(x => x.id === sid); return s ? s.date : ''; }).filter(Boolean).sort();
   const salesLabel = dates.length === 0 ? '' : dates.length === 1 ? `${dates[0]} 配信分` : `${dates.join('・')} 配信分`;
   const idx = state.dailyPays.findIndex(x => x.id === id);
-  if (idx !== -1) state.dailyPays[idx] = { ...state.dailyPays[idx], casterId, amount: savedAmount, srcTax, date, note, y, m, saleIds, salesLabel };
+  if (idx === -1) { closeDpEditModal(); return; }
+  const targetY = state.dailyPays[idx].targetY ?? y;
+  const targetM = state.dailyPays[idx].targetM ?? m;
+  const ok = await dbSave('daily_pays', { id, caster_id: casterId, amount: savedAmount, src_tax: srcTax, date, note: note||'', y, m, target_y: targetY, target_m: targetM, sale_ids: JSON.stringify(saleIds||[]), sales_label: salesLabel||'' });
+  if (!ok) { alert('保存に失敗しました。もう一度お試しください。'); return; }
+  state.dailyPays[idx] = { ...state.dailyPays[idx], casterId, amount: savedAmount, srcTax, date, note, y, m, saleIds, salesLabel };
   closeDpEditModal();
   renderAll();
   updateDailySelect();
