@@ -8492,8 +8492,8 @@ async function saveMgrInfo() {
   state.manager.holder      = document.getElementById('mgr-holder')?.value.trim()      || '';
   state.manager.accountType = document.getElementById('mgr-accountType')?.value || '普通';
   const mgr = state.manager;
-  sb.from('manager').upsert({ id: 1, name: mgr.name, tel: mgr.tel, email: mgr.email, address: mgr.address, bank: mgr.bank, branch: mgr.branch, account_type: mgr.accountType, account: mgr.account, holder: mgr.holder }, { onConflict: 'id' });
-  showSyncStatus('ok');
+  const ok = await dbSave('manager', { id: 1, name: mgr.name, tel: mgr.tel, email: mgr.email, address: mgr.address, bank: mgr.bank, branch: mgr.branch, account_type: mgr.accountType, account: mgr.account, holder: mgr.holder });
+  if (!ok) { alert('保存に失敗しました。もう一度お試しください。'); return; }
   renderManagerReward();
   renderManagerInvoice();
 }
