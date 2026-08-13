@@ -2210,7 +2210,12 @@ async function loadFromDB() {
     if (taxR.data?.length > 0) {
       state.taxPaid = {};
       state.taxPaidDate = {};
-      taxR.data.forEach(r => { if (r.paid) state.taxPaid[r.key] = true; if (r.paid_date) state.taxPaidDate[r.key] = r.paid_date; });
+      state.taxPaidAmount = {};
+      taxR.data.forEach(r => {
+        if (r.paid) state.taxPaid[r.key] = true;
+        if (r.paid_date) state.taxPaidDate[r.key] = r.paid_date;
+        if (r.amount != null) state.taxPaidAmount[r.key] = Number(r.amount);
+      });
     }
     if (fxR.data?.length > 0) {
       state.fxRecords = fxR.data.map(r => ({
@@ -2325,6 +2330,7 @@ async function loadFromDB() {
     dbReady = true;
     showSyncStatus('ok');
     await autoRegisterRecurringExpenses();
+    await backfillTaxPaidAmounts();
     restoreLastPage();
     // 経費入力フォームの明細行を初期化
     { const cont = document.getElementById('e-rows-container'); if (cont && cont.children.length === 0) { expRowCount = 0; addExpRow(); } }
@@ -2505,6 +2511,7 @@ let state = {
   ],
   taxPaid: {},
   taxPaidDate: {},
+  taxPaidAmount: {}, // 源泉税：納付済みとして確定した実際の金額（key単位）。総勘定元帳の預り金取り崩し仕訳の金額として使う
   manager: {
     name: '丹羽裕之',
     tel: '080-4323-7337',
@@ -2711,6 +2718,72 @@ function calcRefTotal(coins, reward, ref) {
   return { r1, r2, r2a, r2b, total };
 }
 const calcExpTax = (amt, rate) => rate <= 0 ? 0 : Math.floor(amt - amt / (1 + rate / 100)); // 切り捨て（非課税・対象外はゼロ）
+
+// 月末精算分の源泉税集計（配信者ごとの「月間報酬－前払い累計」の残額から算出）の詳細版。
+// 源泉税合計に加え、対象人数・支払額・対象配信者idも返す（源泉税管理ページの納付書記入ガイドで使用）。
+// ダッシュボードのアラート・源泉税管理ページ・総勘定元帳（源泉税納付の仕訳金額）で共通利用する唯一の実装。
+// 同じ計算を複数箇所で独立実装しない（過去の月末請求書バグの教訓）ため、必ずこの関数経由で計算すること。
+function calcMonthEndSettleDetail(y, m) {
+  const sales = salesOfMonth(y, m);
+  const dpOfMonth = dailyPaysOfMonth(y, m);
+  let settleSrc = 0, settlePersons = 0, settlePayAmount = 0;
+  const settleCasterIds = new Set();
+  state.casters.forEach(c => {
+    const cSales = sales.filter(s => s.casterId === c.id);
+    if (cSales.length === 0) return;
+    const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const totalDailyAmt = dpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
+    const remaining = totalReward - totalDailyAmt;
+    if (remaining > 0) {
+      settleSrc += calcSrcTax(remaining);
+      settlePersons++;
+      settlePayAmount += remaining;
+      settleCasterIds.add(c.id);
+    }
+  });
+  return { settleSrc, settlePersons, settlePayAmount, settleCasterIds };
+}
+// 合計金額だけ欲しい呼び出し元向けの簡易版
+function calcMonthEndSettleSrcTax(y, m) {
+  return calcMonthEndSettleDetail(y, m).settleSrc;
+}
+
+// tax_paid.key（'dp-{支払年}-{支払月}-t{対象年}-{対象月}' または 'se-{対象年}-{対象月}'）を分解する
+function parseTaxKey(key) {
+  let mm = /^dp-(\d+)-(\d+)-t(\d+)-(\d+)$/.exec(key);
+  if (mm) return { type: 'dp', payY: +mm[1], payM: +mm[2], targetY: +mm[3], targetM: +mm[4] };
+  mm = /^se-(\d+)-(\d+)$/.exec(key);
+  if (mm) return { type: 'se', y: +mm[1], m: +mm[2] };
+  return null;
+}
+
+// tax_paid.keyから、その納付項目の源泉税額を計算する（renderTax()の一覧生成と同じ計算式）。
+// 「納付済みにした時点の金額」をtax_paid.amountとして保存する際、および総勘定元帳の
+// 仕訳金額を求める際に使う。renderTax()のように直近12ヶ月に限定されず、任意の年月のkeyに対応する。
+function computeTaxKeyAmount(key) {
+  const p = parseTaxKey(key);
+  if (!p) return 0;
+  if (p.type === 'dp') {
+    return dailyPaysByPayMonth(p.payY, p.payM)
+      .filter(d => (d.targetY ?? d.y) === p.targetY && (d.targetM ?? d.m) === p.targetM)
+      .reduce((s, d) => s + (d.srcTax || 0), 0);
+  }
+  if (p.type === 'se') return calcMonthEndSettleSrcTax(p.y, p.m);
+  return 0;
+}
+
+// tax_paid.keyから表示用ラベルを組み立てる（renderTax()の一覧行と同じ文言）
+function taxKeyLabel(key) {
+  const p = parseTaxKey(key);
+  if (!p) return key;
+  if (p.type === 'dp') return `${p.targetY}年${p.targetM}月配信分　前払い【${p.payM}月支払い】`;
+  if (p.type === 'se') {
+    const pm = p.m + 1 > 12 ? 1 : p.m + 1;
+    return `${p.y}年${p.m}月配信分　月末精算【${pm}月支払い】`;
+  }
+  return key;
+}
+
 const getCaster = id => state.casters.find(c => c.id === id);
 const getReferrer = id => state.referrers.find(r => r.id === id);
 const salesOfMonth = (y, m) => state.sales.filter(s => s.y === y && s.m === m);
@@ -4244,7 +4317,6 @@ function renderDashboard() {
   for (let i = 0; i < 6; i++) {
     let ty = state.y, tm = state.m - i;
     while (tm <= 0) { tm += 12; ty--; }
-    const tSales = salesOfMonth(ty, tm);
     const tDailyPays = dailyPaysByPayMonth(ty, tm);
 
     // 前払い分：支払月の翌月10日（対象月ごとに分割）
@@ -4271,16 +4343,7 @@ function renderDashboard() {
     }
 
     // 月末精算分：翌々月10日
-    const tDpOfMonth = dailyPaysOfMonth(ty, tm);
-    let settleSrc = 0;
-    state.casters.forEach(c => {
-      const cSales = tSales.filter(s => s.casterId === c.id);
-      if (cSales.length === 0) return;
-      const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-      const totalDailyAmt = tDpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
-      const remaining = totalReward - totalDailyAmt;
-      if (remaining > 0) settleSrc += calcSrcTax(remaining);
-    });
+    const settleSrc = calcMonthEndSettleSrcTax(ty, tm);
     if (settleSrc > 0) {
       const pm = tm+1>12?1:tm+1; const py = tm+1>12?ty+1:ty;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
@@ -7051,7 +7114,6 @@ function renderTax() {
   for (let i = 0; i < 12; i++) {
     let y = anchorY, m = anchorM - i;
     while (m <= 0) { m += 12; y--; }
-    const sales = salesOfMonth(y, m);
     const dailyPays = dailyPaysByPayMonth(y, m);
 
     // 前払い分：支払月の翌月10日（対象月ごとに分割表示）
@@ -7073,24 +7135,7 @@ function renderTax() {
 
     // 月末払い分：翌々月10日が納付期限
     // 配信者ごとに「月間報酬 − 前払い累計」の残額から源泉税を計算して合算（月末精算サマリーと同一ロジック）
-    const dpOfMonth = dailyPaysOfMonth(y, m);
-    let settleSrc = 0;
-    let settlePersons = 0;
-    let settlePayAmount = 0;
-    const settleCasterIds = new Set();
-    state.casters.forEach(c => {
-      const cSales = sales.filter(s => s.casterId === c.id);
-      if (cSales.length === 0) return;
-      const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-      const totalDailyAmt = dpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
-      const remaining = totalReward - totalDailyAmt;
-      if (remaining > 0) {
-        settleSrc += calcSrcTax(remaining);
-        settlePersons++;
-        settlePayAmount += remaining;
-        settleCasterIds.add(c.id);
-      }
-    });
+    const { settleSrc, settlePersons, settlePayAmount, settleCasterIds } = calcMonthEndSettleDetail(y, m);
     if (settleSrc > 0) {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
@@ -7221,9 +7266,28 @@ function renderTax() {
 }
 
 // paidDate: 省略時は既存のpaid_dateを変更しない／空文字を渡すとクリア（手動で日付を消す場合用）
+// 過去（tax_paid.amount列の追加前）に「納付済み」にした記録は、amountが未設定のまま残っている。
+// DBロード後に一度だけ、既存の計算ロジック（computeTaxKeyAmount）で金額を算出して埋め戻す。
+// 埋め戻し済みのkeyはstate.taxPaidAmountに値が入るので、以後この関数は対象なしで即終了する（冪等）。
+async function backfillTaxPaidAmounts() {
+  if (isViewerRole()) return; // 閲覧者はtax_paidへの書き込み権限がない（RLSで拒否される）ため試行しない
+  const targets = Object.keys(state.taxPaid).filter(key => state.taxPaid[key] && state.taxPaidAmount[key] == null);
+  if (targets.length === 0) return;
+  const rows = targets.map(key => ({ key, amount: computeTaxKeyAmount(key) }));
+  const { error } = await sb.from('tax_paid').upsert(rows, { onConflict: 'key' });
+  if (error) {
+    console.error('tax_paid amount backfill error:', error);
+    return; // 失敗しても致命的ではない（次回ロード時に再度自動で埋め戻しが試行される）
+  }
+  rows.forEach(r => { state.taxPaidAmount[r.key] = r.amount; });
+}
+
 async function setTax(key, v, paidDate) {
   if (v) {
-    const payload = { key, paid: true };
+    // 納付済みにする時点の金額を確定して保存する（総勘定元帳の預り金取り崩し仕訳で使うため）。
+    // 後から売上・日払いが修正されても、実際に納付した金額はここで固定される。
+    const amount = computeTaxKeyAmount(key);
+    const payload = { key, paid: true, amount };
     if (paidDate !== undefined) payload.paid_date = paidDate || null;
     const { error } = await sb.from('tax_paid').upsert(payload, { onConflict: 'key' });
     if (error) {
@@ -7232,6 +7296,7 @@ async function setTax(key, v, paidDate) {
       return;
     }
     state.taxPaid[key] = true;
+    state.taxPaidAmount[key] = amount;
     if (paidDate !== undefined) {
       if (paidDate) state.taxPaidDate[key] = paidDate;
       else delete state.taxPaidDate[key];
@@ -7253,6 +7318,7 @@ async function setTax(key, v, paidDate) {
     }
     delete state.taxPaid[key];
     delete state.taxPaidDate[key];
+    delete state.taxPaidAmount[key];
   }
   renderAll();
 }
@@ -7326,7 +7392,11 @@ function renderTaxAttachList() {
 // 個別のsetTax()を複数回呼ぶ代わりに1回のupsertでまとめて保存し、renderAll()も1回だけ呼ぶ
 async function setTaxBulkDate(itemKeys, payDate) {
   if (!itemKeys || itemKeys.length === 0) return false;
-  const rows = itemKeys.map(key => ({ key, paid: true, paid_date: payDate || null }));
+  // 納付済みにする時点の金額を確定して保存する（総勘定元帳の預り金取り崩し仕訳で使うため）。
+  // 後から売上・日払いが修正されても、実際に納付した金額はここで固定される。
+  const amounts = {};
+  itemKeys.forEach(key => { amounts[key] = computeTaxKeyAmount(key); });
+  const rows = itemKeys.map(key => ({ key, paid: true, paid_date: payDate || null, amount: amounts[key] }));
   const { error } = await sb.from('tax_paid').upsert(rows, { onConflict: 'key' });
   if (error) {
     console.error('tax_paid bulk upsert error:', error);
@@ -7335,6 +7405,7 @@ async function setTaxBulkDate(itemKeys, payDate) {
   }
   itemKeys.forEach(key => {
     state.taxPaid[key] = true;
+    state.taxPaidAmount[key] = amounts[key];
     if (payDate) state.taxPaidDate[key] = payDate; else delete state.taxPaidDate[key];
   });
   renderAll();
@@ -7361,6 +7432,7 @@ async function cancelTaxGroup(groupKey) {
   itemKeys.forEach(key => {
     delete state.taxPaid[key];
     delete state.taxPaidDate[key];
+    delete state.taxPaidAmount[key];
   });
   renderAll();
 }
@@ -11025,6 +11097,20 @@ async function downloadLedgerXlsx() {
       } else {
         allEntries.push({ date: exp.date, note, debitAcc: cat, debitAmt: amt, creditAcc: '現金', creditAmt: amt, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
+    });
+
+    // 5. 源泉税の納付：預り金の取り崩し
+    // 日払い・月末精算の仕訳（上記2・3）は、源泉税分を貸方「預り金」として積み上げるだけで、
+    // 実際に税務署へ納付した時点でそれを取り崩す仕訳が無かった（v34で判明した課題）。
+    // このため預り金残高が実態と合わず膨らみ続けていた。源泉税管理ページで「納付済み」に
+    // した記録（tax_paid）のうち、納付日（paid_date）が期間内にあるものを対象に、
+    // 納付済みに確定した時点の金額（tax_paid.amount）で取り崩し仕訳を追加する。
+    Object.keys(state.taxPaid).forEach(key => {
+      if (!state.taxPaid[key]) return;
+      const paidDate = state.taxPaidDate[key];
+      const amount = state.taxPaidAmount[key];
+      if (!inPeriod(paidDate) || !amount) return;
+      allEntries.push({ date: paidDate, note: `源泉税納付：${taxKeyLabel(key)}`, debitAcc: '預り金', debitAmt: amount, creditAcc: '現金', creditAmt: amount });
     });
 
     // --- アカウント別に仕訳を振り分け ---
