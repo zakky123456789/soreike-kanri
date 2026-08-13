@@ -10483,7 +10483,9 @@ function renderWithholding() {
           <td style="width:18%">
             <div class="wh-cell">
               <div class="wh-label">細目</div>
-              <div class="wh-val">${(caster.invoice === 'yes' && caster.invoiceNo) ? caster.invoiceNo : (caster.invoice === 'yes' ? 'インボイス登録' : '免税事業者')}</div>
+              <!-- 空欄（税理士確認済み・2026-08-13）。国税庁の記載要領上、区分「配信業務報酬」に対応する
+                   決まった細目の記載内容がなく、インボイス登録番号を書くのも本来の使い方ではないため -->
+              <div class="wh-val">&nbsp;</div>
             </div>
           </td>
           <td colspan="2" style="width:28%">
