@@ -9996,7 +9996,11 @@ function openMepModal(casterId, y, m, editId) {
   const caster = state.casters.find(c => c.id === casterId);
   if (!caster) return;
 
-  // 月末精算の計算（renderSummaryと同じロジック）
+  // 月末精算の計算（renderSummaryと同じロジック）。あくまで「新規登録時のデフォルト値（見積り）」であり、
+  // 既に登録済みのレコードを開く場合はこの見積りではなく、実際に保存されている金額を優先して表示する
+  // （下記のexisting参照）。過去バグ：ここを条件なく常に表示していたため、請求書アップロードで確定した
+  // 実額があっても、モーダルを再度開くと見積り額に戻って表示され、そのまま保存すると確定額が
+  // 見積り額で上書きされてしまっていた。
   const sales = salesOfMonth(y, m);
   const cSales = sales.filter(s => s.casterId === casterId);
   const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), caster.rate), 0);
@@ -10012,13 +10016,16 @@ function openMepModal(casterId, y, m, editId) {
   const defPayY = m === 12 ? y + 1 : y;
   const defDate = `${defPayY}-${String(defPayM).padStart(2,'0')}-22`;
 
+  const existing = editId ? state.monthEndPays.find(p => p.id === editId) : null;
+
   document.getElementById('mep-caster-id').value = casterId;
   document.getElementById('mep-target-y').value = y;
   document.getElementById('mep-target-m').value = m;
   document.getElementById('mep-edit-id').value = editId || '';
   document.getElementById('mep-label').textContent = `${caster.name}　${y}年${m}月分`;
-  document.getElementById('mep-amount').value = transfer > 0 ? transfer : 0;
-  document.getElementById('mep-src-tax').value = remainingSrc;
+  // 既存レコードがあれば実際に保存されている金額を、無ければ見積り額をデフォルト表示する
+  document.getElementById('mep-amount').value = existing ? existing.amount : (transfer > 0 ? transfer : 0);
+  document.getElementById('mep-src-tax').value = existing ? existing.srcTax : remainingSrc;
   document.getElementById('mep-note').value = '';
   // クイックアップロードの状態表示・選択済みファイルをリセット（前回開いた時の表示が残らないように）
   const invStatus = document.getElementById('mep-invoice-status');
@@ -10029,7 +10036,6 @@ function openMepModal(casterId, y, m, editId) {
   document.getElementById('mep-transfer-file').value = '';
 
   if (editId) {
-    const existing = state.monthEndPays.find(p => p.id === editId);
     if (existing) {
       document.getElementById('mep-pay-date').value = existing.payDate || defDate;
       document.getElementById('mep-note').value = existing.note || '';
