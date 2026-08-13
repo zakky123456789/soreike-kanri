@@ -240,6 +240,7 @@
     <div class="nav-item" onclick="showPage('referrers')"><span>🤝</span>紹介者管理</div>
     <div class="nav-item" onclick="showPage('sales')"><span>💰</span>売上入力</div>
     <div class="nav-item" onclick="showPage('expenses')"><span>🧾</span>経費入力</div>
+    <div class="nav-item" onclick="showPage('trip')"><span>🧳</span>出張手当</div>
     <div class="nav-item" onclick="showPage('pl')"><span>📈</span>月次損益</div>
     <div class="nav-item" onclick="showPage('fx')"><span>💱</span>両替入力</div>
     <div class="nav-item" onclick="showPage('tax')"><span>🏛️</span>源泉税管理</div>
@@ -1333,6 +1334,170 @@
       </div>
     </div>
 
+    <!-- 出張手当 -->
+    <div class="page" id="page-trip">
+      <div class="page-header">
+        <div class="page-title">出張手当</div>
+        <div class="month-nav">
+          <button onclick="changeMonth(-1)">◀</button>
+          <div class="month-label" onclick="openMonthPicker()" id="ml-trip"></div>
+          <button onclick="changeMonth(1)">▶</button>
+        </div>
+      </div>
+
+      <!-- 規程サマリー -->
+      <div class="table-wrap" style="margin-bottom:16px" data-viewer-keep="1">
+        <div class="table-header" style="cursor:pointer" onclick="toggleTripRules()">
+          <div class="table-title">📕 出張旅費規程（役員）</div>
+          <span id="bt-rules-arrow" style="color:var(--muted);font-size:12px">▼ 表示</span>
+        </div>
+        <div id="bt-rules-body" style="display:none;padding:16px;font-size:12px;line-height:1.9;color:var(--muted)">
+          <div style="font-weight:700;color:var(--text);margin-bottom:6px">国内出張</div>
+          <div>・日帰り日当　<strong style="color:var(--text)">5,000円／日</strong>　・宿泊日当　<strong style="color:var(--text)">10,000円／泊</strong></div>
+          <div>・宿泊費　実費（基準額 15,000円／泊）　・交通費　実費（グリーン車相当）</div>
+          <div>・宿泊施設を利用しなかった場合は宿泊費基準額の60%＝<strong style="color:var(--text)">9,000円／泊</strong></div>
+          <div style="margin-top:4px">・出張の定義：往復50km以上かつ所要1時間以上（満たない場合は「外出」として交通費実費のみ）</div>
+          <div style="font-weight:700;color:var(--text);margin:12px 0 6px">海外出張</div>
+          <div>・日当　<strong style="color:var(--text)">15,000円／日</strong>（出発日〜帰国日の暦日数）　・宿泊費　実費（基準額 50,000円／泊）</div>
+          <div>・宿泊施設を利用しなかった場合は基準額の60%＝<strong style="color:var(--text)">30,000円／泊</strong></div>
+          <div>・支度料（1出張につき1回）</div>
+          <div style="margin:6px 0 0 12px">
+            <table style="border-collapse:collapse;font-size:12px">
+              <tr><th style="border:1px solid var(--border);padding:3px 10px;text-align:left">区分</th><th style="border:1px solid var(--border);padding:3px 10px">1〜10泊</th><th style="border:1px solid var(--border);padding:3px 10px">11〜20泊</th><th style="border:1px solid var(--border);padding:3px 10px">21〜30泊</th></tr>
+              <tr><td style="border:1px solid var(--border);padding:3px 10px">Ａ地域</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">30,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">60,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">90,000円</td></tr>
+              <tr><td style="border:1px solid var(--border);padding:3px 10px">Ｂ地域</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">30,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">60,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">100,000円</td></tr>
+              <tr><td style="border:1px solid var(--border);padding:3px 10px">Ｃ地域</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">30,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">60,000円</td><td style="border:1px solid var(--border);padding:3px 10px;text-align:right">80,000円</td></tr>
+            </table>
+          </div>
+          <div style="margin-top:6px">・Ａ地域：北米・中南米・欧州・中近東・アフリカ・豪州・ロシア・ニュージーランド／Ｃ地域：中国・韓国・台湾・香港・澳門・東南アジア／Ｂ地域：それ以外</div>
+          <div>・渡航手続費（旅券・外貨交換手数料等）・旅費雑費は実費</div>
+          <div>・本規程の適用は出張日数30日以内（超える場合は別途協議）</div>
+          <div style="margin-top:12px;color:var(--yellow)">※ このページは出張手当の計算・記録専用です。月次損益・総勘定元帳には反映されません（経費計上は経費入力ページで別途行ってください）。</div>
+        </div>
+      </div>
+
+      <!-- 登録フォーム -->
+      <div class="table-wrap" id="bt-form-wrap" style="margin-bottom:16px">
+        <div class="table-header"><div class="table-title">🧳 出張を登録</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <input type="hidden" id="bt-edit-id">
+          <div style="font-size:12px;font-weight:600;color:var(--muted)" id="bt-form-title">出張を登録</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>区分 <span style="color:var(--red)">*</span></label>
+              <select id="bt-kind" onchange="onTripKindChange()">
+                <option value="domestic">国内出張</option>
+                <option value="overseas">海外出張</option>
+              </select>
+            </div>
+            <div class="form-group"><label>出発日 <span style="color:var(--red)">*</span></label><input id="bt-from" type="date" onchange="onTripDateChange()"></div>
+            <div class="form-group"><label>帰着日 <span style="color:var(--red)">*</span></label><input id="bt-to" type="date" onchange="onTripDateChange()"></div>
+            <div class="form-group" id="bt-region-wrap"><label>地域</label>
+              <select id="bt-region" onchange="renderTripCalc()">
+                <option value="A">Ａ地域（北米・欧州・豪州 他）</option>
+                <option value="B">Ｂ地域（Ａ・Ｃ以外）</option>
+                <option value="C">Ｃ地域（中国・韓国・台湾・東南アジア 他）</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group"><label>出張先</label><input id="bt-dest" placeholder="例：大阪／バンコク"></div>
+            <div class="form-group"><label>出張目的</label><input id="bt-purpose" placeholder="例：配信者面談・機材仕入れ"></div>
+          </div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>出張日数（暦日）</label><input id="bt-days" type="number" min="0" oninput="renderTripCalc()"></div>
+            <div class="form-group"><label>宿泊日数（泊）</label><input id="bt-nights" type="number" min="0" oninput="renderTripCalc()"></div>
+            <div class="form-group" id="bt-daytrip-wrap"><label>日帰り日当の対象日数</label><input id="bt-daytrip" type="number" min="0" oninput="renderTripCalc()"></div>
+            <div class="form-group"><label>宿泊施設 未利用の泊数</label><input id="bt-nolodging" type="number" min="0" value="0" oninput="renderTripCalc()"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:10px;font-size:11px;color:var(--muted);font-weight:600">実費（領収書のあるもの）</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>交通費</label><input id="bt-transport" type="number" min="0" value="0" oninput="renderTripCalc()"></div>
+            <div class="form-group"><label>宿泊費（実費）</label><input id="bt-lodging" type="number" min="0" value="0" oninput="renderTripCalc()"></div>
+            <div class="form-group" id="bt-visa-wrap"><label>渡航手続費</label><input id="bt-visa" type="number" min="0" value="0" oninput="renderTripCalc()"></div>
+            <div class="form-group"><label>その他（旅費雑費）</label><input id="bt-misc" type="number" min="0" value="0" oninput="renderTripCalc()"></div>
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:10px;font-size:11px;color:var(--muted);font-weight:600">支給</div>
+          <div class="form-grid form-grid-4">
+            <div class="form-group"><label>支給区分 <span style="color:var(--red)">*</span></label>
+              <select id="bt-paytype" onchange="onTripPayTypeChange()">
+                <option value="each">都度払い</option>
+                <option value="monthend">月末合算</option>
+              </select>
+            </div>
+            <div class="form-group"><label>計上年</label><input id="bt-y" type="number" placeholder="例：2026"></div>
+            <div class="form-group"><label>計上月</label><input id="bt-m" type="number" min="1" max="12" placeholder="例：8"></div>
+            <div class="form-group"><label>メモ</label><input id="bt-note" placeholder="任意"></div>
+          </div>
+          <div class="form-grid form-grid-4" id="bt-pay-wrap">
+            <div class="form-group"><label>支払日</label><input id="bt-paydate" type="date"></div>
+            <div class="form-group"><label>支払方法</label>
+              <select id="bt-paymethod">
+                <optgroup label="法人クレジットカード">
+                  <option>法人クレジットカード（三井住友カード）</option>
+                  <option>法人クレジットカード（SBIデビット）</option>
+                </optgroup>
+                <option>小口現金</option>
+                <option selected>法人専用個人口座（SBI）</option>
+                <optgroup label="個人クレジット（立替）">
+                  <option>個人クレジット（立替）（Revolut）</option>
+                  <option>個人クレジット（立替）（JAL）</option>
+                </optgroup>
+                <option>現金（立替）</option>
+                <option>個人UFJ銀行（立替）</option>
+                <option>管理人立替</option>
+              </select>
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none;margin-top:18px">
+                <input type="checkbox" id="bt-paid" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+                <span>支払済</span>
+              </label>
+            </div>
+            <div></div>
+          </div>
+          <div id="bt-calc" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn" id="bt-cancel-btn" style="display:none" onclick="resetTripForm()">キャンセル</button>
+            <button class="btn btn-primary" onclick="saveTrip()">登録</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 月次サマリー -->
+      <div class="table-wrap" style="margin-bottom:16px">
+        <div class="table-header"><div class="table-title">📊 今月の支給サマリー</div></div>
+        <div style="padding:16px" id="bt-summary"></div>
+      </div>
+
+      <!-- 一覧 -->
+      <div class="table-wrap" style="margin-bottom:24px">
+        <div class="table-header">
+          <div class="table-title">登録済みの出張</div>
+          <select id="bt-filter" onchange="renderTripList()" style="width:auto;padding:4px 10px;font-size:12px">
+            <option value="month">当月のみ</option>
+            <option value="all">全件</option>
+          </select>
+        </div>
+        <div style="padding:16px" id="bt-list"></div>
+      </div>
+
+      <!-- 精算書プレビュー -->
+      <div id="bt-inv-grid" style="display:grid;grid-template-columns:280px 1fr;gap:16px;align-items:start">
+        <div class="table-wrap">
+          <div class="table-header"><div class="table-title">精算書設定</div></div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+            <div class="form-group"><label>出張者名</label><input id="bt-inv-name" value="髙橋 公洋" oninput="renderTripSettlement()"></div>
+            <div class="form-group"><label>備考</label><input id="bt-inv-note" placeholder="任意" oninput="renderTripSettlement()"></div>
+            <button class="btn btn-primary" onclick="printTripSettlement()">🖨️ 印刷・PDF保存</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-header"><div class="table-title">出張旅費精算書プレビュー</div></div>
+          <div id="bt-inv-preview" style="padding:24px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- PL -->
     <div class="page" id="page-pl">
       <div class="page-header">
@@ -1976,7 +2141,7 @@ async function fetchAll(table, orderCol) {
 async function loadFromDB() {
   showSyncStatus('loading');
   try {
-    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR, officerPayR, mgrAdjR] = await Promise.all([
+    const [castersR, referrersR, salesR, expensesR, dailyR, taxR, fxR, mgrR, receiptsR, mepR, pcR, prepaidR, refPayR, mgrPayR, officerPayR, mgrAdjR, tripR] = await Promise.all([
       fetchAll('casters', 'id'),
       fetchAll('referrers', 'id'),
       fetchAll('sales', 'id'),
@@ -1993,6 +2158,7 @@ async function loadFromDB() {
       fetchAll('manager_pays', 'id'),
       fetchAll('officer_pays', 'id'),
       fetchAll('manager_reward_adjustments', 'id'),
+      fetchAll('business_trips', 'id'),
     ]);
 
     if (castersR.data?.length > 0) {
@@ -2070,7 +2236,8 @@ async function loadFromDB() {
         contentType: r.content_type, fileSize: r.file_size, uploadedAt: r.uploaded_at, note: r.note||'',
         dailyPayId: r.daily_pay_id || null, monthEndPayId: r.month_end_pay_id || null,
         referrerPayId: r.referrer_pay_id || null, managerPayId: r.manager_pay_id || null,
-        taxKey: r.tax_key || null, exchangeId: r.exchange_id || null, officerPayId: r.officer_pay_id || null
+        taxKey: r.tax_key || null, exchangeId: r.exchange_id || null, officerPayId: r.officer_pay_id || null,
+        businessTripId: r.business_trip_id || null
       }));
     }
     if (mepR.data?.length > 0) {
@@ -2119,6 +2286,22 @@ async function loadFromDB() {
         id: r.id, targetY: r.target_y, targetM: r.target_m, amount: Number(r.amount), note: r.note || ''
       }));
     }
+    if (tripR.data?.length > 0) {
+      state.businessTrips = tripR.data.map(r => ({
+        id: r.id, kind: r.kind || 'domestic',
+        dateFrom: r.date_from || '', dateTo: r.date_to || '',
+        days: r.days || 0, nights: r.nights || 0, daytripDays: r.daytrip_days || 0,
+        region: r.region || null, destination: r.destination || '', purpose: r.purpose || '',
+        noLodgingNights: r.no_lodging_nights || 0,
+        lodgingActual: Number(r.lodging_actual || 0), transport: Number(r.transport || 0),
+        visaFee: Number(r.visa_fee || 0), misc: Number(r.misc || 0),
+        allowDaytrip: Number(r.allow_daytrip || 0), allowNight: Number(r.allow_night || 0),
+        prepFee: Number(r.prep_fee || 0), lodgingFlat: Number(r.lodging_flat || 0),
+        total: Number(r.total || 0),
+        payType: r.pay_type || 'each', payMethod: r.pay_method || '', payDate: r.pay_date || '',
+        paid: !!r.paid, y: r.y, m: r.m, note: r.note || ''
+      }));
+    }
     // nextIdをDBの最大ID+1に更新（ID衝突防止）
     const allIds = [
       ...state.casters.map(r => r.id),
@@ -2135,6 +2318,7 @@ async function loadFromDB() {
       ...state.managerPays.map(r => r.id),
       ...state.officerPays.map(r => r.id),
       ...state.managerRewardAdjustments.map(r => r.id),
+      ...state.businessTrips.map(r => r.id),
     ];
     if (allIds.length > 0) state.nextId = Math.max(...allIds) + 1;
 
@@ -2223,7 +2407,7 @@ async function dbDelete(table, id) {
 // 対象：referrer_pays・manager_pays・daily_pays・month_end_pays・expenses（v33〜）の新規作成。
 // 既存レコードの編集（idが確定済みのupsert）はこれまで通りdbSave()を使う（変更なし）。
 // 他のテーブルの新規作成（casters/referrers/sales等）も理論上は同じリスクを持つが未対応。
-const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays', 'manager_reward_adjustments'];
+const ID_POOL_TABLES = ['casters', 'referrers', 'sales', 'expenses', 'daily_pays', 'exchanges', 'receipts', 'month_end_pays', 'petty_cash', 'prepaid_expenses', 'referrer_pays', 'manager_pays', 'officer_pays', 'manager_reward_adjustments', 'business_trips'];
 
 async function fetchFreshMaxId() {
   const results = await Promise.all(
@@ -2344,6 +2528,7 @@ let state = {
   managerPays: [], // 管理人への支払い記録
   officerPays: [], // 役員報酬（髙橋）源泉徴収の登録記録
   managerRewardAdjustments: [], // 管理人：追加報酬（過去分調整等、任意の請求月に加算）
+  businessTrips: [], // 出張手当（役員：髙橋）出張旅費規程に基づく日当・実費の記録
   nextId: 300,
 };
 
@@ -2597,7 +2782,7 @@ function changeMonth(d) {
 
 function updateLabels() {
   const lbl = `${state.y}年${state.m}月`;
-  ['dash','sales','exp','pl','ref','refReport','fx','tax','manager'].forEach(id => {
+  ['dash','sales','exp','pl','ref','refReport','fx','tax','manager','trip'].forEach(id => {
     const el = document.getElementById('ml-' + id);
     if (el) el.textContent = lbl;
   });
@@ -2953,6 +3138,7 @@ const PAY_ATTACH_CONFIG = {
   tax_paid:      { stateField: 'taxKey',        dbCol: 'tax_key',          r2Prefix: 'tax_paid' },
   exchange:      { stateField: 'exchangeId',    dbCol: 'exchange_id',      r2Prefix: 'exchanges' },
   officer_pay:   { stateField: 'officerPayId',  dbCol: 'officer_pay_id',   r2Prefix: 'officer_pays' },
+  business_trip: { stateField: 'businessTripId', dbCol: 'business_trip_id', r2Prefix: 'business_trips' },
 };
 
 let payAttachTarget = null; // { type, id }
@@ -2991,6 +3177,11 @@ function payAttachInfoHtml(type, id) {
     const d = state.officerPays.find(x => x.id === id);
     if (!d) return '';
     return `<span style="color:var(--muted)">${d.payDate}</span>　<strong>役員報酬（髙橋）</strong>　${d.targetY ? `<span class="badge badge-purple">${d.targetY}年${d.targetM}月分</span>　` : ''}支給額 <span style="font-family:var(--mono);color:var(--accent)">${yen(d.grossAmount)}</span>　源泉税 <span style="font-family:var(--mono);color:var(--accent)">${yen(d.srcTax)}</span>`;
+  }
+  if (type === 'business_trip') {
+    const d = state.businessTrips.find(x => x.id === id);
+    if (!d) return '';
+    return `<span style="color:var(--muted)">${d.dateFrom}〜${d.dateTo}</span>　<strong>${escapeHtml(d.destination || '出張')}</strong>　<span class="badge badge-purple">${d.kind === 'overseas' ? '海外' : '国内'}</span>　<span style="font-family:var(--mono);color:var(--accent)">${yen(d.total)}</span>`;
   }
   return '';
 }
@@ -3062,7 +3253,8 @@ async function uploadFileToPayTarget(type, id, file, note) {
     uploadedAt: recData.uploaded_at, note: recData.note || '',
     dailyPayId: recData.daily_pay_id || null, monthEndPayId: recData.month_end_pay_id || null,
     referrerPayId: recData.referrer_pay_id || null, managerPayId: recData.manager_pay_id || null,
-    taxKey: recData.tax_key || null, exchangeId: recData.exchange_id || null, officerPayId: recData.officer_pay_id || null
+    taxKey: recData.tax_key || null, exchangeId: recData.exchange_id || null, officerPayId: recData.officer_pay_id || null,
+    businessTripId: recData.business_trip_id || null
   });
 }
 
@@ -3978,7 +4170,7 @@ async function addCheckedReceipts() {
 // ===== RENDER ALL =====
 function renderAll() {
   renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
-  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderOfficerPayList(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger();
+  renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderOfficerPayList(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger(); renderTrips();
 }
 
 // ===== DASHBOARD =====
@@ -8992,6 +9184,519 @@ async function deleteMgrAdj(id) {
   renderManagerReward();
 }
 
+// ===== 出張手当（役員：髙橋公洋）=====
+// 出張旅費規程（国内／海外）に基づき、日当・宿泊費・実費を計算して記録する。
+// 対象は役員のみ。このページは計算・記録専用で、月次損益・総勘定元帳には反映しない（ユーザー方針）。
+// 経費として計上する場合は経費入力ページで別途登録する運用。
+// 単価は規程そのものなので、規程が改定されたらこの定数だけを直せばよい。
+const TRIP_RULES = {
+  noLodgingRate: 0.6,             // 宿泊施設を利用しなかった場合：宿泊費基準額の60%
+  domestic: {
+    daytripAllowance: 5000,       // 日帰り日当（役員）／日
+    nightAllowance:  10000,       // 宿泊日当（役員）／泊
+    lodgingStandard: 15000,       // 宿泊費基準額／泊
+  },
+  overseas: {
+    dayAllowance:    15000,       // 日当（役員）／出張日数1日あたり
+    lodgingStandard: 50000,       // 宿泊費基準額／泊
+    // 支度料：地域 × 宿泊日数区分（1〜10泊 / 11〜20泊 / 21〜30泊）※規程 別表2 の記載どおり
+    prepFee: { A: [30000, 60000, 90000], B: [30000, 60000, 100000], C: [30000, 60000, 80000] },
+    regionName: { A: 'Ａ地域', B: 'Ｂ地域', C: 'Ｃ地域' },
+  },
+};
+
+// 支度料（1出張につき1回）。30泊超は規程の適用外（第20条・別途協議）なので最高区分を暫定表示し、画面で注意喚起する。
+function tripPrepFee(region, nights) {
+  const tbl = TRIP_RULES.overseas.prepFee[region];
+  if (!tbl || nights <= 0) return 0;
+  if (nights <= 10) return tbl[0];
+  if (nights <= 20) return tbl[1];
+  return tbl[2];
+}
+
+// 出発日〜帰着日の暦日数（両端を含む）
+function tripDaysBetween(from, to) {
+  if (!from || !to) return 0;
+  const a = new Date(from + 'T00:00:00'), b = new Date(to + 'T00:00:00');
+  if (isNaN(a) || isNaN(b)) return 0;
+  const d = Math.round((b - a) / 86400000) + 1;
+  return d > 0 ? d : 0;
+}
+
+// 出張1件の金額内訳を計算する。tはstate.businessTripsの1件と同じ形（camelCase）。
+function calcTripAmounts(t) {
+  const R = TRIP_RULES;
+  const nights = Math.max(0, parseInt(t.nights) || 0);
+  const days = Math.max(0, parseInt(t.days) || 0);
+  const noLodgingNights = Math.max(0, parseInt(t.noLodgingNights) || 0);
+  const isOverseas = t.kind === 'overseas';
+  let allowDaytrip = 0, allowNight = 0, prepFee = 0, lodgingFlat = 0;
+  if (isOverseas) {
+    allowNight = days * R.overseas.dayAllowance;
+    prepFee = tripPrepFee(t.region, nights);
+    lodgingFlat = noLodgingNights * Math.floor(R.overseas.lodgingStandard * R.noLodgingRate);
+  } else {
+    allowDaytrip = Math.max(0, parseInt(t.daytripDays) || 0) * R.domestic.daytripAllowance;
+    allowNight = nights * R.domestic.nightAllowance;
+    lodgingFlat = noLodgingNights * Math.floor(R.domestic.lodgingStandard * R.noLodgingRate);
+  }
+  const lodgingActual = Math.max(0, parseInt(t.lodgingActual) || 0);
+  const transport = Math.max(0, parseInt(t.transport) || 0);
+  const visaFee = isOverseas ? Math.max(0, parseInt(t.visaFee) || 0) : 0;
+  const misc = Math.max(0, parseInt(t.misc) || 0);
+  const total = allowDaytrip + allowNight + prepFee + lodgingFlat + lodgingActual + transport + visaFee + misc;
+  return { allowDaytrip, allowNight, prepFee, lodgingFlat, lodgingActual, transport, visaFee, misc, total, nights, days, noLodgingNights };
+}
+
+function toggleTripRules() {
+  const body = document.getElementById('bt-rules-body');
+  const arrow = document.getElementById('bt-rules-arrow');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▼ 表示' : '▲ 閉じる';
+}
+
+// 国内／海外の切り替えで、その区分に関係のない入力欄を隠す
+function applyTripKindVisibility() {
+  const kind = document.getElementById('bt-kind')?.value || 'domestic';
+  const isOverseas = kind === 'overseas';
+  const regionWrap = document.getElementById('bt-region-wrap');
+  const daytripWrap = document.getElementById('bt-daytrip-wrap');
+  const visaWrap = document.getElementById('bt-visa-wrap');
+  if (regionWrap) regionWrap.style.display = isOverseas ? '' : 'none';
+  if (daytripWrap) daytripWrap.style.display = isOverseas ? 'none' : '';
+  if (visaWrap) visaWrap.style.display = isOverseas ? '' : 'none';
+}
+
+function onTripKindChange() {
+  applyTripKindVisibility();
+  renderTripCalc();
+}
+
+function onTripPayTypeChange() {
+  const payType = document.getElementById('bt-paytype')?.value || 'each';
+  const wrap = document.getElementById('bt-pay-wrap');
+  if (wrap) wrap.style.display = payType === 'each' ? '' : 'none';
+}
+
+// 日付を入れたら日数・泊数・日帰り日当対象日数を自動で埋める（あくまで初期値。手で上書きできる）
+function onTripDateChange() {
+  const from = document.getElementById('bt-from').value;
+  const to = document.getElementById('bt-to').value;
+  if (from && !to) { document.getElementById('bt-to').value = from; }
+  const from2 = document.getElementById('bt-from').value;
+  const to2 = document.getElementById('bt-to').value;
+  const days = tripDaysBetween(from2, to2);
+  if (days > 0) {
+    document.getElementById('bt-days').value = days;
+    const nights = Math.max(0, days - 1);
+    document.getElementById('bt-nights').value = nights;
+    document.getElementById('bt-daytrip').value = nights === 0 ? days : 0;
+    if (!document.getElementById('bt-paydate').value) document.getElementById('bt-paydate').value = to2;
+    const yEl = document.getElementById('bt-y'), mEl = document.getElementById('bt-m');
+    if (yEl && mEl && to2) { yEl.value = parseInt(to2.slice(0, 4)); mEl.value = parseInt(to2.slice(5, 7)); }
+  }
+  renderTripCalc();
+}
+
+// 入力フォームの現在値を state と同じ形のオブジェクトにして返す
+function tripFormValues() {
+  const g = id => document.getElementById(id);
+  return {
+    kind: g('bt-kind').value,
+    dateFrom: g('bt-from').value,
+    dateTo: g('bt-to').value,
+    days: parseInt(g('bt-days').value) || 0,
+    nights: parseInt(g('bt-nights').value) || 0,
+    daytripDays: parseInt(g('bt-daytrip').value) || 0,
+    region: g('bt-region').value,
+    destination: g('bt-dest').value.trim(),
+    purpose: g('bt-purpose').value.trim(),
+    noLodgingNights: parseInt(g('bt-nolodging').value) || 0,
+    transport: parseInt(g('bt-transport').value) || 0,
+    lodgingActual: parseInt(g('bt-lodging').value) || 0,
+    visaFee: parseInt(g('bt-visa').value) || 0,
+    misc: parseInt(g('bt-misc').value) || 0,
+    payType: g('bt-paytype').value,
+    payDate: g('bt-paydate').value || null,
+    payMethod: g('bt-paymethod').value,
+    paid: g('bt-paid').checked,
+    y: parseInt(g('bt-y').value) || null,
+    m: parseInt(g('bt-m').value) || null,
+    note: g('bt-note').value.trim(),
+  };
+}
+
+function renderTripCalc() {
+  const el = document.getElementById('bt-calc');
+  if (!el) return;
+  const v = tripFormValues();
+  const c = calcTripAmounts(v);
+  const isOverseas = v.kind === 'overseas';
+  const rows = [];
+  if (!isOverseas && c.allowDaytrip) rows.push(['日帰り日当', `${v.daytripDays}日 × ${yen(TRIP_RULES.domestic.daytripAllowance)}`, c.allowDaytrip]);
+  if (isOverseas) {
+    if (c.prepFee) rows.push(['支度料', `${TRIP_RULES.overseas.regionName[v.region] || ''}・${c.nights}泊`, c.prepFee]);
+    if (c.allowNight) rows.push(['日当', `${c.days}日 × ${yen(TRIP_RULES.overseas.dayAllowance)}`, c.allowNight]);
+  } else if (c.allowNight) {
+    rows.push(['宿泊日当', `${c.nights}泊 × ${yen(TRIP_RULES.domestic.nightAllowance)}`, c.allowNight]);
+  }
+  if (c.lodgingFlat) {
+    const std = isOverseas ? TRIP_RULES.overseas.lodgingStandard : TRIP_RULES.domestic.lodgingStandard;
+    rows.push(['宿泊費（施設未利用）', `${c.noLodgingNights}泊 × ${yen(std)} × 60%`, c.lodgingFlat]);
+  }
+  if (c.lodgingActual) rows.push(['宿泊費（実費）', '領収書添付が必要', c.lodgingActual]);
+  if (c.transport) rows.push(['交通費（実費）', '', c.transport]);
+  if (c.visaFee) rows.push(['渡航手続費（実費）', '', c.visaFee]);
+  if (c.misc) rows.push(['その他・旅費雑費（実費）', '', c.misc]);
+
+  const warns = [];
+  if (isOverseas && c.nights > 30) warns.push('宿泊30泊を超えています。規程第2条・第20条により本規程の適用外です（別途協議）。支度料は21〜30泊の区分で暫定計算しています。');
+  if (!isOverseas && c.lodgingActual > 0 && c.nights > 0 && c.lodgingActual > TRIP_RULES.domestic.lodgingStandard * c.nights) warns.push(`宿泊費の実費が基準額（${yen(TRIP_RULES.domestic.lodgingStandard)}／泊 × ${c.nights}泊）を超えています。規程上は別途協議のうえ支給額を決定します。`);
+  if (isOverseas && c.lodgingActual > 0 && c.nights > 0 && c.lodgingActual > TRIP_RULES.overseas.lodgingStandard * c.nights) warns.push(`宿泊費の実費が基準額（${yen(TRIP_RULES.overseas.lodgingStandard)}／泊 × ${c.nights}泊）を超えています。規程上は別途協議のうえ支給額を決定します。`);
+  if (c.noLodgingNights > c.nights) warns.push('「宿泊施設 未利用の泊数」が宿泊日数を超えています。');
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:8px">支給額の内訳（規程に基づく自動計算）</div>
+    ${rows.length === 0 ? '<div style="font-size:13px;color:var(--muted)">日数・金額を入力すると内訳が表示されます</div>' : `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      ${rows.map(r => `<tr>
+        <td style="padding:3px 0">${r[0]}</td>
+        <td style="padding:3px 8px;color:var(--muted);font-size:11px">${r[1]}</td>
+        <td style="padding:3px 0;text-align:right;font-family:var(--mono)">${yen(r[2])}</td>
+      </tr>`).join('')}
+      <tr><td colspan="3" style="border-top:1px solid var(--border);padding-top:6px"></td></tr>
+      <tr>
+        <td style="font-weight:700">合計</td><td></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--accent);font-size:16px">${yen(c.total)}</td>
+      </tr>
+    </table>`}
+    ${warns.map(w => `<div style="margin-top:8px;font-size:11px;color:var(--yellow)">⚠️ ${w}</div>`).join('')}
+  `;
+}
+
+function resetTripForm() {
+  const g = id => document.getElementById(id);
+  if (!g('bt-edit-id')) return;
+  g('bt-edit-id').value = '';
+  g('bt-kind').value = 'domestic';
+  g('bt-from').value = '';
+  g('bt-to').value = '';
+  g('bt-days').value = '';
+  g('bt-nights').value = '';
+  g('bt-daytrip').value = '';
+  g('bt-region').value = 'A';
+  g('bt-dest').value = '';
+  g('bt-purpose').value = '';
+  g('bt-nolodging').value = 0;
+  g('bt-transport').value = 0;
+  g('bt-lodging').value = 0;
+  g('bt-visa').value = 0;
+  g('bt-misc').value = 0;
+  g('bt-paytype').value = 'each';
+  g('bt-paydate').value = '';
+  g('bt-paid').checked = false;
+  g('bt-y').value = state.y;
+  g('bt-m').value = state.m;
+  g('bt-note').value = '';
+  g('bt-form-title').textContent = '出張を登録';
+  g('bt-cancel-btn').style.display = 'none';
+  applyTripKindVisibility();
+  onTripPayTypeChange();
+  renderTripCalc();
+}
+
+function editTrip(id) {
+  const t = state.businessTrips.find(x => x.id === id);
+  if (!t) return;
+  const g = i => document.getElementById(i);
+  g('bt-edit-id').value = id;
+  g('bt-kind').value = t.kind || 'domestic';
+  g('bt-from').value = t.dateFrom || '';
+  g('bt-to').value = t.dateTo || '';
+  g('bt-days').value = t.days || 0;
+  g('bt-nights').value = t.nights || 0;
+  g('bt-daytrip').value = t.daytripDays || 0;
+  g('bt-region').value = t.region || 'A';
+  g('bt-dest').value = t.destination || '';
+  g('bt-purpose').value = t.purpose || '';
+  g('bt-nolodging').value = t.noLodgingNights || 0;
+  g('bt-transport').value = t.transport || 0;
+  g('bt-lodging').value = t.lodgingActual || 0;
+  g('bt-visa').value = t.visaFee || 0;
+  g('bt-misc').value = t.misc || 0;
+  g('bt-paytype').value = t.payType || 'each';
+  g('bt-paydate').value = t.payDate || '';
+  if (t.payMethod) g('bt-paymethod').value = t.payMethod;
+  g('bt-paid').checked = !!t.paid;
+  g('bt-y').value = t.y || state.y;
+  g('bt-m').value = t.m || state.m;
+  g('bt-note').value = t.note || '';
+  g('bt-form-title').textContent = '出張を編集';
+  g('bt-cancel-btn').style.display = '';
+  applyTripKindVisibility();
+  onTripPayTypeChange();
+  renderTripCalc();
+  document.getElementById('bt-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// state（camelCase）→ Supabase（snake_case）。
+// 部分更新でupsertするとNOT NULL列で落ちるので、更新系は必ずこの関数で全列を組み立てて渡すこと。
+function tripToDbRow(t) {
+  return {
+    id: t.id, kind: t.kind, date_from: t.dateFrom, date_to: t.dateTo,
+    days: t.days, nights: t.nights, daytrip_days: t.daytripDays,
+    region: t.region || null, destination: t.destination || '', purpose: t.purpose || '',
+    no_lodging_nights: t.noLodgingNights,
+    lodging_actual: t.lodgingActual, transport: t.transport,
+    visa_fee: t.visaFee, misc: t.misc,
+    allow_daytrip: t.allowDaytrip, allow_night: t.allowNight,
+    prep_fee: t.prepFee, lodging_flat: t.lodgingFlat, total: t.total,
+    pay_type: t.payType, pay_method: t.payMethod || null, pay_date: t.payDate || null,
+    paid: !!t.paid, y: t.y, m: t.m, note: t.note || '',
+  };
+}
+
+async function saveTrip() {
+  const editId = document.getElementById('bt-edit-id').value;
+  const v = tripFormValues();
+  if (!v.dateFrom || !v.dateTo) { alert('出発日・帰着日を入力してください'); return; }
+  if (v.dateTo < v.dateFrom) { alert('帰着日が出発日より前になっています'); return; }
+  if (!v.y || !v.m) { alert('計上年・計上月を入力してください'); return; }
+  const c = calcTripAmounts(v);
+  if (c.total <= 0) { alert('支給額が0円です。日数または金額を入力してください'); return; }
+
+  const record = {
+    ...v,
+    region: v.kind === 'overseas' ? v.region : null,
+    visaFee: c.visaFee,
+    allowDaytrip: c.allowDaytrip, allowNight: c.allowNight,
+    prepFee: c.prepFee, lodgingFlat: c.lodgingFlat, total: c.total,
+    payDate: v.payType === 'each' ? v.payDate : null,
+    payMethod: v.payType === 'each' ? v.payMethod : '',
+    paid: v.payType === 'each' ? v.paid : false,
+  };
+  const buildRow = id => tripToDbRow({ ...record, id });
+
+  if (editId) {
+    const id = parseInt(editId);
+    const ok = await dbSave('business_trips', buildRow(id));
+    if (!ok) { alert('保存に失敗しました。画面の表示は保存前の内容です。再度お試しください'); return; }
+    const idx = state.businessTrips.findIndex(t => t.id === id);
+    if (idx !== -1) state.businessTrips[idx] = { ...state.businessTrips[idx], ...record, id };
+  } else {
+    try {
+      const id = await insertWithFreshId('business_trips', buildRow);
+      state.businessTrips.push({ id, ...record });
+    } catch (e) {
+      alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
+      return;
+    }
+  }
+  resetTripForm();
+  renderTrips();
+}
+
+async function deleteTrip(id) {
+  const attached = state.receipts.filter(r => r.businessTripId === id);
+  if (attached.length > 0) {
+    alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
+    return;
+  }
+  if (!confirm('この出張記録を削除しますか？')) return;
+  await dbDelete('business_trips', id);
+  state.businessTrips = state.businessTrips.filter(t => t.id !== id);
+  const editId = document.getElementById('bt-edit-id');
+  if (editId && parseInt(editId.value) === id) resetTripForm();
+  renderTrips();
+}
+
+async function toggleTripPaid(id) {
+  const t = state.businessTrips.find(x => x.id === id);
+  if (!t) return;
+  const next = !t.paid;
+  const ok = await dbSave('business_trips', tripToDbRow({ ...t, paid: next }));
+  if (!ok) { alert('保存に失敗しました。もう一度お試しください'); return; }
+  t.paid = next;
+  renderTrips();
+}
+
+function tripsOfMonth(y, m) {
+  return state.businessTrips.filter(t => t.y === y && t.m === m);
+}
+
+function tripKindBadge(t) {
+  return t.kind === 'overseas'
+    ? `<span class="badge badge-purple">海外${t.region ? '・' + (TRIP_RULES.overseas.regionName[t.region] || '') : ''}</span>`
+    : '<span class="badge badge-blue">国内</span>';
+}
+
+function renderTripList() {
+  const el = document.getElementById('bt-list');
+  if (!el) return;
+  const mode = document.getElementById('bt-filter')?.value || 'month';
+  let list = mode === 'all' ? [...state.businessTrips] : tripsOfMonth(state.y, state.m);
+  list.sort((a, b) => (b.dateFrom || '').localeCompare(a.dateFrom || '') || b.id - a.id);
+  if (list.length === 0) {
+    el.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">${mode === 'all' ? '出張の登録がありません' : 'この月に計上した出張はありません'}</div>`;
+    return;
+  }
+  el.innerHTML = list.map(t => {
+    const period = t.dateFrom === t.dateTo ? t.dateFrom : `${t.dateFrom} 〜 ${t.dateTo}`;
+    const stayLabel = t.nights > 0 ? `${t.nights}泊${t.days}日` : '日帰り';
+    const payLabel = t.payType === 'monthend'
+      ? '<span class="badge badge-yellow">月末合算</span>'
+      : (t.paid ? '<span class="badge badge-green">支払済</span>' : '<span class="badge badge-red">未払い</span>');
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${tripKindBadge(t)}
+          <span style="color:var(--muted);font-family:var(--mono);font-size:12px">${period}</span>
+          <span style="font-size:11px;color:var(--muted)">${stayLabel}</span>
+          <strong>${escapeHtml(t.destination || '（出張先未記入）')}</strong>
+          ${payLabel}
+          <span class="badge badge-blue">${t.y}年${t.m}月計上</span>
+        </div>
+        ${t.purpose ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">目的：${escapeHtml(t.purpose)}</div>` : ''}
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">
+          ${t.allowDaytrip ? `日帰り日当 ${yen(t.allowDaytrip)}　` : ''}${t.allowNight ? `${t.kind === 'overseas' ? '日当' : '宿泊日当'} ${yen(t.allowNight)}　` : ''}${t.prepFee ? `支度料 ${yen(t.prepFee)}　` : ''}${t.lodgingFlat ? `宿泊費(定額) ${yen(t.lodgingFlat)}　` : ''}${t.lodgingActual ? `宿泊費 ${yen(t.lodgingActual)}　` : ''}${t.transport ? `交通費 ${yen(t.transport)}　` : ''}${t.visaFee ? `渡航手続費 ${yen(t.visaFee)}　` : ''}${t.misc ? `その他 ${yen(t.misc)}` : ''}
+        </div>
+        ${t.payType === 'each' && t.payMethod ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">支払：${escapeHtml(t.payMethod)}${t.payDate ? '（' + t.payDate + '）' : ''}</div>` : ''}
+        ${t.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(t.note)}</div>` : ''}
+      </div>
+      <div style="font-family:var(--mono);color:var(--accent);font-weight:700;font-size:15px">${yen(t.total)}</div>
+      ${payAttachBadge('business_trip', t.id)}
+      ${isViewerRole() ? '' : `
+        ${t.payType === 'each' ? `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="toggleTripPaid(${t.id})">${t.paid ? '未払いに戻す' : '支払済にする'}</button>` : ''}
+        <button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editTrip(${t.id})">編集</button>`}
+      <button class="btn btn-danger btn-sm" onclick="deleteTrip(${t.id})">削除</button>
+    </div>`;
+  }).join('');
+}
+
+function renderTripSummary() {
+  const el = document.getElementById('bt-summary');
+  if (!el) return;
+  const list = tripsOfMonth(state.y, state.m);
+  const total = list.reduce((s, t) => s + t.total, 0);
+  const monthEnd = list.filter(t => t.payType === 'monthend');
+  const each = list.filter(t => t.payType === 'each');
+  const eachPaid = each.filter(t => t.paid).reduce((s, t) => s + t.total, 0);
+  const eachUnpaid = each.filter(t => !t.paid).reduce((s, t) => s + t.total, 0);
+  const monthEndTotal = monthEnd.reduce((s, t) => s + t.total, 0);
+  const allowance = list.reduce((s, t) => s + t.allowDaytrip + t.allowNight + t.prepFee, 0);
+  const actual = list.reduce((s, t) => s + t.lodgingActual + t.lodgingFlat + t.transport + t.visaFee + t.misc, 0);
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+      <div><div style="font-size:11px;color:var(--muted)">出張件数</div><div style="font-size:20px;font-weight:700">${list.length}件</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">支給合計</div><div style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--accent)">${yen(total)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">うち日当・支度料</div><div style="font-size:16px;font-family:var(--mono)">${yen(allowance)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">うち実費</div><div style="font-size:16px;font-family:var(--mono)">${yen(actual)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">都度払い（支払済）</div><div style="font-size:16px;font-family:var(--mono);color:var(--green)">${yen(eachPaid)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">都度払い（未払い）</div><div style="font-size:16px;font-family:var(--mono);color:${eachUnpaid > 0 ? 'var(--red)' : 'var(--muted)'}">${yen(eachUnpaid)}</div></div>
+      <div><div style="font-size:11px;color:var(--muted)">月末合算で支給</div><div style="font-size:16px;font-family:var(--mono);color:var(--yellow)">${yen(monthEndTotal)}</div></div>
+    </div>
+    ${monthEndTotal > 0 ? `<div style="margin-top:12px;font-size:12px;color:var(--muted)">月末合算分 ${monthEnd.length}件・合計 <strong style="color:var(--yellow);font-family:var(--mono)">${yen(monthEndTotal)}</strong> を月末にまとめて支給します。</div>` : ''}
+  `;
+}
+
+function renderTripSettlement() {
+  const el = document.getElementById('bt-inv-preview');
+  if (!el) return;
+  const { y, m } = state;
+  const list = tripsOfMonth(y, m).sort((a, b) => (a.dateFrom || '').localeCompare(b.dateFrom || '') || a.id - b.id);
+  const name = document.getElementById('bt-inv-name')?.value || '';
+  const note = document.getElementById('bt-inv-note')?.value || '';
+  const sum = k => list.reduce((s, t) => s + (t[k] || 0), 0);
+  const totals = {
+    allowDaytrip: sum('allowDaytrip'), allowNight: sum('allowNight'), prepFee: sum('prepFee'),
+    transport: sum('transport'),
+    lodging: list.reduce((s, t) => s + (t.lodgingActual || 0) + (t.lodgingFlat || 0), 0),
+    other: list.reduce((s, t) => s + (t.visaFee || 0) + (t.misc || 0), 0),
+    total: sum('total'),
+  };
+  const th = 'border:1px solid #999;padding:5px 6px;background:#f0f0f0;font-size:11px;font-weight:700';
+  const td = 'border:1px solid #999;padding:5px 6px;font-size:11px';
+  const tdR = td + ';text-align:right;font-variant-numeric:tabular-nums';
+  el.innerHTML = `
+  <div id="bt-print-area" style="background:#fff;color:#000;padding:24px;font-size:12px">
+    <div style="text-align:center;font-size:18px;font-weight:700;letter-spacing:0.2em;margin-bottom:16px">出張旅費精算書</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:10px">
+      <div style="font-size:13px">出張者：<strong>${escapeHtml(name)}</strong></div>
+      <div style="font-size:13px">${y}年${m}月分</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr>
+        <th style="${th}">日付</th><th style="${th}">区分</th><th style="${th}">出張先</th><th style="${th}">出張目的</th>
+        <th style="${th}">日帰り日当</th><th style="${th}">宿泊日当／日当</th><th style="${th}">支度料</th>
+        <th style="${th}">交通費</th><th style="${th}">宿泊費</th><th style="${th}">その他</th><th style="${th}">計</th>
+      </tr>
+      ${list.length === 0 ? `<tr><td style="${td};text-align:center" colspan="11">この月に計上した出張はありません</td></tr>` : list.map(t => `
+      <tr>
+        <td style="${td};white-space:nowrap">${t.dateFrom === t.dateTo ? t.dateFrom : t.dateFrom + '〜' + (t.dateTo || '').slice(5)}</td>
+        <td style="${td}">${t.kind === 'overseas' ? '海外' : '国内'}</td>
+        <td style="${td}">${escapeHtml(t.destination || '')}</td>
+        <td style="${td}">${escapeHtml(t.purpose || '')}</td>
+        <td style="${tdR}">${t.allowDaytrip ? fmt(t.allowDaytrip) : ''}</td>
+        <td style="${tdR}">${t.allowNight ? fmt(t.allowNight) : ''}</td>
+        <td style="${tdR}">${t.prepFee ? fmt(t.prepFee) : ''}</td>
+        <td style="${tdR}">${t.transport ? fmt(t.transport) : ''}</td>
+        <td style="${tdR}">${(t.lodgingActual + t.lodgingFlat) ? fmt(t.lodgingActual + t.lodgingFlat) : ''}</td>
+        <td style="${tdR}">${(t.visaFee + t.misc) ? fmt(t.visaFee + t.misc) : ''}</td>
+        <td style="${tdR}">${fmt(t.total)}</td>
+      </tr>`).join('')}
+      <tr>
+        <td style="${td};text-align:center;font-weight:700;background:#f7f7f7" colspan="4">小計</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.allowDaytrip)}</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.allowNight)}</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.prepFee)}</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.transport)}</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.lodging)}</td>
+        <td style="${tdR};background:#f7f7f7">${fmt(totals.other)}</td>
+        <td style="${tdR};background:#f7f7f7;font-weight:700">${fmt(totals.total)}</td>
+      </tr>
+    </table>
+    <div style="margin-top:14px;display:flex;justify-content:flex-end">
+      <table style="border-collapse:collapse">
+        <tr><td style="${td};font-weight:700;background:#f0f0f0">旅費合計</td><td style="${tdR};min-width:140px;font-size:14px;font-weight:700">${yen(totals.total)}</td></tr>
+      </table>
+    </div>
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;margin-bottom:4px">備考</div>
+      <div style="border:1px solid #999;min-height:48px;padding:6px;font-size:11px;white-space:pre-wrap">${escapeHtml(note)}</div>
+    </div>
+    <div style="margin-top:10px;font-size:10px;color:#666">※ 出張旅費規程（国内・海外）に基づき算定。宿泊費・交通費等の実費には領収証の添付を要します。</div>
+  </div>`;
+}
+
+function printTripSettlement() {
+  const area = document.getElementById('bt-print-area');
+  if (!area) return;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>出張旅費精算書 ${state.y}年${state.m}月</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>body{margin:0;padding:20px;font-family:'Noto Sans JP',sans-serif} @media print{body{padding:0}} @page{size:A4 landscape;margin:10mm}</style>
+    </head><body>${area.outerHTML}</body></html>`);
+  win.document.close();
+  win.onload = () => { win.print(); };
+}
+
+function renderTrips() {
+  const page = document.getElementById('page-trip');
+  if (!page) return;
+  const yEl = document.getElementById('bt-y'), mEl = document.getElementById('bt-m');
+  if (yEl && !yEl.value) yEl.value = state.y;
+  if (mEl && !mEl.value) mEl.value = state.m;
+  applyTripKindVisibility();
+  onTripPayTypeChange();
+  renderTripCalc();
+  renderTripSummary();
+  renderTripList();
+  renderTripSettlement();
+}
+
 // ===== 役員報酬（髙橋）：源泉徴収の登録 =====
 let pendingOfficerPaySlipFile = null; // AI読み取りでドロップされた給与明細。「登録」押下時にレコードへ添付する
 
@@ -10568,6 +11273,7 @@ function applyViewerRestrictions() {
     '#pay-attach-upload-section',   // 汎用添付モーダル（配信者/紹介者/管理人）のアップロード欄（一覧はpay-attach-listに残す）
     '#tax-attach-write-section',    // 源泉税の支払い明細添付モーダルのアップロード欄・日付入力（一覧はtax-attach-listに残す）
     '#officer-pay-form-wrap',        // 役員報酬（髙橋）登録フォーム（page-taxは自動非表示ロジックの対象外のため明示的に追加）
+    '#bt-form-wrap',                 // 出張手当の登録フォーム（page-tripは自動非表示ロジックの対象外のため明示的に追加）
   ];
   // 折りたたみヘッダーも一緒に隠す（フォームの直前の.table-header）
   HIDDEN_SELECTORS.forEach(sel => {
