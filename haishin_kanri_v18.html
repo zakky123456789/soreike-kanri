@@ -2724,28 +2724,80 @@ const calcExpTax = (amt, rate) => rate <= 0 ? 0 : Math.floor(amt - amt / (1 + ra
 // ダッシュボードのアラート・源泉税管理ページ・総勘定元帳（源泉税納付の仕訳金額）で共通利用する唯一の実装。
 // 同じ計算を複数箇所で独立実装しない（過去の月末請求書バグの教訓）ため、必ずこの関数経由で計算すること。
 function calcMonthEndSettleDetail(y, m) {
-  const sales = salesOfMonth(y, m);
-  const dpOfMonth = dailyPaysOfMonth(y, m);
+  const perCaster = calcMonthEndSettleByCaster(y, m);
   let settleSrc = 0, settlePersons = 0, settlePayAmount = 0;
   const settleCasterIds = new Set();
+  perCaster.forEach(x => {
+    settleSrc += x.src;
+    settlePersons++;
+    settlePayAmount += x.gross;
+    settleCasterIds.add(x.casterId);
+  });
+  return { settleSrc, settlePersons, settlePayAmount, settleCasterIds, perCaster };
+}
+// 配信者ごとの見積り明細（残額が正の配信者のみ）
+function calcMonthEndSettleByCaster(y, m) {
+  const sales = salesOfMonth(y, m);
+  const dpOfMonth = dailyPaysOfMonth(y, m);
+  const out = [];
   state.casters.forEach(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return;
     const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
     const totalDailyAmt = dpOfMonth.filter(d => d.casterId === c.id).reduce((s,d) => s + d.amount, 0);
     const remaining = totalReward - totalDailyAmt;
-    if (remaining > 0) {
-      settleSrc += calcSrcTax(remaining);
-      settlePersons++;
-      settlePayAmount += remaining;
-      settleCasterIds.add(c.id);
-    }
+    if (remaining > 0) out.push({ casterId: c.id, gross: remaining, src: calcSrcTax(remaining) });
   });
-  return { settleSrc, settlePersons, settlePayAmount, settleCasterIds };
+  return out;
 }
 // 合計金額だけ欲しい呼び出し元向けの簡易版
 function calcMonthEndSettleSrcTax(y, m) {
   return calcMonthEndSettleDetail(y, m).settleSrc;
+}
+
+// ===== 月末精算の「実績」を優先して返す（v35：第1弾）=====
+// 源泉徴収税額は「実際に支払った金額から差し引いた額」という事実であって、
+// 表示のたびに計算し直すものではない。month_end_pays に支払い記録があればその実績を使い、
+// まだ精算していない配信者だけを見積り計算で補う。
+// これにより、あとから売上を修正しても、すでに精算・納付した月の金額は動かなくなる。
+//   gross … 支払額（税込報酬）＝ month_end_pays.amount（振込額）＋ src_tax
+//   src   … 実際に源泉徴収した額
+// 同一（配信者・対象年月）に月末精算の支払い記録が2件以上あるのは登録ミス。
+// 画面側は find() で最初の1件しか扱わないため、2件目以降は編集も削除もできず存在に気づけない。
+// 集計では最初の1件（＝画面に出ている記録）だけを採用し、重複は警告で明示する。
+// ※ 何も対策しないと、記録を合計する箇所で二重計上になる（実際に2026年4月で発生していた）
+function dedupeMonthEndPays(list) {
+  const seen = new Map();
+  const dups = [];
+  [...list].sort((a, b) => a.id - b.id).forEach(p => {
+    const k = `${p.casterId}|${p.targetY}|${p.targetM}`;
+    if (seen.has(k)) dups.push(p); else seen.set(k, p);
+  });
+  return { kept: [...seen.values()], dups };
+}
+function monthEndDuplicates() {
+  return dedupeMonthEndPays(state.monthEndPays).dups;
+}
+
+function monthEndSettleActual(y, m) {
+  const recorded = dedupeMonthEndPays(state.monthEndPays.filter(p => p.targetY === y && p.targetM === m)).kept;
+  const recordedIds = new Set(recorded.map(p => p.casterId));
+  let src = 0, gross = 0;
+  const casterIds = new Set();
+  recorded.forEach(p => {
+    const s = p.srcTax || 0;
+    src += s;
+    gross += (p.amount || 0) + s;
+    casterIds.add(p.casterId);
+  });
+  // 支払い記録のない配信者は見積りで補う
+  let estimateCount = 0;
+  calcMonthEndSettleByCaster(y, m).forEach(x => {
+    if (recordedIds.has(x.casterId)) return;
+    src += x.src; gross += x.gross; casterIds.add(x.casterId); estimateCount++;
+  });
+  return { src, gross, persons: casterIds.size, casterIds,
+           recordedCount: recorded.length, estimateCount, hasEstimate: estimateCount > 0 };
 }
 
 // tax_paid.key（'dp-{支払年}-{支払月}-t{対象年}-{対象月}' または 'se-{対象年}-{対象月}'）を分解する
@@ -2768,7 +2820,10 @@ function computeTaxKeyAmount(key) {
       .filter(d => (d.targetY ?? d.y) === p.targetY && (d.targetM ?? d.m) === p.targetM)
       .reduce((s, d) => s + (d.srcTax || 0), 0);
   }
-  if (p.type === 'se') return calcMonthEndSettleSrcTax(p.y, p.m);
+  // 月末精算分は「実際に源泉徴収した額」を使う（v35：第1弾③）。
+  // 従来は見積り計算の値を保存していたため、実際に徴収した額と納付したと記録している額が
+  // 食い違う可能性があった。徴収額と納付額は一致していなければならない。
+  if (p.type === 'se') return monthEndSettleActual(p.y, p.m).src;
   return 0;
 }
 
@@ -5693,7 +5748,9 @@ function openDpEditModal(id) {
   if (!d) return;
   document.getElementById('dp-edit-id').value = id;
   document.getElementById('dp-edit-date').value = d.date;
-  document.getElementById('dp-edit-amount').value = d.amount - calcSrcTax(d.amount); // 保存済み税込報酬→支払額に変換
+  // 保存済みの税込報酬・源泉税から支払額を復元する。
+  // 源泉税は登録時に確定した実績なので、ここで計算し直してはならない（v35：第1弾）。
+  document.getElementById('dp-edit-amount').value = d.amount - (d.srcTax ?? calcSrcTax(d.amount));
   document.getElementById('dp-edit-note').value = d.note || '';
 
   // 配信者セレクト
@@ -5768,11 +5825,21 @@ async function saveDpEdit() {
   const note = document.getElementById('dp-edit-note').value;
   if (!casterId || isNaN(amount) || !date) { alert('全項目を入力してください'); return; }
   const [y, m] = date.split('-').map(Number);
-  let gross = Math.round(amount * 1.1 / (1.1 - 0.1021));
-  while (gross - calcSrcTax(gross) > amount) gross--;
-  while (gross - calcSrcTax(gross) < amount) gross++;
-  const srcTax = calcSrcTax(gross);
-  const savedAmount = gross;
+  const orig = state.dailyPays.find(x => x.id === id);
+  // 支払額を変更していない場合は、登録時に確定した税込報酬・源泉税をそのまま維持する。
+  // 計算し直すと、計算式を改善したときに「開いて保存し直しただけ」で
+  // 過去に確定した源泉徴収税額が書き換わってしまうため（v35：第1弾）。
+  let savedAmount, srcTax;
+  if (orig && orig.srcTax != null && (orig.amount - orig.srcTax) === amount) {
+    savedAmount = orig.amount;
+    srcTax = orig.srcTax;
+  } else {
+    let gross = Math.round(amount * 1.1 / (1.1 - 0.1021));
+    while (gross - calcSrcTax(gross) > amount) gross--;
+    while (gross - calcSrcTax(gross) < amount) gross++;
+    srcTax = calcSrcTax(gross);
+    savedAmount = gross;
+  }
   const saleIds = [...dpEditSelectedSaleIds];
   // salesLabel を再生成
   const dates = saleIds.map(sid => { const s = state.sales.find(x => x.id === sid); return s ? s.date : ''; }).filter(Boolean).sort();
@@ -7101,6 +7168,55 @@ function makeTaxRow(label, srcTax, deadlineDate, key, today, extra) {
   return { label, srcTax, deadline: deadlineDate, daysLeft, paid, key, ...(extra||{}) };
 }
 
+// ===== 100万円ラインの見張り（v35）=====
+// 源泉徴収は「同一人に1回に支払う金額」が100万円を超えると、超過部分の税率が変わる可能性がある
+// （所得税法205条1号。配信者への報酬がこれに該当するかは税理士確認中）。
+// 現在の計算は一律10.21%なので、超えた場合は徴収不足になりうる。
+// 運用では100万円を超える前に前払いして分割しているため、超える前に気づけるよう警告だけ出す。
+// ※ 消費税額を区分している場合、判定対象は税抜金額（＝税込金額×10/11）
+const SRC_TAX_THRESHOLD = 1000000;   // 税率が変わる可能性のある金額（税抜）
+const SRC_TAX_WARN_LINE = 900000;    // この金額を超えたら事前に知らせる（税抜）
+function taxableBaseOf(grossIncTax) { return Math.floor(grossIncTax * 10 / 11); }
+
+// 月末精算の重複登録を警告する。
+// 集計側では1件目だけを使って二重計上を防いでいるが、DBには余分なレコードが残っているため、
+// 削除しないと総勘定元帳など他の集計で再び混入する恐れがある。
+function buildDuplicateMepAlerts() {
+  const dups = monthEndDuplicates();
+  if (dups.length === 0) return '';
+  const lines = dups.map(p => {
+    const c = getCaster(p.casterId);
+    return `${c ? escapeHtml(c.name) : '?'}　${p.targetY}年${p.targetM}月分　${yen((p.amount || 0) + (p.srcTax || 0))}（支払日 ${escapeHtml(p.payDate || '')}）`;
+  }).join('<br>');
+  return `<div class="alert alert-red">🚨 月末精算の支払い記録が重複しています（${dups.length}件）。<br>${lines}<br>
+    <span style="font-size:11px">集計では1件目のみを使っているため金額は正しく出ていますが、
+    DBに余分なレコードが残っています。実際に二重で振り込んでいないかを確認のうえ、余分な記録を削除してください。
+    画面の「確認・編集」からは1件目しか開けないため、削除にはSupabase側での操作が必要です。</span></div>`;
+}
+
+function buildMillionYenAlerts() {
+  const hits = [];
+  const check = (label, grossIncTax) => {
+    const base = taxableBaseOf(grossIncTax);
+    if (base > SRC_TAX_THRESHOLD) hits.push({ over: true, label, gross: grossIncTax, base });
+    else if (base > SRC_TAX_WARN_LINE) hits.push({ over: false, label, gross: grossIncTax, base });
+  };
+  state.dailyPays.forEach(d => {
+    const c = getCaster(d.casterId);
+    check(`${c ? c.name : '?'}　前払い（${d.date}）`, d.amount || 0);
+  });
+  state.monthEndPays.forEach(p => {
+    const c = getCaster(p.casterId);
+    check(`${c ? c.name : '?'}　月末精算（${p.targetY}年${p.targetM}月分）`, (p.amount || 0) + (p.srcTax || 0));
+  });
+  if (hits.length === 0) return '';
+  hits.sort((a, b) => b.base - a.base);
+  return hits.slice(0, 10).map(h => h.over
+    ? `<div class="alert alert-red">🚨 ${escapeHtml(h.label)}：1回の支払いが ${yen(h.gross)}（源泉徴収の対象金額 ${yen(h.base)}）で、100万円を超えています。100万円超の部分は税率が20.42%になる可能性があります（税理士に要確認）。現在の計算は一律10.21%です。</div>`
+    : `<div class="alert alert-yellow">⚠️ ${escapeHtml(h.label)}：1回の支払いの源泉徴収対象金額が ${yen(h.base)} です。100万円まで残り ${yen(SRC_TAX_THRESHOLD - h.base)}。超える前に前払いで分割してください。</div>`
+  ).join('');
+}
+
 function renderTax() {
   const today = new Date();
   const rows = [];
@@ -7139,13 +7255,15 @@ function renderTax() {
     });
 
     // 月末払い分：翌々月10日が納付期限
-    // 配信者ごとに「月間報酬 − 前払い累計」の残額から源泉税を計算して合算（月末精算サマリーと同一ロジック）
-    const { settleSrc, settlePersons, settlePayAmount, settleCasterIds } = calcMonthEndSettleDetail(y, m);
-    if (settleSrc > 0) {
+    // 支払い記録（month_end_pays）があればその実績、なければ見積りで補う（v35：第1弾）
+    const act = monthEndSettleActual(y, m);
+    if (act.src > 0) {
       const pm = m+1>12?1:m+1; const py = m+1>12?y+1:y;
       const ddm = pm+1>12?1:pm+1; const ddy = pm+1>12?py+1:py;
       const key = `se-${y}-${String(m).padStart(2,'0')}`;
-      rows.push(makeTaxRow(`${y}年${m}月配信分　月末精算【${pm}月支払い】`, settleSrc, new Date(ddy, ddm-1, 10), key, today, { payMonth: pm, payYear: py, persons: settlePersons, payAmount: settlePayAmount, payType: 'settle', casterIdSet: settleCasterIds }));
+      rows.push(makeTaxRow(`${y}年${m}月配信分　月末精算【${pm}月支払い】`, act.src, new Date(ddy, ddm-1, 10), key, today,
+        { payMonth: pm, payYear: py, persons: act.persons, payAmount: act.gross, payType: 'settle', casterIdSet: act.casterIds,
+          recordedCount: act.recordedCount, estimateCount: act.estimateCount }));
     }
   }
 
@@ -7157,6 +7275,8 @@ function renderTax() {
       ? `<div class="alert alert-red">🚨 ${x.label} 源泉税 ${yen(x.srcTax)} 期限切れ！</div>`
       : `<div class="alert alert-yellow">⚠️ ${x.label} 源泉税 ${yen(x.srcTax)} 残り${x.daysLeft}日！</div>`;
   });
+  alerts += buildDuplicateMepAlerts();
+  alerts += buildMillionYenAlerts();
   document.getElementById('tax-alerts').innerHTML = alerts;
 
   // 納付期限ごとにグループ化
@@ -7204,8 +7324,17 @@ function renderTax() {
 
     // 内訳行（状態・操作はグループ単位でのみ表示。納付処理は合算ヘッダー行の📎添付からのみ行う）
     group.forEach(x => {
+      // その行の金額が「実際に源泉徴収した額（実績）」か「まだ精算していない見積り」かを明示する。
+      // 前払い分は登録時に確定した実績なので常に実績。月末精算分は支払い記録の有無で決まる。
+      let basis = '';
+      if (x.payType === 'daily') basis = '<span class="badge badge-green" style="margin-left:6px">実績</span>';
+      else if (x.payType === 'settle') {
+        if (x.estimateCount === 0) basis = '<span class="badge badge-green" style="margin-left:6px">実績</span>';
+        else if (x.recordedCount === 0) basis = '<span class="badge badge-yellow" style="margin-left:6px">見積り</span>';
+        else basis = `<span class="badge badge-yellow" style="margin-left:6px">実績${x.recordedCount}名＋見積り${x.estimateCount}名</span>`;
+      }
       html += `<tr style="opacity:0.8">
-        <td style="padding-left:20px;font-size:13px">└ ${x.label}</td>
+        <td style="padding-left:20px;font-size:13px">└ ${x.label}${basis}</td>
         <td class="num" style="color:var(--yellow)">${yen(x.srcTax)}</td>
         <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
@@ -7276,15 +7405,26 @@ function renderTax() {
 // 埋め戻し済みのkeyはstate.taxPaidAmountに値が入るので、以後この関数は対象なしで即終了する（冪等）。
 async function backfillTaxPaidAmounts() {
   if (isViewerRole()) return; // 閲覧者はtax_paidへの書き込み権限がない（RLSで拒否される）ため試行しない
-  const targets = Object.keys(state.taxPaid).filter(key => state.taxPaid[key] && state.taxPaidAmount[key] == null);
-  if (targets.length === 0) return;
-  const rows = targets.map(key => ({ key, amount: computeTaxKeyAmount(key) }));
+  // 未設定のkeyを埋めるだけでなく、実績と食い違っているkeyも実績に合わせる（v35：第1弾③）。
+  // amount列の追加当初は見積り計算の値を保存していたため、実際に源泉徴収した額とズレている
+  // レコードが存在しうる。徴収額＝納付額に揃える。
+  // 一度そろえば以後は差分ゼロで書き込みが発生しないため、この処理は何度実行しても安全（冪等）。
+  const rows = [];
+  Object.keys(state.taxPaid).forEach(key => {
+    if (!state.taxPaid[key]) return;
+    const actual = computeTaxKeyAmount(key);
+    if (!actual) return; // 計算対象外のkey（不正な形式など）は触らない
+    if (state.taxPaidAmount[key] === actual) return;
+    rows.push({ key, amount: actual });
+  });
+  if (rows.length === 0) return;
   const { error } = await sb.from('tax_paid').upsert(rows, { onConflict: 'key' });
   if (error) {
     console.error('tax_paid amount backfill error:', error);
-    return; // 失敗しても致命的ではない（次回ロード時に再度自動で埋め戻しが試行される）
+    return; // 失敗しても致命的ではない（次回ロード時に再度試行される）
   }
   rows.forEach(r => { state.taxPaidAmount[r.key] = r.amount; });
+  console.info(`tax_paid.amount を実績に合わせました（${rows.length}件）`);
 }
 
 async function setTax(key, v, paidDate) {
@@ -10402,17 +10542,25 @@ function renderWithholding() {
     });
     const mDailyAmt = mDailyPays.reduce((s,d) => s + d.amount, 0);
     const mDailySrc = mDailyPays.reduce((s,d) => s + d.srcTax, 0);
-    const remaining = mReward - mDailyAmt;
-    const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
     // 前払い支払日リスト（複数可）
     const dailyPayDates = mDailyPays.map(d => d.date).filter(Boolean).sort();
     // 後払支払日：month_end_pays に登録があればその日付、なければ空欄
     const mepRecord = state.monthEndPays.find(p => p.casterId === casterId && p.targetY === year && p.targetM === m);
     const endPayDate = mepRecord ? mepRecord.payDate.replace(/-/g, '/') : '';
-    totalReward += mReward;
+    // 支払調書は法定調書であり、実際に支払った額・実際に源泉徴収した額を記載する必要がある。
+    // 支払い記録（month_end_pays）があればその実績を使い、無い月だけ見積りで補う（v35：第1弾）。
+    //   month_end_pays.amount は振込額（源泉控除後）なので、支払金額は amount + src_tax
+    const estRemaining = mReward - mDailyAmt;
+    const remaining    = mepRecord ? (mepRecord.amount || 0) + (mepRecord.srcTax || 0)
+                                   : (estRemaining > 0 ? estRemaining : 0);
+    const remainingSrc = mepRecord ? (mepRecord.srcTax || 0)
+                                   : calcSrcTax(estRemaining > 0 ? estRemaining : 0);
+    // 支払金額も実績ベース（前払いの税込報酬合計＋月末精算の税込支払額）
+    const mPaid = mDailyAmt + remaining;
+    totalReward += mPaid;
     totalSrcTax += mDailySrc + remainingSrc;
     if (mSales.length > 0) {
-      monthRows.push({ m, mReward, mDailyAmt, mDailySrc, remaining: remaining > 0 ? remaining : 0, remainingSrc, dailyPayDates, endPayDate });
+      monthRows.push({ m, mReward: mPaid, mDailyAmt, mDailySrc, remaining, remainingSrc, dailyPayDates, endPayDate });
     }
   }
 
@@ -11034,7 +11182,8 @@ async function downloadLedgerXlsx() {
 
     const expenses = state.expenses.filter(e => inPeriod(e.date));
     const dailyPays = state.dailyPays.filter(d => inPeriod(d.date));
-    const monthEndPays = state.monthEndPays.filter(m => inPeriod(m.payDate));
+    // 重複登録された月末精算は二重計上になるため除外する（画面が扱う1件目のみ採用）
+    const monthEndPays = dedupeMonthEndPays(state.monthEndPays).kept.filter(m => inPeriod(m.payDate));
 
     // 両替：date_toで絞り込み
     const exchanges = state.fxRecords.filter(x => inPeriod(x.dateTo));
