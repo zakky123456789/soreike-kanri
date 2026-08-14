@@ -5576,6 +5576,9 @@ function updateDpSaleList() {
     const reward = c ? calcReward(coinToYen(s.coins), c.rate) : 0;
     const alreadyPaid = paidBySaleId[s.id] || 0;
     const remaining = reward - alreadyPaid;
+    // 報酬額がマイナスの行（＝報酬を減らす調整）は前払いの対象にならないので選択不可にするが、
+    // 「前払い済」と表示すると誤解を招くため「調整」と明示する（v35）
+    const isMinusAdjust = reward < 0;
     const fullyPaid = remaining <= 0;
     const labelStyle = fullyPaid
       ? `display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:not-allowed;font-size:12px;opacity:0.45`
@@ -5583,9 +5586,11 @@ function updateDpSaleList() {
     const remainingLabel = alreadyPaid > 0 && !fullyPaid
       ? `<span style="color:var(--muted);font-size:11px">（残 ${yen(remaining)}）</span>`
       : '';
-    const paidLabel = fullyPaid
-      ? `<span style="color:var(--muted);font-size:11px">（前払い済）</span>`
-      : '';
+    const paidLabel = isMinusAdjust
+      ? `<span style="color:var(--yellow);font-size:11px">（調整・月末精算で控除）</span>`
+      : fullyPaid
+        ? `<span style="color:var(--muted);font-size:11px">（前払い済）</span>`
+        : '';
     return `<label style="${labelStyle}" id="dp-sale-label-${s.id}">
       <input type="checkbox" value="${s.id}" data-reward="${reward}" data-remaining="${remaining}" onchange="onDpSaleCheck(this)" style="width:auto;accent-color:var(--accent)" ${fullyPaid ? 'disabled' : ''}>
       <span>${s.date}　${fmt(s.coins)}C　<span style="color:var(--red)">${yen(reward)}</span>${remainingLabel}${paidLabel}</span>
@@ -7665,7 +7670,12 @@ function updateInvoicePreview() {
       const rw = calcReward(coinToYen(s.coins), c.rate);
       const paid = prepaidBySaleId[s.id] || 0;
       const remaining = rw - paid;
-      if (remaining <= 0) return; // 全額前払い済みは非表示
+      // 残額が0以下の行は「全額前払い済み」として非表示にする。
+      // ただし報酬額そのものがマイナスの行（＝報酬を減らす調整）は、この判定に巻き込んではならない。
+      // 【v35で修正】従来は remaining <= 0 の一律判定だったため、マイナスの調整が請求書から
+      // 丸ごと消え、その分だけ請求額・源泉徴収税額が過大になっていた（プラスの調整は表示されるのに
+      // マイナスだけ消えるという非対称な状態だった）。
+      if (rw >= 0 && remaining <= 0) return;
       let label;
       if ((s.type||'normal') === 'adjust') {
         label = `ライブ配信出演報酬　調整分（${s.date}）`;
@@ -7675,7 +7685,7 @@ function updateInvoicePreview() {
       } else {
         label = `ライブ配信出演報酬　${s.date} 配信分`;
       }
-      rows.push({ label, qty: 1, unitPrice: remaining, taxRate: 10, amount: remaining, src: 0, deduct: false });
+      rows.push({ label, qty: 1, unitPrice: remaining, taxRate: 10, amount: remaining, src: 0, deduct: remaining < 0 });
     });
     if (dpTotal > 0) {
       hasPrepaid = true;
