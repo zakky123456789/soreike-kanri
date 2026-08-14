@@ -7168,16 +7168,6 @@ function makeTaxRow(label, srcTax, deadlineDate, key, today, extra) {
   return { label, srcTax, deadline: deadlineDate, daysLeft, paid, key, ...(extra||{}) };
 }
 
-// ===== 100万円ラインの見張り（v35）=====
-// 源泉徴収は「同一人に1回に支払う金額」が100万円を超えると、超過部分の税率が変わる可能性がある
-// （所得税法205条1号。配信者への報酬がこれに該当するかは税理士確認中）。
-// 現在の計算は一律10.21%なので、超えた場合は徴収不足になりうる。
-// 運用では100万円を超える前に前払いして分割しているため、超える前に気づけるよう警告だけ出す。
-// ※ 消費税額を区分している場合、判定対象は税抜金額（＝税込金額×10/11）
-const SRC_TAX_THRESHOLD = 1000000;   // 税率が変わる可能性のある金額（税抜）
-const SRC_TAX_WARN_LINE = 900000;    // この金額を超えたら事前に知らせる（税抜）
-function taxableBaseOf(grossIncTax) { return Math.floor(grossIncTax * 10 / 11); }
-
 // 月末精算の重複登録を警告する。
 // 集計側では1件目だけを使って二重計上を防いでいるが、DBには余分なレコードが残っているため、
 // 削除しないと総勘定元帳など他の集計で再び混入する恐れがある。
@@ -7195,29 +7185,6 @@ function buildDuplicateMepAlerts() {
     DBに余分なレコードが残っています。実際に二重で振り込んでいないかを確認のうえ、余分な記録を削除してください。
     画面の「確認・編集」からは1件目しか開けないため、削除にはSupabase側での操作が必要です。</div>
   </div></div>`;
-}
-
-function buildMillionYenAlerts() {
-  const hits = [];
-  const check = (label, grossIncTax) => {
-    const base = taxableBaseOf(grossIncTax);
-    if (base > SRC_TAX_THRESHOLD) hits.push({ over: true, label, gross: grossIncTax, base });
-    else if (base > SRC_TAX_WARN_LINE) hits.push({ over: false, label, gross: grossIncTax, base });
-  };
-  state.dailyPays.forEach(d => {
-    const c = getCaster(d.casterId);
-    check(`${c ? c.name : '?'}　前払い（${d.date}）`, d.amount || 0);
-  });
-  state.monthEndPays.forEach(p => {
-    const c = getCaster(p.casterId);
-    check(`${c ? c.name : '?'}　月末精算（${p.targetY}年${p.targetM}月分）`, (p.amount || 0) + (p.srcTax || 0));
-  });
-  if (hits.length === 0) return '';
-  hits.sort((a, b) => b.base - a.base);
-  return hits.slice(0, 10).map(h => h.over
-    ? `<div class="alert alert-red">🚨 ${escapeHtml(h.label)}：1回の支払いが ${yen(h.gross)}（源泉徴収の対象金額 ${yen(h.base)}）で、100万円を超えています。100万円超の部分は税率が20.42%になる可能性があります（税理士に要確認）。現在の計算は一律10.21%です。</div>`
-    : `<div class="alert alert-yellow">⚠️ ${escapeHtml(h.label)}：1回の支払いの源泉徴収対象金額が ${yen(h.base)} です。100万円まで残り ${yen(SRC_TAX_THRESHOLD - h.base)}。超える前に前払いで分割してください。</div>`
-  ).join('');
 }
 
 function renderTax() {
@@ -7279,7 +7246,6 @@ function renderTax() {
       : `<div class="alert alert-yellow">⚠️ ${x.label} 源泉税 ${yen(x.srcTax)} 残り${x.daysLeft}日！</div>`;
   });
   alerts += buildDuplicateMepAlerts();
-  alerts += buildMillionYenAlerts();
   document.getElementById('tax-alerts').innerHTML = alerts;
 
   // 納付期限ごとにグループ化
