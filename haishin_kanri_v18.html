@@ -7188,10 +7188,13 @@ function buildDuplicateMepAlerts() {
     const c = getCaster(p.casterId);
     return `${c ? escapeHtml(c.name) : '?'}　${p.targetY}年${p.targetM}月分　${yen((p.amount || 0) + (p.srcTax || 0))}（支払日 ${escapeHtml(p.payDate || '')}）`;
   }).join('<br>');
-  return `<div class="alert alert-red">🚨 月末精算の支払い記録が重複しています（${dups.length}件）。<br>${lines}<br>
-    <span style="font-size:11px">集計では1件目のみを使っているため金額は正しく出ていますが、
+  // .alert は display:flex のため、中身は必ず1つの要素にまとめる（横並びに崩れるのを防ぐ）
+  return `<div class="alert alert-red"><div style="line-height:1.9">
+    <strong>🚨 月末精算の支払い記録が重複しています（${dups.length}件）</strong><br>${lines}
+    <div style="font-size:11px;margin-top:6px;opacity:0.85">集計では1件目のみを使っているため画面の金額は正しく出ていますが、
     DBに余分なレコードが残っています。実際に二重で振り込んでいないかを確認のうえ、余分な記録を削除してください。
-    画面の「確認・編集」からは1件目しか開けないため、削除にはSupabase側での操作が必要です。</span></div>`;
+    画面の「確認・編集」からは1件目しか開けないため、削除にはSupabase側での操作が必要です。</div>
+  </div></div>`;
 }
 
 function buildMillionYenAlerts() {
@@ -10213,17 +10216,45 @@ function closeMepModal() {
 
 // レコードの作成/更新のみ行い、idを返す（モーダルのクローズや再描画は呼び出し側の責任）
 // 通常の保存ボタン（saveMep）と、クイック登録（handleMepInvoiceFiles/handleMepTransferFiles経由のsaveMepAndAttach）の両方から呼ばれる
+// 月末精算の保存が同時に走らないようにするロック（v35）。
+// 保存は「mep-edit-id が空なら新規作成、埋まっていれば更新」で分岐するが、
+// 新規作成が完了して mep-edit-id がセットされるまでに別の保存が始まると、
+// どちらも「空」と判定して2件作ってしまう（保存ボタンの連打、
+// 請求書と振込明細を続けてドロップ、などで発生しうる）。実際に重複レコードが1件できていた。
+let mepSaving = false;
+
 async function saveMepRecord() {
+  if (mepSaving) { console.warn('月末精算の保存が進行中のため、重複した保存要求を無視しました'); return null; }
+  mepSaving = true;
+  try {
+    return await saveMepRecordInner();
+  } finally {
+    mepSaving = false;
+  }
+}
+
+async function saveMepRecordInner() {
   const casterId = parseInt(document.getElementById('mep-caster-id').value);
   const targetY  = parseInt(document.getElementById('mep-target-y').value);
   const targetM  = parseInt(document.getElementById('mep-target-m').value);
-  const editId   = document.getElementById('mep-edit-id').value;
+  let   editId   = document.getElementById('mep-edit-id').value;
   const payDate  = document.getElementById('mep-pay-date').value;
   const amount   = parseInt(document.getElementById('mep-amount').value) || 0;
   const srcTax   = parseInt(document.getElementById('mep-src-tax').value) || 0;
   const note     = document.getElementById('mep-note').value.trim();
 
   if (!payDate) { alert('支払日を入力してください'); return null; }
+
+  // 新規作成のとき、同じ配信者・対象月の記録がすでにあれば、新規に作らずそれを更新する。
+  // （画面の一覧は find() で1件目しか見ないため、2件目を作っても表示されず気づけない）
+  if (!editId) {
+    const exist = state.monthEndPays.find(p => p.casterId === casterId && p.targetY === targetY && p.targetM === targetM);
+    if (exist) {
+      console.warn(`同じ配信者・対象月の月末精算がすでに存在するため更新します（id=${exist.id}）`);
+      editId = String(exist.id);
+      document.getElementById('mep-edit-id').value = exist.id;
+    }
+  }
 
   const record = { casterId, payDate, amount, srcTax, targetY, targetM, note };
 
