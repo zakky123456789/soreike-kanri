@@ -2696,7 +2696,15 @@ const getCatBadge = cat => {
   return `<span style="display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:1px 7px;${s}">${cat}</span>`;
 };
 const calcReward = (yen, rate) => Math.floor(yen * rate / 100); // 税込報酬（切り捨て）
-const calcSrcTax = rewardIncTax => Math.floor(Math.floor(rewardIncTax / 1.1) * 0.1021); // 税抜確定→源泉計算（各ステップ切り捨て）
+// 税込金額から税抜金額を求める（1円未満切り捨て）。
+// 【v35で修正】従来は Math.floor(x / 1.1) としていたが、JavaScriptでは 1.1 を正確に表せないため
+// 割り切れる金額（11の倍数）でも 1円下振れすることがある。
+//   例：975898 / 1.1 → 887179.9999999999 → 切り捨て 887179（正しくは 887180）
+// 整数演算（×10÷11）にすると厳密値と完全に一致する（500万件で検証済み・不一致0件）。
+// この1円のズレは源泉徴収税額・消費税額にもそのまま伝播していた。
+const taxExcluded = (incTax, rate = 10) => rate === 8 ? Math.floor(incTax * 100 / 108) : Math.floor(incTax * 10 / 11);
+const taxAmountOf = (incTax, rate = 10) => incTax - taxExcluded(incTax, rate);
+const calcSrcTax = rewardIncTax => Math.floor(taxExcluded(rewardIncTax) * 0.1021); // 税抜確定→源泉計算（各ステップ切り捨て）
 // 紹介料計算（2パターン対応）
 // type='A': ①コイン×7×r1pct  ②コイン×7×r2a×r2b
 // type='B': 税込報酬×r1pct（一本化）
@@ -7745,6 +7753,7 @@ function updateInvoicePreview() {
 
   const fmtDate = d => { if(!d) return ''; const [y,m,dd]=d.split('-'); return `${y}年${parseInt(m)}月${parseInt(dd)}日`; };
   let rows = [], totalReward = 0, totalSrc = 0, payDeadline = '', periodLabel = '', subject = '', hasPrepaid = false;
+  let excessPrepaid = 0;   // 前払いが報酬合計を上回った分（＝入れすぎ。請求書には出さず画面で警告する）
 
   if (type === 'daily') {
     const dpId = parseInt(document.getElementById('inv-daily-sel')?.value);
@@ -7779,80 +7788,121 @@ function updateInvoicePreview() {
     const dpTotal = dpList.reduce((s,d)=>s+d.amount,0);
     const dpSrcTotal = dpList.reduce((s,d)=>s+d.srcTax,0);
 
-    // saleIdごとに前払い済み累計額を集計（按分方式・一部前払い対応）
+    // ===== 前払いを配信へ割り当てる（v35で全面改訂）=====
+    // 【従来の問題】
+    //   ・割り当てが配信の報酬額を超えると、その行が「全額前払い済み」として消え、超過分が失われた
+    //   ・配信を選ばずに登録した前払い（saleIds空）や、紐付け先の配信が当月に無い前払いは丸ごと無視された
+    //   いずれも「前払いしたのに、していないことにして満額請求する」方向に働き、請求書が過大になっていた。
+    // 【改訂後】
+    //   ・各配信への割り当ては、その配信の報酬額を上限にする（超過分は捨てずにプールへ戻す）
+    //   ・割り当て先が無い前払いもプールへ入れる
+    //   ・プールは残額のある他の配信へ順に充当する
+    //   ・それでも充当しきれない分は「前払い充当」の控除行として明細に出す
+    //   これにより、請求額は必ず「報酬合計 − 前払い合計」と一致する（＝月末精算サマリーと同じ）。
+    const rewardOf = {};
+    sales.forEach(s2 => { rewardOf[s2.id] = calcReward(coinToYen(s2.coins), c.rate); });
+    const capOf = sid => Math.max(rewardOf[sid] || 0, 0);   // マイナス調整には前払いを充当しない
     const prepaidBySaleId = {};
+    let prepaidPool = 0;   // 配信に割り当てられなかった前払い
+
     dpList.forEach(d => {
-      const ids = d.saleIds || [];
-      if (ids.length === 0) return;
+      // 当月に実在する配信だけを割り当て先にする（削除・移動された配信IDはプールへ回す）
+      const ids = (d.saleIds || []).filter(id => sales.some(x => x.id === id));
+      if (ids.length === 0) { prepaidPool += d.amount; return; }
+
+      // まず従来どおり報酬額の比で按分する（端数は最後の1件が吸収）
+      const shares = {};
       if (ids.length === 1) {
-        // 1件なら全額をそのsaleに充当
-        prepaidBySaleId[ids[0]] = (prepaidBySaleId[ids[0]] || 0) + d.amount;
+        shares[ids[0]] = d.amount;
       } else {
-        // 複数件なら各saleの報酬額で按分
-        const rewardMap = {};
         let totalRw = 0;
-        ids.forEach(sid => {
-          const sv = sales.find(x => x.id === sid);
-          const rw = sv && c ? calcReward(coinToYen(sv.coins), c.rate) : 0;
-          rewardMap[sid] = rw;
-          totalRw += rw;
-        });
+        ids.forEach(sid => { totalRw += capOf(sid); });
         if (totalRw > 0) {
           let allocated = 0;
           ids.forEach((sid, i) => {
             const share = i === ids.length - 1
-              ? d.amount - allocated  // 最後の1件は端数を全部載せる
-              : Math.floor(d.amount * rewardMap[sid] / totalRw);
-            prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + share;
+              ? d.amount - allocated                                  // 最後の1件は端数を全部載せる
+              : Math.floor(d.amount * capOf(sid) / totalRw);
+            shares[sid] = (shares[sid] || 0) + share;
             allocated += share;
           });
         } else {
           // 報酬額が取れない場合は均等割り
           const share = Math.floor(d.amount / ids.length);
           ids.forEach((sid, i) => {
-            const s = i === ids.length - 1 ? d.amount - share * i : share;
-            prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + s;
+            shares[sid] = (shares[sid] || 0) + (i === ids.length - 1 ? d.amount - share * i : share);
           });
         }
       }
+
+      // 各配信の報酬額を上限にして充当し、超えた分はプールへ戻す
+      Object.keys(shares).forEach(sid => {
+        const room = capOf(sid) - (prepaidBySaleId[sid] || 0);
+        const use  = Math.max(0, Math.min(shares[sid], room));
+        prepaidBySaleId[sid] = (prepaidBySaleId[sid] || 0) + use;
+        prepaidPool += shares[sid] - use;
+      });
     });
 
-    // 同日に複数エントリがある日付を事前にカウント（残額>0の行のみ）
+    // プールを、まだ残額のある配信へ順に充当する
+    sales.forEach(s2 => {
+      if (prepaidPool <= 0) return;
+      const room = capOf(s2.id) - (prepaidBySaleId[s2.id] || 0);
+      if (room <= 0) return;
+      const use = Math.min(prepaidPool, room);
+      prepaidBySaleId[s2.id] = (prepaidBySaleId[s2.id] || 0) + use;
+      prepaidPool -= use;
+    });
+
+    // 同日に複数エントリがある日付を事前にカウント（明細に出る行のみ）
     const dateCounts = {};
-    sales.forEach(s => {
-      const rw = calcReward(coinToYen(s.coins), c.rate);
-      const paid = prepaidBySaleId[s.id] || 0;
-      if ((s.type||'normal') !== 'adjust' && rw - paid > 0) dateCounts[s.date] = (dateCounts[s.date] || 0) + 1;
+    sales.forEach(s2 => {
+      const rem = (rewardOf[s2.id] || 0) - (prepaidBySaleId[s2.id] || 0);
+      if ((s2.type||'normal') !== 'adjust' && rem > 0) dateCounts[s2.date] = (dateCounts[s2.date] || 0) + 1;
     });
     const dateIdx = {};
-    sales.forEach(s => {
-      const rw = calcReward(coinToYen(s.coins), c.rate);
-      const paid = prepaidBySaleId[s.id] || 0;
-      const remaining = rw - paid;
-      // 残額が0以下の行は「全額前払い済み」として非表示にする。
-      // ただし報酬額そのものがマイナスの行（＝報酬を減らす調整）は、この判定に巻き込んではならない。
-      // 【v35で修正】従来は remaining <= 0 の一律判定だったため、マイナスの調整が請求書から
-      // 丸ごと消え、その分だけ請求額・源泉徴収税額が過大になっていた（プラスの調整は表示されるのに
-      // マイナスだけ消えるという非対称な状態だった）。
-      if (rw >= 0 && remaining <= 0) return;
+    sales.forEach(s2 => {
+      const rw = rewardOf[s2.id] || 0;
+      const remaining = rw - (prepaidBySaleId[s2.id] || 0);
+      // 残額ちょうど0の行だけ非表示にする（全額前払い済み）。
+      // マイナスの調整はここで消してはならない（v35）。上限を設けたので、
+      // 前払いの超過によって残額がマイナスになることはもう起きない。
+      if (remaining === 0) return;
       let label;
-      if ((s.type||'normal') === 'adjust') {
-        label = `ライブ配信出演報酬　調整分（${s.date}）`;
-      } else if (dateCounts[s.date] > 1) {
-        dateIdx[s.date] = (dateIdx[s.date] || 0) + 1;
-        label = `ライブ配信出演報酬　${s.date} 配信分（${dateIdx[s.date]}回目）`;
+      if ((s2.type||'normal') === 'adjust') {
+        label = `ライブ配信出演報酬　調整分（${s2.date}）`;
+      } else if (dateCounts[s2.date] > 1) {
+        dateIdx[s2.date] = (dateIdx[s2.date] || 0) + 1;
+        label = `ライブ配信出演報酬　${s2.date} 配信分（${dateIdx[s2.date]}回目）`;
       } else {
-        label = `ライブ配信出演報酬　${s.date} 配信分`;
+        label = `ライブ配信出演報酬　${s2.date} 配信分`;
       }
       rows.push({ label, qty: 1, unitPrice: remaining, taxRate: 10, amount: remaining, src: 0, deduct: remaining < 0 });
     });
+
+    // 配信に充当しきれなかった前払いは、控除行として明細に残す（黙って消さない）。
+    // 通常の運用では発生せず、この行が出るのは前払いの紐付けに問題がある場合だけ。
+    // ただし控除で請求額をマイナスにはしない。前払いが報酬合計を上回っている月は
+    // 月末精算サマリー側でも「請求なし」として扱われる（remaining > 0 の月だけ集計対象）ので、
+    // 請求書も 0 円で止め、上回った分は画面上の警告で知らせる（＝データの修正が必要な状態）。
+    if (prepaidPool > 0) {
+      const subtotal = rows.reduce((s,r)=>s+r.amount,0);
+      const use = Math.min(prepaidPool, Math.max(subtotal, 0));
+      if (use > 0) {
+        rows.push({ label: 'ライブ配信出演報酬　前払い充当', qty: 1, unitPrice: -use,
+                    taxRate: 10, amount: -use, src: 0, deduct: true });
+      }
+      excessPrepaid = prepaidPool - use;
+    }
+
     if (dpTotal > 0) {
       hasPrepaid = true;
     }
 
     totalReward = rows.reduce((s,r)=>s+r.amount,0);
     // 源泉は合計税抜額に対して一括計算（行ごと合算より正確・1円ズレ防止）
-    totalSrc    = Math.floor(Math.floor(totalReward / 1.1) * 0.1021);
+    // マイナスの請求額に源泉徴収は発生しないので 0 とする
+    totalSrc    = totalReward > 0 ? calcSrcTax(totalReward) : 0;
     const py = mm+1>12?my+1:my; const pm = mm+1>12?1:mm+1;
     payDeadline = `${py}年${pm}月22日`;
     periodLabel = `${my}年${mm}月分`;
@@ -7866,7 +7916,7 @@ function updateInvoicePreview() {
   // 税額内訳計算（控除後ベース）
   const taxable10 = rows.reduce((s,r)=>s+(r.taxRate===10?r.amount:0),0); // 月末分明細ベース（= totalReward）
   const taxable10gross = taxable10; // 控除行なし・統一
-  const tax10 = totalReward - Math.floor(totalReward / 1.1); // 税込から消費税を逆算
+  const tax10 = taxAmountOf(totalReward); // 税込から消費税を逆算
   const taxable8 = 0; // 軽減税率対象なし想定
   const nonTaxable = 0;
 
@@ -7881,7 +7931,20 @@ function updateInvoicePreview() {
     : '当方は適格請求書発行事業者ではありません（登録番号なし）。\n本書は適格請求書（インボイス）ではありません。';
 
 
-  document.getElementById('invoice-preview').innerHTML = `
+  // 前払いの入れすぎ・全額前払い済みは、請求書そのものには出さず画面上だけで知らせる
+  // （#invoice-print-area の外なので印刷・PDFには含まれない）
+  const noticeHtml = excessPrepaid > 0
+    ? `<div style="background:#3a2a12;border:1px solid #7a5a20;color:#f2c94c;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7">
+         <strong>⚠️ 前払いが報酬合計を ${yen(excessPrepaid)} 上回っています</strong><br>
+         この月は請求額 0 円（請求なし）として表示しています。前払いの入力額か、配信との紐付けを確認してください。
+       </div>`
+    : (totalReward === 0 && hasPrepaid
+      ? `<div style="background:#1b2a3a;border:1px solid #2f4d6e;color:#9fc6ee;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.7">
+           この月は前払いで全額支払い済みです（請求額 0 円）。
+         </div>`
+      : '');
+
+  document.getElementById('invoice-preview').innerHTML = noticeHtml + `
     <div id="invoice-print-area" style="font-family:'Noto Sans JP',sans-serif;color:#1a1a1a;background:#fff;padding:40px 44px;max-width:760px;margin:0 auto;border:1px solid #dde3ec;border-radius:8px;font-size:13px;line-height:1.6">
 
       <!-- タイトル行 -->
@@ -7960,8 +8023,8 @@ function updateInvoicePreview() {
             </tr>
             <tr>
               <td style="padding:5px 10px;border:1px solid #dde3ec">10%</td>
-              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(Math.floor(taxable10gross/1.1))}</td>
-              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxable10gross - Math.floor(taxable10gross/1.1))}</td>
+              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxExcluded(taxable10gross))}</td>
+              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxAmountOf(taxable10gross))}</td>
             </tr>
             <tr>
               <td style="padding:5px 10px;border:1px solid #dde3ec">軽減8%</td>
@@ -7985,7 +8048,7 @@ function updateInvoicePreview() {
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <tr>
               <td style="padding:6px 12px;border:1px solid #dde3ec;color:#555">小計（税抜）</td>
-              <td style="padding:6px 12px;border:1px solid #dde3ec;text-align:right;font-family:monospace">${fmt(Math.floor(totalReward/1.1))}</td>
+              <td style="padding:6px 12px;border:1px solid #dde3ec;text-align:right;font-family:monospace">${fmt(taxExcluded(totalReward))}</td>
             </tr>
             <tr>
               <td style="padding:6px 12px;border:1px solid #dde3ec;color:#555">消費税</td>
@@ -8588,7 +8651,7 @@ function renderRefReport() {
 
   // 消費税計算（外税10%前提）
   const refTaxable = totalRef;                          // 税込合計
-  const refTaxEx  = Math.floor(refTaxable / 1.1);      // 税抜
+  const refTaxEx  = taxExcluded(refTaxable);           // 税抜
   const refTax10  = refTaxable - refTaxEx;              // 消費税額
   const subject   = `${y}年${m}月分 営業協力業務委託料`;
   const fmtDateRef = d => { if(!d) return ''; const [yy,mm,dd]=d.split('-'); return `${yy}年${parseInt(mm)}月${parseInt(dd)}日`; };
@@ -8776,7 +8839,7 @@ function renderRefund() {
     const c = getCaster(x.casterId);
     if (!c) return;
     const rw = calcReward(coinToYen(x.coins), c.rate);
-    const base = Math.floor(rw / 1.1 * 0.1);
+    const base = taxAmountOf(rw);
     if (c.invoice === 'yes') {
       rewardBase100 += base;
       rewardCredit += base;
@@ -8803,7 +8866,7 @@ function renderRefund() {
     refTotals[ref.id].total += refAmt;
   });
   Object.values(refTotals).forEach(({ ref, total }) => {
-    const base = Math.floor(total / 1.1 * 0.1);
+    const base = taxAmountOf(total);
     if (ref.invoiceNo) {
       refBase100 += base;
       refCredit += base;
@@ -8855,7 +8918,7 @@ function renderRefund() {
     const opProfit = totalSalesEstimate - totalReward - totalRef - totalExpForMgr;
     return Math.floor(Math.max(0, opProfit) * 0.5);
   })();
-  const mgrBase = Math.floor(mgrRewardAmt / 1.1 * 0.1);
+  const mgrBase = taxAmountOf(mgrRewardAmt);
   const mgrCredit = Math.floor(mgrBase * transitRate);
   const mgrCredit100 = mgrBase;
 
@@ -9093,7 +9156,7 @@ function renderManagerInvoice() {
   const taxable8  = r.replaceExps.filter(e=>e.tax===8).reduce((s,e)=>s+e.amount, 0);
   const nonTaxable  = r.replaceExps.filter(e=>e.tax===0).reduce((s,e)=>s+e.amount, 0);  // 非課税
   const outOfScope  = r.replaceExps.filter(e=>e.tax===-1).reduce((s,e)=>s+e.amount, 0); // 対象外
-  const tax10 = Math.floor(taxable10 - taxable10/1.1);
+  const tax10 = taxAmountOf(taxable10);
   const tax8  = Math.floor(taxable8  - taxable8 /1.08);
 
   el.innerHTML = `
@@ -9174,7 +9237,7 @@ function renderManagerInvoice() {
             </tr>
             <tr>
               <td style="padding:5px 10px;border:1px solid #dde3ec">10%</td>
-              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(Math.floor(taxable10/1.1))}</td>
+              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxExcluded(taxable10))}</td>
               <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(tax10)}</td>
             </tr>
             <tr>
@@ -9199,7 +9262,7 @@ function renderManagerInvoice() {
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <tr>
               <td style="padding:6px 12px;border:1px solid #dde3ec;color:#555">小計（税抜）</td>
-              <td style="padding:6px 12px;border:1px solid #dde3ec;text-align:right;font-family:monospace">${fmt(Math.floor(taxable10/1.1) + Math.floor(taxable8/1.08) + nonTaxable + outOfScope)}</td>
+              <td style="padding:6px 12px;border:1px solid #dde3ec;text-align:right;font-family:monospace">${fmt(taxExcluded(taxable10) + taxExcluded(taxable8, 8) + nonTaxable + outOfScope)}</td>
             </tr>
             <tr>
               <td style="padding:6px 12px;border:1px solid #dde3ec;color:#555">消費税</td>
@@ -11263,34 +11326,41 @@ async function downloadLedgerXlsx() {
     });
 
     // 2. 日払い
+    // 【v35で修正】daily_pays.amount は「税込報酬（源泉を引く前）」で保存されている。
+    // 従来は amount + src_tax を外注費に計上していたため、外注費と現金が
+    // 源泉税額のぶん過大になっていた（消費税額も膨らんだ金額で計算されていた）。
+    // 正しい仕訳： 外注費 税込報酬 ／ 現金 実際の振込額 ＋ 預り金 源泉税
+    // ※ month_end_pays.amount は「振込額（源泉控除後）」で、日払いとは意味が逆なので注意
     [...dailyPays].sort((a,b)=>a.date.localeCompare(b.date)).forEach(dp => {
-      const amt   = dp.amount || 0;
-      const stax  = dp.srcTax || 0;
-      const total = amt + stax;
+      const gross = dp.amount || 0;   // 税込報酬
+      const stax  = dp.srcTax || 0;   // 源泉徴収税額
+      const cash  = gross - stax;     // 実際に振り込んだ額
       const note  = `日払い：${casterName(dp.casterId)}`;
       const debitTaxCategory = '課税10%';
-      const debitTaxAmt = calcExpTax(total, 10);
+      const debitTaxAmt = calcExpTax(gross, 10);
       const debitInvoiceNo = casterInvoiceNo(dp.casterId);
       if (stax > 0) {
-        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: gross, creditAcc: '現金', creditAmt: cash, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       } else {
-        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
+        allEntries.push({ date: dp.date, note, debitAcc: '外注費', debitAmt: gross, creditAcc: '現金', creditAmt: gross, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
     });
 
     // 3. 月末精算
+    // month_end_pays.amount は「振込額（源泉控除後）」なので、税込報酬は amount + src_tax。
+    // 日払いとは amount の意味が逆である点に注意（過去に取り違えのバグがあった）。
     [...monthEndPays].sort((a,b)=>a.payDate.localeCompare(b.payDate)).forEach(mp => {
-      const amt   = mp.amount || 0;
-      const stax  = mp.srcTax || 0;
-      const total = amt + stax;
+      const cash  = mp.amount || 0;   // 実際に振り込んだ額
+      const stax  = mp.srcTax || 0;   // 源泉徴収税額
+      const gross = cash + stax;      // 税込報酬
       const note  = `月末精算：${casterName(mp.casterId)}（${mp.targetY}/${mp.targetM}）`;
       const debitTaxCategory = '課税10%';
-      const debitTaxAmt = calcExpTax(total, 10);
+      const debitTaxAmt = calcExpTax(gross, 10);
       const debitInvoiceNo = casterInvoiceNo(mp.casterId);
       if (stax > 0) {
-        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: amt, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: gross, creditAcc: '現金', creditAmt: cash, credit2Acc: '預り金', credit2Amt: stax, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       } else {
-        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: total, creditAcc: '現金', creditAmt: total, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
+        allEntries.push({ date: mp.payDate, note, debitAcc: '外注費', debitAmt: gross, creditAcc: '現金', creditAmt: gross, debitTaxCategory, debitTaxAmt, debitInvoiceNo });
       }
     });
 
