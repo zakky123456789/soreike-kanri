@@ -2204,6 +2204,10 @@ async function loadFromDB() {
       fetchAll('business_trips', 'id'),
     ]);
 
+    // 【v38】managerだけfetchAll()を通さない生のselectのため、エラーが握り潰されていた
+    // （他テーブルはfetchAll()内でthrowする）。管理人情報が黙って空になるのを防ぐ。
+    if (mgrR.error) throw new Error('manager: ' + mgrR.error.message);
+
     if (castersR.data?.length > 0) {
       state.casters = castersR.data.map(r => ({
         id: r.id, name: r.name, rate: Number(r.rate), refId: r.ref_id,
@@ -2421,13 +2425,50 @@ function notifyDbBlocked(action, table, error) {
   document.body.appendChild(div);
 }
 
+// 【v38】権限エラー以外（制約違反・通信断・Supabase側の障害など）の書き込み失敗も、
+// 見落とせない形で1セッションに1回だけ知らせる。
+// 背景：supabase-js は書き込み失敗で例外を投げないため、ローカル状態だけ更新されて
+// 「保存できたように見えるがDBに入っていない」状態になる。右上の小さな⚠️では見落とす。
+function notifyDbError(action, table, error) {
+  if (isAuthOrRlsError(error)) { notifyDbBlocked(action, table, error); return; }
+  if (dbBlockedNotified) return;
+  dbBlockedNotified = true;
+  const msg = String((error && error.message) || '').slice(0, 200);
+  const div = document.createElement('div');
+  div.id = 'db-blocked-overlay';
+  div.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:24px';
+  div.innerHTML = '<div style="background:var(--surface);border:2px solid var(--red);border-radius:12px;max-width:520px;padding:24px;color:var(--text);line-height:1.7">'
+    + '<div style="font-size:18px;font-weight:700;color:var(--red);margin-bottom:12px">\u26a0\ufe0f 保存に失敗しました</div>'
+    + '<div style="font-size:14px">データベース側でエラーになりました。<b>この操作の内容は保存されていません。</b>画面に表示されている内容は保存前の一時的なものなので、リロードすると消えます。</div>'
+    + '<div style="font-size:13px;color:var(--muted);margin-top:12px">考えられる原因：<br>・通信が切れている<br>・データの形式や制約に反している<br>・Supabase側の一時的な障害</div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-top:12px;word-break:break-all">対象: ' + action + ' / ' + table + '<br>' + msg + '</div>'
+    + '<button onclick="closeDbBlocked()" style="margin-top:18px;width:100%;padding:10px;border-radius:8px;border:none;background:var(--red);color:#fff;font-size:14px;font-weight:600;cursor:pointer">閉じる</button>'
+    + '</div>';
+  document.body.appendChild(div);
+}
+
+// 【v38】dbSave()を経由しない生のsupabase書き込みの結果を検査する共通ヘルパー。
+// supabase-js の insert/update/upsert/delete はDBエラーで例外を投げず { error } を返すため、
+// await するだけの呼び出しは失敗が完全に無視される。生の書き込みは必ずこの関数に通すこと。
+// 使い方：checkDbWrite(await sb.from('x').update({...}).eq('id', id), '更新', 'x');
+function checkDbWrite(res, action, table) {
+  if (res && res.error) {
+    console.error('DB ' + action + ' error:', table, JSON.stringify(res.error));
+    showSyncStatus('error');
+    notifyDbError(action, table, res.error);
+    return false;
+  }
+  showSyncStatus('ok');
+  return true;
+}
+
 // state→DB 保存ヘルパー
 async function dbSave(table, data) {
   const { error } = await sb.from(table).upsert(data, { onConflict: 'id' });
   if (error) {
     console.error('DB save error:', table, JSON.stringify(error));
     showSyncStatus('error');
-    if (isAuthOrRlsError(error)) notifyDbBlocked('保存', table, error);
+    notifyDbError('保存', table, error);
     return false;
   }
   showSyncStatus('ok');
@@ -2438,7 +2479,7 @@ async function dbDelete(table, id) {
   if (error) {
     console.error('DB delete error:', table, JSON.stringify(error));
     showSyncStatus('error');
-    if (isAuthOrRlsError(error)) notifyDbBlocked('削除', table, error);
+    notifyDbError('削除', table, error);
     return false;
   }
   showSyncStatus('ok');
@@ -2462,9 +2503,17 @@ async function fetchFreshMaxId() {
   const results = await Promise.all(
     ID_POOL_TABLES.map(t => sb.from(t).select('id').order('id', { ascending: false }).limit(1))
   );
+  // 【v38】1テーブルでも取得に失敗すると最大IDが過小になり、テーブルを跨いだID重複を生む。
+  // IDプールは全テーブル共通のため、他テーブルの既存IDと衝突しても一意制約には引っかからず、
+  // 23505のリトライでも救えない（v27で潰したID衝突バグの再来経路）。黙って続けず必ず失敗させる。
+  const failed = results.filter(r => r.error);
+  if (failed.length > 0) {
+    console.error('fetchFreshMaxId error:', failed.map(r => r.error.message).join(' / '));
+    throw new Error('ID採番のためのテーブル参照に失敗しました: ' + failed[0].error.message);
+  }
   let max = 0;
   for (const r of results) {
-    if (!r.error && r.data && r.data.length > 0 && r.data[0].id > max) max = r.data[0].id;
+    if (r.data && r.data.length > 0 && r.data[0].id > max) max = r.data[0].id;
   }
   return max;
 }
@@ -2487,7 +2536,7 @@ async function insertWithFreshId(table, buildRow, maxRetries = 5) {
     }
     console.error('DB insert error:', table, JSON.stringify(error));
     showSyncStatus('error');
-    if (isAuthOrRlsError(error)) notifyDbBlocked('新規登録', table, error);
+    notifyDbError('新規登録', table, error);
     throw error;
   }
   showSyncStatus('error');
@@ -3189,12 +3238,13 @@ window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e 
 });
 
 // dbSaveAsync: dbSaveのPromise版（awaitで使える）
+// 【v38】従来はconsole.errorに出すだけで、右上の「⚠️ 保存失敗」表示すら出ていなかった。
+// 売上の編集保存・経費の編集保存という最も使う経路がここを通るため、dbSave()に一本化し、
+// 同期ステータス表示と失敗オーバーレイを効かせる（upsertの競合キーは主キー=idで従来と同じ挙動）。
 async function dbSaveAsync(table, row) {
   try {
-    const { error } = await sb.from(table).upsert(row);
-    if (error) { console.error('dbSaveAsync error:', error); return false; }
-    return true;
-  } catch(e) { console.error('dbSaveAsync exception:', e); return false; }
+    return await dbSave(table, row);
+  } catch(e) { console.error('dbSaveAsync exception:', e); showSyncStatus('error'); return false; }
 }
 
 // ===== 監査ログ =====
@@ -3682,7 +3732,8 @@ async function deleteReceipt(id, r2Key) {
       headers: await authHeaders(),
       body: JSON.stringify({ action: 'delete', key: r2Key })
     });
-    await sb.from('receipts').delete().eq('id', id);
+    const { error: recDelErr } = await sb.from('receipts').delete().eq('id', id);
+    if (recDelErr) throw recDelErr; // 【v38】supabase-jsは失敗してもthrowしないので明示的に投げる
     state.receipts = state.receipts.filter(r => r.id !== id);
     renderReceiptList();
     renderExpenses();
@@ -3857,7 +3908,8 @@ async function deletePayAttach(id, r2Key) {
       headers: await authHeaders(),
       body: JSON.stringify({ action: 'delete', key: r2Key })
     });
-    await sb.from('receipts').delete().eq('id', id);
+    const { error: recDelErr } = await sb.from('receipts').delete().eq('id', id);
+    if (recDelErr) throw recDelErr; // 【v38】supabase-jsは失敗してもthrowしないので明示的に投げる
     state.receipts = state.receipts.filter(r => r.id !== id);
     renderPayAttachList();
     renderAll();
@@ -4761,7 +4813,8 @@ async function addCheckedReceipts() {
     // payment側にprepaid_idを更新
     const pidx = state.expenses.findIndex(e => e.id === item.newExp.id);
     if (pidx !== -1) state.expenses[pidx].prepaidId = masterId;
-    await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', item.newExp.id);
+    // 【v38】ここが黙って失敗すると、支払元経費と前払費用マスターの紐付けだけがDBに残らない
+    checkDbWrite(await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', item.newExp.id), '更新', 'expenses');
   }
 
   const added = toAdd.length;
@@ -6972,10 +7025,12 @@ async function addExpense() {
         });
         const uploadData = await res.json();
         if (uploadData.ok) {
-          const { data: recData } = await sb.from('receipts').insert({
+          const { data: recData, error: recError } = await sb.from('receipts').insert({
             expense_id: newExp.id, r2_key: r2Key, filename,
             content_type: contentType, file_size: blob.size
           }).select().single();
+          // 【v38】errorを捨てていたため、R2にファイルだけ残ってDBに記録されない事故を検知できなかった
+          if (recError) { console.error('receipts insert失敗:', recError); showSyncStatus('error'); }
           if (recData) state.receipts.push({ id: recData.id, expenseId: recData.expense_id, r2Key: recData.r2_key,
             filename: recData.filename, contentType: recData.content_type, fileSize: recData.file_size,
             uploadedAt: recData.uploaded_at, note: recData.note || '' });
@@ -7041,7 +7096,8 @@ async function addExpense() {
     // マスターIDをpayment経費レコードのprepaid_idに更新
     const pidx = state.expenses.findIndex(e => e.id === firstExpenseId);
     if (pidx !== -1) { state.expenses[pidx].prepaidId = masterId; }
-    await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', firstExpenseId);
+    // 【v38】ここが黙って失敗すると、支払元経費と前払費用マスターの紐付けだけがDBに残らない
+    checkDbWrite(await sb.from('expenses').update({ prepaid_id: masterId }).eq('id', firstExpenseId), '更新', 'expenses');
   }
 
   // リセット
@@ -11539,7 +11595,7 @@ async function execRebuild() {
   // マスターの費用化日を更新
   const pidx = state.prepaidExpenses.findIndex(x => x.id === masterId);
   if (pidx !== -1) state.prepaidExpenses[pidx].amortizationDay = day;
-  await sb.from('prepaid_expenses').update({ amortization_day: day }).eq('id', masterId);
+  checkDbWrite(await sb.from('prepaid_expenses').update({ amortization_day: day }).eq('id', masterId), '更新', 'prepaid_expenses'); // 【v38】
 
   closeRebuildModal();
   renderAll();
@@ -11576,7 +11632,7 @@ async function deletePrepaidAll(masterId) {
 
   // マスター削除
   state.prepaidExpenses = state.prepaidExpenses.filter(x => x.id !== masterId);
-  await sb.from('prepaid_expenses').delete().eq('id', masterId);
+  checkDbWrite(await sb.from('prepaid_expenses').delete().eq('id', masterId), '削除', 'prepaid_expenses'); // 【v38】失敗するとマスターだけDBに残り孤児になる
 
   renderAll();
 }
@@ -11592,7 +11648,7 @@ async function cancelPrepaid(masterId) {
   state.expenses = state.expenses.filter(e => !(e.prepaidId === masterId && e.entryType === 'amortization' && e.date > today));
   const idx = state.prepaidExpenses.findIndex(p => p.id === masterId);
   if (idx !== -1) state.prepaidExpenses[idx].status = 'cancelled';
-  await sb.from('prepaid_expenses').update({ status: 'cancelled' }).eq('id', masterId);
+  checkDbWrite(await sb.from('prepaid_expenses').update({ status: 'cancelled' }).eq('id', masterId), '更新', 'prepaid_expenses'); // 【v38】
   renderAll();
 }
 // ===== END 前払費用管理 =====
