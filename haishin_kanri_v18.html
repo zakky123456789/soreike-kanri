@@ -9157,7 +9157,9 @@ function renderManagerInvoice() {
   const nonTaxable  = r.replaceExps.filter(e=>e.tax===0).reduce((s,e)=>s+e.amount, 0);  // 非課税
   const outOfScope  = r.replaceExps.filter(e=>e.tax===-1).reduce((s,e)=>s+e.amount, 0); // 対象外
   const tax10 = taxAmountOf(taxable10);
-  const tax8  = Math.floor(taxable8  - taxable8 /1.08);
+  // 【v36】第2弾の置換漏れ。旧式 Math.floor(x - x/1.08) は「税抜＋消費税＝税込」が成立せず
+  //   10%側（taxAmountOf）と方式がズレていたため、8%も taxAmountOf に統一した
+  const tax8  = taxAmountOf(taxable8, 8);
 
   el.innerHTML = `
     <div id="mgr-invoice-print-area" style="font-family:'Noto Sans JP',sans-serif;color:#1a1a1a;background:#fff;padding:40px 44px;max-width:760px;margin:0 auto;border:1px solid #dde3ec;border-radius:8px;font-size:13px;line-height:1.6">
@@ -9242,7 +9244,7 @@ function renderManagerInvoice() {
             </tr>
             <tr>
               <td style="padding:5px 10px;border:1px solid #dde3ec">軽減8%</td>
-              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxable8)}</td>
+              <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(taxExcluded(taxable8, 8))}</td>
               <td style="padding:5px 10px;text-align:right;border:1px solid #dde3ec;font-family:monospace">${fmt(tax8)}</td>
             </tr>
             <tr>
