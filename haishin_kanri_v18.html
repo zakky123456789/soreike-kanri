@@ -7168,6 +7168,46 @@ function makeTaxRow(label, srcTax, deadlineDate, key, today, extra) {
   return { label, srcTax, deadline: deadlineDate, daysLeft, paid, key, ...(extra||{}) };
 }
 
+// ===== 納付済みの金額が納付時から変わっていないかの見張り（v35）=====
+// 納付済みにした時点で tax_paid.amount に金額を凍結している。そのあとで
+// 前払いを追加したり、月末精算の支払い記録を直したりすると、いまの計算値が凍結値と食い違う。
+// 増えていれば納付不足、減っていれば納付超過であり、どちらも放置できない。
+// 画面上は「✅ 全納付済」のままなので、明示的に警告しないと気づけない。
+function taxRemittanceMismatches() {
+  const hits = [];
+  Object.keys(state.taxPaid).forEach(key => {
+    if (!state.taxPaid[key]) return;
+    const frozen = state.taxPaidAmount[key];
+    if (frozen == null) return;             // 金額未記録の古い記録は判定できない
+    const now = computeTaxKeyAmount(key);
+    if (!now) return;                       // 計算対象外のkey
+    if (now === frozen) return;
+    hits.push({ key, frozen, now, diff: now - frozen, date: state.taxPaidDate[key] || '' });
+  });
+  return hits;
+}
+
+function buildRemittanceMismatchAlerts() {
+  const hits = taxRemittanceMismatches();
+  if (hits.length === 0) return '';
+  const lines = hits.map(h =>
+    `${taxKeyLabel(h.key)}：納付時 <strong>${yen(h.frozen)}</strong> → 現在の計算 <strong>${yen(h.now)}</strong>` +
+    ` <span style="font-weight:700">（${h.diff > 0 ? '+' : ''}${yen(h.diff)}）</span>` +
+    `${h.date ? `　納付日 ${escapeHtml(h.date)}` : ''}`
+  ).join('<br>');
+  const anyShort = hits.some(h => h.diff > 0);
+  // .alert は display:flex のため、中身は必ず1つの要素にまとめる
+  return `<div class="alert alert-red"><div style="line-height:1.9">
+    <strong>🚨 納付済みの金額が、納付した時点から変わっています（${hits.length}件）</strong><br>${lines}
+    <div style="font-size:11px;margin-top:6px;opacity:0.85">
+      納付したあとに前払いの追加・売上の修正・支払い記録の変更があったと考えられます。
+      ${anyShort ? '<strong>金額が増えている項目は納付不足です。</strong>不足分の追加納付が必要になる可能性があるため、税理士にご相談ください。'
+                 : '金額が減っている項目は納付超過です。取り扱いを税理士にご確認ください。'}
+      表示されている「納付時」の金額が、実際に納付書へ書いた金額です。
+    </div>
+  </div></div>`;
+}
+
 // 月末精算の重複登録を警告する。
 // 集計側では1件目だけを使って二重計上を防いでいるが、DBには余分なレコードが残っているため、
 // 削除しないと総勘定元帳など他の集計で再び混入する恐れがある。
@@ -7245,6 +7285,7 @@ function renderTax() {
       ? `<div class="alert alert-red">🚨 ${x.label} 源泉税 ${yen(x.srcTax)} 期限切れ！</div>`
       : `<div class="alert alert-yellow">⚠️ ${x.label} 源泉税 ${yen(x.srcTax)} 残り${x.daysLeft}日！</div>`;
   });
+  alerts += buildRemittanceMismatchAlerts();
   alerts += buildDuplicateMepAlerts();
   document.getElementById('tax-alerts').innerHTML = alerts;
 
@@ -7302,9 +7343,15 @@ function renderTax() {
         else if (x.recordedCount === 0) basis = '<span class="badge badge-yellow" style="margin-left:6px">見積り</span>';
         else basis = `<span class="badge badge-yellow" style="margin-left:6px">実績${x.recordedCount}名＋見積り${x.estimateCount}名</span>`;
       }
-      html += `<tr style="opacity:0.8">
+      // 納付済みなのに金額が納付時から変わっている行は、その場で分かるように印を付ける
+      const frozen = x.paid ? state.taxPaidAmount[x.key] : null;
+      const mismatch = (frozen != null && frozen !== x.srcTax) ? (x.srcTax - frozen) : null;
+      if (mismatch != null) {
+        basis += `<span class="badge badge-red" style="margin-left:6px">納付時 ${yen(frozen)}（${mismatch > 0 ? '+' : ''}${yen(mismatch)}）</span>`;
+      }
+      html += `<tr style="opacity:0.8${mismatch != null ? ';background:rgba(248,113,113,0.08)' : ''}">
         <td style="padding-left:20px;font-size:13px">└ ${x.label}${basis}</td>
-        <td class="num" style="color:var(--yellow)">${yen(x.srcTax)}</td>
+        <td class="num" style="color:${mismatch != null ? 'var(--red)' : 'var(--yellow)'}">${yen(x.srcTax)}</td>
         <td style="color:var(--muted);font-size:12px">${x.deadline.toLocaleDateString('ja-JP')}</td>
         <td style="font-family:var(--mono);color:${x.paid?'var(--muted)':x.daysLeft<=0?'var(--red)':x.daysLeft<=5?'var(--yellow)':'var(--muted)'}">${x.paid?'-':x.daysLeft+'日'}</td>
         <td></td>
@@ -7374,17 +7421,20 @@ function renderTax() {
 // 埋め戻し済みのkeyはstate.taxPaidAmountに値が入るので、以後この関数は対象なしで即終了する（冪等）。
 async function backfillTaxPaidAmounts() {
   if (isViewerRole()) return; // 閲覧者はtax_paidへの書き込み権限がない（RLSで拒否される）ため試行しない
-  // 未設定のkeyを埋めるだけでなく、実績と食い違っているkeyも実績に合わせる（v35：第1弾③）。
-  // amount列の追加当初は見積り計算の値を保存していたため、実際に源泉徴収した額とズレている
-  // レコードが存在しうる。徴収額＝納付額に揃える。
-  // 一度そろえば以後は差分ゼロで書き込みが発生しないため、この処理は何度実行しても安全（冪等）。
+  // 金額が未設定（amount列を追加する前に納付済みにした古い記録）の行だけを埋める。
+  //
+  // 【重要】すでに金額が入っている行は絶対に上書きしない。
+  // tax_paid.amount は「実際に税務署へ納付した額」という事実であり、
+  // 納付後に前払いや売上が追加されて計算値が変わっても、納付した事実は変わらないため。
+  // 以前は計算値に合わせて上書きしていたが、それでは納付後の増減が黙って消えてしまい、
+  // 納付不足に気づけなくなる。食い違いは buildRemittanceMismatchAlerts() で警告する。
+  const targets = Object.keys(state.taxPaid).filter(key => state.taxPaid[key] && state.taxPaidAmount[key] == null);
+  if (targets.length === 0) return;
   const rows = [];
-  Object.keys(state.taxPaid).forEach(key => {
-    if (!state.taxPaid[key]) return;
-    const actual = computeTaxKeyAmount(key);
-    if (!actual) return; // 計算対象外のkey（不正な形式など）は触らない
-    if (state.taxPaidAmount[key] === actual) return;
-    rows.push({ key, amount: actual });
+  targets.forEach(key => {
+    const amount = computeTaxKeyAmount(key);
+    if (!amount) return; // 計算対象外のkey（不正な形式など）は触らない
+    rows.push({ key, amount });
   });
   if (rows.length === 0) return;
   const { error } = await sb.from('tax_paid').upsert(rows, { onConflict: 'key' });
@@ -7393,7 +7443,7 @@ async function backfillTaxPaidAmounts() {
     return; // 失敗しても致命的ではない（次回ロード時に再度試行される）
   }
   rows.forEach(r => { state.taxPaidAmount[r.key] = r.amount; });
-  console.info(`tax_paid.amount を実績に合わせました（${rows.length}件）`);
+  console.info(`tax_paid.amount を補完しました（${rows.length}件）`);
 }
 
 async function setTax(key, v, paidDate) {
