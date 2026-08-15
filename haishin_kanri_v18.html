@@ -563,6 +563,45 @@
       </div>
     </div>
 
+    <!-- 【v37】変更履歴（監査ログ）モーダル -->
+    <div id="audit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;width:1080px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="font-size:16px;font-weight:700">📜 変更履歴</div>
+          <button onclick="closeAuditModal()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">✕</button>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">対象
+            <select id="audit-table" onchange="renderAuditList()" style="font-size:12px;padding:4px 8px">
+              <option value="">すべて</option>
+              <option value="sales">売上</option>
+              <option value="casters">配信者</option>
+              <option value="referrers">紹介者</option>
+              <option value="daily_pays">日払い</option>
+              <option value="month_end_pays">月末精算</option>
+              <option value="expenses">経費</option>
+              <option value="petty_cash">小口現金</option>
+            </select>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">操作
+            <select id="audit-action" onchange="renderAuditList()" style="font-size:12px;padding:4px 8px">
+              <option value="">すべて</option>
+              <option value="add">追加</option>
+              <option value="edit">編集</option>
+              <option value="delete">削除</option>
+            </select>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">キーワード
+            <input id="audit-q" oninput="renderAuditList()" placeholder="配信者名・日付・IDなど" style="font-size:12px;padding:4px 8px;width:200px">
+          </label>
+          <button class="btn" onclick="loadAuditLog(true)" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">🔄 再読み込み</button>
+          <button class="btn" onclick="downloadAuditCsv()" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">📥 CSV</button>
+          <span id="audit-count" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
+        </div>
+        <div id="audit-list" style="overflow-y:auto;flex:1;min-height:200px"></div>
+      </div>
+    </div>
+
     <!-- 紹介者：支払い記録モーダル -->
     <div id="ref-pay-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto">
@@ -1001,7 +1040,10 @@
         </div>
       </div>
       <div class="table-wrap">
-        <div class="table-header"><div class="table-title">売上明細</div></div>
+        <div class="table-header">
+          <div class="table-title">売上明細</div>
+          <button class="btn" onclick="openAuditModal('sales')" style="font-size:12px;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)">📜 変更履歴</button>
+        </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
           <span style="font-size:12px;color:var(--muted)">並び順：</span>
           <button id="sh-date-btn" onclick="setSalesSort('date')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:var(--accent);color:#fff"><span id="sh-date">日付 ▼</span></button>
@@ -3157,17 +3199,26 @@ async function dbSaveAsync(table, row) {
 
 // ===== 監査ログ =====
 // tableNameを省略した場合は既存呼び出し（expenses用）との互換性のため'expenses'を既定値とする
+// 【v37】supabase-js の insert() はDBエラーで例外を投げず { error } を返すため、
+// 従来の try/catch では失敗を一切検知できていなかった（履歴が残っていないのに残っているつもりになる）。
+// error を明示的に見て、1セッションに1回だけ画面にも知らせる。
+let auditLogFailNotified = false;
 async function writeAuditLog(action, recordId, before, after, tableName = 'expenses') {
   try {
-    await sb.from('audit_log').insert({
+    const { error } = await sb.from('audit_log').insert({
       action,
       table_name: tableName,
       record_id: recordId,
       before: before || null,
       after: after || null
     });
+    if (error) throw error;
   } catch(e) {
-    console.warn('audit_log書き込み失敗:', e);
+    console.warn('audit_log書き込み失敗:', tableName, action, recordId, e);
+    if (!auditLogFailNotified) {
+      auditLogFailNotified = true;
+      alert('⚠️ 変更履歴（操作ログ）の記録に失敗しました。\n\nデータ自体は保存されていますが、この操作の履歴は残っていません。\n以降の失敗はブラウザのコンソールにのみ出力します。\n\n' + (e?.message || e));
+    }
   }
 }
 
@@ -3229,6 +3280,202 @@ async function autoRegisterRecurringExpenses() {
 // 補充（replenish）・初期残高（initial）の登録／削除を追跡できるようにする
 function pcToLogObj(p) {
   return { id: p.id, date: p.date, amount: p.amount, type: p.type, note: p.note, y: p.y, m: p.m };
+}
+
+// 【v37】売上・配信者・紹介者・支払い記録の監査ログ用スナップショット
+// 「あとから数字が動いた」ときに原因を追えるようにするのが目的。
+// 口座番号・住所・生年月日など、追跡に不要な個人情報は意図的に記録しない。
+function saleToLogObj(s) {
+  if (!s) return null;
+  return {
+    id: s.id, casterId: s.casterId, casterName: getCaster(s.casterId)?.name || '',
+    date: s.date, coins: s.coins, rate: s.rate ?? null, type: s.type || 'normal',
+    y: s.y, m: s.m, note: s.note || '',
+    excludeReport: !!s.excludeReport, excludeRef: !!s.excludeRef
+  };
+}
+function casterToLogObj(c) {
+  if (!c) return null;
+  return {
+    id: c.id, name: c.name, rate: c.rate,
+    refId: c.refId ?? null, refName: c.refId ? (getReferrer(c.refId)?.name || '') : '',
+    invoice: !!c.invoice, invoiceNo: c.invoiceNo || '',
+    retired: !!c.retired, retiredDate: c.retiredDate || '',
+    onHold: !!c.onHold, onHoldDate: c.onHoldDate || '', memo: c.memo || ''
+  };
+}
+function referrerToLogObj(r) {
+  if (!r) return null;
+  return {
+    id: r.id, name: r.name, refType: r.refType,
+    r1pct: r.r1pct, r2a: r.r2a, r2b: r.r2b, r2pct: r.r2pct,
+    invoiceNo: r.invoiceNo || '', createInvoice: !!r.createInvoice, note: r.note || ''
+  };
+}
+function dpToLogObj(d) {
+  if (!d) return null;
+  return {
+    id: d.id, casterId: d.casterId, casterName: getCaster(d.casterId)?.name || '',
+    date: d.date, amount: d.amount, srcTax: d.srcTax, y: d.y, m: d.m,
+    targetY: d.targetY ?? null, targetM: d.targetM ?? null,
+    saleIds: d.saleIds || null, salesLabel: d.salesLabel || '', note: d.note || ''
+  };
+}
+function mepToLogObj(p) {
+  if (!p) return null;
+  return {
+    id: p.id, casterId: p.casterId, casterName: getCaster(p.casterId)?.name || '',
+    payDate: p.payDate, amount: p.amount, srcTax: p.srcTax,
+    targetY: p.targetY ?? null, targetM: p.targetM ?? null, note: p.note || ''
+  };
+}
+
+// ===== 【v37】変更履歴ビューア =====
+// 「あとから数字が動いた」ときに、いつ・どのレコードが・どう変わったかをその場で追えるようにする。
+let auditRows = null; // 取得済みログのキャッシュ（モーダルを開き直しても再取得しない）
+
+const AUDIT_TABLE_LABEL = {
+  sales: '売上', casters: '配信者', referrers: '紹介者',
+  daily_pays: '日払い', month_end_pays: '月末精算',
+  expenses: '経費', petty_cash: '小口現金',
+};
+const AUDIT_ACTION_LABEL = { add: '追加', edit: '編集', delete: '削除' };
+// 変更点の表示に使うフィールド名（これ以外の差分も出るが、金額に効くものを先に並べる）
+const AUDIT_FIELD_LABEL = {
+  coins: 'コイン', rate: '料率', date: '日付', amount: '金額', srcTax: '源泉税',
+  excludeRef: '紹介料除外', excludeReport: 'レポート除外', casterName: '配信者', refName: '紹介者',
+  r1pct: '①率', r2a: '②A', r2b: '②B', r2pct: '②率', type: '種別', note: 'メモ',
+  payDate: '支払日', targetY: '対象年', targetM: '対象月', name: '名前', retired: '退所', onHold: '休止',
+};
+
+async function openAuditModal(presetTable) {
+  document.getElementById('audit-modal').style.display = 'flex';
+  if (presetTable) document.getElementById('audit-table').value = presetTable;
+  await loadAuditLog(auditRows === null);
+}
+function closeAuditModal() {
+  document.getElementById('audit-modal').style.display = 'none';
+}
+
+async function loadAuditLog(force) {
+  if (auditRows !== null && !force) { renderAuditList(); return; }
+  document.getElementById('audit-list').innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">読み込み中…</div>';
+  const { data, error } = await sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(3000);
+  if (error) {
+    document.getElementById('audit-list').innerHTML = `<div style="text-align:center;color:var(--red);padding:24px;font-size:13px">ログの取得に失敗しました：${escapeHtml(error.message)}</div>`;
+    return;
+  }
+  auditRows = data || [];
+  renderAuditList();
+}
+
+// before/after を突き合わせて、実際に変わった項目だけを返す
+function auditDiff(before, after) {
+  if (!before || !after) return [];
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+  const out = [];
+  for (const k of keys) {
+    if (k === 'id') continue;
+    const a = before[k], b = after[k];
+    if (JSON.stringify(a) === JSON.stringify(b)) continue;
+    out.push({ key: k, label: AUDIT_FIELD_LABEL[k] || k, before: a, after: b });
+  }
+  // 金額に効く項目を先に見せる
+  const pri = ['coins', 'rate', 'amount', 'srcTax', 'excludeRef', 'date', 'r1pct', 'r2a', 'r2b'];
+  out.sort((x, y) => {
+    const ix = pri.indexOf(x.key), iy = pri.indexOf(y.key);
+    return (ix === -1 ? 99 : ix) - (iy === -1 ? 99 : iy) || x.key.localeCompare(y.key);
+  });
+  return out;
+}
+
+const auditVal = v => v === null || v === undefined || v === '' ? '(なし)'
+  : v === true ? 'ON' : v === false ? 'OFF' : String(v);
+
+// 一覧に出す「どのレコードか」の一行説明
+function auditSubject(row) {
+  const o = row.after || row.before || {};
+  const parts = [];
+  if (o.casterName) parts.push(o.casterName);
+  else if (o.name) parts.push(o.name);
+  if (o.date) parts.push(o.date);
+  else if (o.payDate) parts.push(o.payDate);
+  if (o.coins !== undefined && o.coins !== null) parts.push(fmt(o.coins) + 'コイン');
+  else if (o.amount !== undefined && o.amount !== null) parts.push(yen(o.amount));
+  return parts.join('　') || `id=${row.record_id}`;
+}
+
+function auditFiltered() {
+  const t = document.getElementById('audit-table').value;
+  const a = document.getElementById('audit-action').value;
+  const q = (document.getElementById('audit-q').value || '').trim().toLowerCase();
+  return (auditRows || []).filter(r => {
+    if (t && r.table_name !== t) return false;
+    if (a && r.action !== a) return false;
+    if (q) {
+      const hay = (r.table_name + ' ' + r.record_id + ' ' + JSON.stringify(r.before || '') + ' ' + JSON.stringify(r.after || '')).toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderAuditList() {
+  if (auditRows === null) return;
+  const rows = auditFiltered();
+  document.getElementById('audit-count').textContent = `${rows.length}件 / 全${auditRows.length}件`;
+  const el = document.getElementById('audit-list');
+  if (rows.length === 0) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px;font-size:13px">該当する履歴がありません</div>';
+    return;
+  }
+  const actColor = { add: 'var(--green)', edit: 'var(--accent)', delete: 'var(--red)' };
+  el.innerHTML = rows.slice(0, 500).map(r => {
+    const when = (r.created_at || '').replace('T', ' ').slice(0, 19);
+    const diffs = r.action === 'edit' ? auditDiff(r.before, r.after) : [];
+    const body = r.action === 'edit'
+      ? (diffs.length
+        ? diffs.map(d => `<span style="display:inline-block;margin-right:14px"><span style="color:var(--muted)">${escapeHtml(d.label)}</span> <span style="font-family:var(--mono)">${escapeHtml(auditVal(d.before))}</span> <span style="color:var(--muted)">→</span> <span style="font-family:var(--mono);color:var(--accent)">${escapeHtml(auditVal(d.after))}</span></span>`).join('')
+        : '<span style="color:var(--muted)">（保存されましたが内容の変化はありません）</span>')
+      : `<span style="color:var(--muted);font-family:var(--mono);font-size:11px">${escapeHtml(JSON.stringify(r.after || r.before || {}))}</span>`;
+    return `<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;margin-bottom:4px">
+        <span style="color:var(--muted);font-family:var(--mono)">${escapeHtml(when)}</span>
+        <span class="badge badge-purple">${escapeHtml(AUDIT_TABLE_LABEL[r.table_name] || r.table_name)}</span>
+        <span style="font-weight:700;color:${actColor[r.action] || 'var(--text)'}">${escapeHtml(AUDIT_ACTION_LABEL[r.action] || r.action)}</span>
+        <strong>${escapeHtml(auditSubject(r))}</strong>
+        <span style="color:var(--muted);font-size:11px">id=${escapeHtml(String(r.record_id))}</span>
+      </div>
+      <div style="font-size:12px;line-height:1.9">${body}</div>
+    </div>`;
+  }).join('') + (rows.length > 500 ? `<div style="padding:12px;text-align:center;color:var(--yellow);font-size:12px">表示は新しい順500件までです（該当${rows.length}件）。絞り込むか、CSVで全件を確認してください。</div>` : '');
+}
+
+function downloadAuditCsv() {
+  const rows = auditFiltered();
+  if (rows.length === 0) { alert('該当する履歴がありません'); return; }
+  const head = ['日時', '対象', '操作', 'レコードID', '内容', '変更点', 'before(JSON)', 'after(JSON)'];
+  const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = [head.map(esc).join(',')];
+  rows.forEach(r => {
+    const diffs = r.action === 'edit' ? auditDiff(r.before, r.after) : [];
+    const diffText = diffs.map(d => `${d.label}: ${auditVal(d.before)} → ${auditVal(d.after)}`).join(' / ');
+    lines.push([
+      (r.created_at || '').replace('T', ' ').slice(0, 19),
+      AUDIT_TABLE_LABEL[r.table_name] || r.table_name,
+      AUDIT_ACTION_LABEL[r.action] || r.action,
+      r.record_id, auditSubject(r), diffText,
+      JSON.stringify(r.before || ''), JSON.stringify(r.after || ''),
+    ].map(esc).join(','));
+  });
+  // Excelで文字化けしないようBOMを付ける
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `変更履歴_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function downloadAuditLog() {
@@ -4707,6 +4954,7 @@ async function addCaster() {
   }
   const newCaster = { id: newCasterId, name, rate, refId: casterRefId, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
   state.casters.push(newCaster);
+  await writeAuditLog('add', newCasterId, null, casterToLogObj(newCaster), 'casters');
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
   document.getElementById('c-invoiceno').value = '';
@@ -4733,8 +4981,10 @@ async function addCaster() {
 
 async function deleteCaster(id) {
   if (!confirm('削除しますか？')) return;
+  const beforeDel = casterToLogObj(state.casters.find(c => c.id === id));
   state.casters = state.casters.filter(c => c.id !== id);
   await dbDelete('casters', id);
+  await writeAuditLog('delete', id, beforeDel, null, 'casters');
   renderAll();
 }
 
@@ -4843,8 +5093,10 @@ async function saveEdit() {
     const retiredDate = retired ? statusDate : '';
     const onHold = statusVal === 'onhold';
     const onHoldDate = onHold ? statusDate : '';
+    const beforeEdit = casterToLogObj(state.casters[idx]);
     state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
     await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null });
+    await writeAuditLog('edit', id, beforeEdit, casterToLogObj(state.casters[idx]), 'casters');
   }
   closeEditModal();
   renderAll();
@@ -4898,6 +5150,7 @@ async function addReferrer() {
   }
   const newRef = { id: newRefId, name, company, honorific, refType, r1pct, r2a, r2b, r2pct, note, invoiceNo, createInvoice, zip, address, tel, holder, bank, branch, account, invDesc };
   state.referrers.push(newRef);
+  await writeAuditLog('add', newRefId, null, referrerToLogObj(newRef), 'referrers');
   document.getElementById('r-invoiceno').value = '';
   document.getElementById('r-createInvoice').value = 'false';
   document.getElementById('r-name').value = '';
@@ -4918,8 +5171,10 @@ async function addReferrer() {
 
 async function deleteReferrer(id) {
   if (!confirm('削除しますか？')) return;
+  const beforeDel = referrerToLogObj(state.referrers.find(r => r.id === id));
   state.referrers = state.referrers.filter(r => r.id !== id);
   await dbDelete('referrers', id);
+  await writeAuditLog('delete', id, beforeDel, null, 'referrers');
   renderAll();
 }
 
@@ -5002,8 +5257,10 @@ async function saveRefEdit() {
   const account = accountType && accountNo ? accountType + ' ' + accountNo : '';
   const idx = state.referrers.findIndex(r => r.id === id);
   if (idx !== -1) {
+    const beforeEdit = referrerToLogObj(state.referrers[idx]);
     state.referrers[idx] = { ...state.referrers[idx], name, company, honorific, note, invDesc, invoiceNo, refType, r1pct, r2a, r2b, r2pct, zip, address, tel, holder, bank, branch, account, createInvoice };
     await dbSave('referrers', { id, name, honorific, ref_type: refType, r1pct, r2a, r2b, r2pct, note, inv_desc: invDesc, invoice_no: invoiceNo, create_invoice: createInvoice, zip, address, tel, holder, bank, branch, account });
+    await writeAuditLog('edit', id, beforeEdit, referrerToLogObj(state.referrers[idx]), 'referrers');
   }
   closeRefEditModal();
   renderAll();
@@ -5468,6 +5725,7 @@ async function addSale() {
   }
   const newSale = { id: newSaleId, casterId, coins, date, note, y, m, rate, type, excludeReport: false, excludeRef: false };
   state.sales.push(newSale);
+  await writeAuditLog('add', newSaleId, null, saleToLogObj(newSale), 'sales');
   document.getElementById('s-coins').value = '';
   document.getElementById('s-note').value = '';
   document.getElementById('s-rate').value = '';
@@ -5682,8 +5940,10 @@ async function saveSaleGroupEdit() {
     .map(s => s.id);
   const toDelete = originalIds.filter(id => !existingIds.includes(id));
   for (const id of toDelete) {
+    const beforeDel = saleToLogObj(state.sales.find(s => s.id === id));
     state.sales = state.sales.filter(s => s.id !== id);
     await dbDelete('sales', id);
+    await writeAuditLog('delete', id, beforeDel, null, 'sales');
   }
 
   // 更新・追加
@@ -5700,6 +5960,7 @@ async function saveSaleGroupEdit() {
       const newId = await insertWithFreshId('sales', id => ({ id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef }));
       const rec = { id: newId, casterId, coins, date, note, y, m, rate, type, excludeReport, excludeRef };
       state.sales.push(rec);
+      await writeAuditLog('add', newId, null, saleToLogObj(rec), 'sales');
     } else {
       const id = parseInt(row.dataset.saleId);
       const type = row.querySelector('.sge-type')?.value || state.sales.find(s=>s.id===id)?.type || 'normal';
@@ -5707,8 +5968,10 @@ async function saveSaleGroupEdit() {
       const excludeRef = row.querySelector('.sge-exclude-ref')?.checked || false;
       const idx = state.sales.findIndex(s => s.id === id);
       if (idx !== -1) {
+        const beforeEdit = saleToLogObj(state.sales[idx]);
         state.sales[idx] = { ...state.sales[idx], coins, rate, note, type, excludeReport, excludeRef };
         await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note, y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef });
+        await writeAuditLog('edit', id, beforeEdit, saleToLogObj(state.sales[idx]), 'sales');
       }
     }
   }
@@ -5752,16 +6015,20 @@ async function saveSaleEdit() {
     const type = state.sales[idx].type || 'normal';
     const excludeReport = state.sales[idx].excludeReport || false;
     const excludeRef = state.sales[idx].excludeRef || false;
+    const beforeEdit = saleToLogObj(state.sales[idx]);
     state.sales[idx] = { ...state.sales[idx], casterId, date, coins, rate, note, y, m, type, excludeReport, excludeRef };
     await dbSaveAsync('sales', { id, caster_id: casterId, coins, date, note: note||'', y, m, rate, type, exclude_report: excludeReport, exclude_ref: excludeRef });
+    await writeAuditLog('edit', id, beforeEdit, saleToLogObj(state.sales[idx]), 'sales');
   }
   closeSaleEditModal();
   renderAll();
 }
 
 async function deleteSale(id) {
+  const beforeDel = saleToLogObj(state.sales.find(s => s.id === id));
   state.sales = state.sales.filter(s => s.id !== id);
   await dbDelete('sales', id);
+  await writeAuditLog('delete', id, beforeDel, null, 'sales');
   renderAll();
 }
 
@@ -5769,8 +6036,10 @@ async function toggleExcludeReport(id) {
   const idx = state.sales.findIndex(s => s.id === id);
   if (idx === -1) return;
   const s = state.sales[idx];
+  const beforeToggle = saleToLogObj(s);
   s.excludeReport = !s.excludeReport;
-  await dbSave('sales', { id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport });
+  await writeAuditLog('edit', s.id, beforeToggle, saleToLogObj(s), 'sales');
+  await dbSave('sales',{ id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport });
   renderAll();
 }
 
@@ -5789,8 +6058,10 @@ async function toggleExcludeRef(id) {
   const idx = state.sales.findIndex(s => s.id === id);
   if (idx === -1) return;
   const s = state.sales[idx];
+  const beforeToggle = saleToLogObj(s);
   s.excludeRef = !s.excludeRef;
-  await dbSave('sales', { id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport, exclude_ref: s.excludeRef });
+  await writeAuditLog('edit', s.id, beforeToggle, saleToLogObj(s), 'sales');
+  await dbSave('sales',{ id: s.id, caster_id: s.casterId, coins: s.coins, date: s.date, note: s.note||'', y: s.y, m: s.m, rate: s.rate, type: s.type, exclude_report: s.excludeReport, exclude_ref: s.excludeRef });
   renderAll();
 }
 
@@ -5965,7 +6236,9 @@ async function addDailyPay() {
     alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
     return;
   }
-  state.dailyPays.push({ id: newDpId, casterId, amount: savedAmount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel });
+  const newDp = { id: newDpId, casterId, amount: savedAmount, srcTax, date, note, y, m, targetY, targetM, saleIds, salesLabel };
+  state.dailyPays.push(newDp);
+  await writeAuditLog('add', newDpId, null, dpToLogObj(newDp), 'daily_pays');
   document.getElementById('dp-amount').value = '';
   document.getElementById('dp-note').value = '';
   document.getElementById('dp-preview').style.display = 'none';
@@ -6085,7 +6358,9 @@ async function saveDpEdit() {
   const targetM = state.dailyPays[idx].targetM ?? m;
   const ok = await dbSave('daily_pays', { id, caster_id: casterId, amount: savedAmount, src_tax: srcTax, date, note: note||'', y, m, target_y: targetY, target_m: targetM, sale_ids: JSON.stringify(saleIds||[]), sales_label: salesLabel||'' });
   if (!ok) { alert('保存に失敗しました。もう一度お試しください。'); return; }
+  const beforeEdit = dpToLogObj(state.dailyPays[idx]);
   state.dailyPays[idx] = { ...state.dailyPays[idx], casterId, amount: savedAmount, srcTax, date, note, y, m, saleIds, salesLabel };
+  await writeAuditLog('edit', id, beforeEdit, dpToLogObj(state.dailyPays[idx]), 'daily_pays');
   closeDpEditModal();
   renderAll();
   updateDailySelect();
@@ -6101,8 +6376,10 @@ async function deleteDailyPay(id) {
     alert(`添付ファイルが${attached.length}件あります。先に📎ボタンから添付ファイルを削除してください。`);
     return;
   }
+  const beforeDel = dpToLogObj(state.dailyPays.find(d => d.id === id));
   await dbDelete('daily_pays', id);
   state.dailyPays = state.dailyPays.filter(d => d.id !== id);
+  await writeAuditLog('delete', id, beforeDel, null, 'daily_pays');
   renderAll();
   updateDailySelect();
 }
@@ -10431,8 +10708,10 @@ async function saveMepRecordInner() {
   if (editId) {
     id = parseInt(editId);
     const idx = state.monthEndPays.findIndex(p => p.id === id);
+    const beforeEdit = idx !== -1 ? mepToLogObj(state.monthEndPays[idx]) : null;
     if (idx !== -1) state.monthEndPays[idx] = { ...state.monthEndPays[idx], ...record };
     await dbSave('month_end_pays', { id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note });
+    if (idx !== -1) await writeAuditLog('edit', id, beforeEdit, mepToLogObj(state.monthEndPays[idx]), 'month_end_pays');
   } else {
     try {
       id = await insertWithFreshId('month_end_pays', id => ({ id, caster_id: casterId, pay_date: payDate, amount, src_tax: srcTax, target_y: targetY, target_m: targetM, note }));
@@ -10441,6 +10720,7 @@ async function saveMepRecordInner() {
       return null;
     }
     state.monthEndPays.push({ id, ...record });
+    await writeAuditLog('add', id, null, mepToLogObj({ id, ...record }), 'month_end_pays');
     // 新規作成後は以後の処理がこのレコードを「編集対象」として扱えるようにidをセット
     document.getElementById('mep-edit-id').value = id;
   }
@@ -10678,8 +10958,10 @@ async function deleteMep() {
     return;
   }
   if (!confirm('後払い登録を削除しますか？')) return;
+  const beforeDel = mepToLogObj(state.monthEndPays.find(p => p.id === id));
   await dbDelete('month_end_pays', id);
   state.monthEndPays = state.monthEndPays.filter(p => p.id !== id);
+  await writeAuditLog('delete', id, beforeDel, null, 'month_end_pays');
   closeMepModal();
   renderSales();
 }
