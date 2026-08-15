@@ -2733,44 +2733,91 @@ function calcRefTotal(coins, reward, ref) {
 // 非課税(0)・対象外(-1)はゼロのまま。
 const calcExpTax = (amt, rate) => rate <= 0 ? 0 : taxAmountOf(amt, rate);
 
-// 【v37】紹介料：紹介者×月の合計を1箇所に集約
+// ===== 【v37】紹介料の計算を1箇所に集約 =====
 // 方式は「配信者ごとに同日のコインを合算 → 1回だけ calcRefTotal」（＝紹介者報告書と同一）。
 // calcRefTotal は内部で2回 Math.floor するため、売上レコード単位で計算して合計すると
 // 同日に複数レコードがある配信者で答えが小さくなり、報告書と食い違う。
 // 紹介者へ毎月送付している報告書の数値がそのまま支払額の根拠なので、報告書方式を正とする。
-// 支払い記録モーダルの自動入力もこの関数から取り、報告書と必ず同じ数字になるようにする。
+// 実データ13件の支払い記録のうち11件がこの方式と1円まで一致することを確認済み（v37調査）。
+
+// 日の紹介料を、その日の各売上レコードへコイン比で按分する。
+// 合計は必ず amount に一致させる（1円未満の端数はコインが多い行から1円ずつ配る）。
+function apportionRef(amount, weights) {
+  const n = weights.length;
+  if (n === 0) return [];
+  if (n === 1) return [amount];
+  const tot = weights.reduce((a, b) => a + b, 0);
+  // 合計が0以下（マイナス調整レコードとの相殺など）は按分できないので先頭行にまとめる
+  if (tot <= 0) { const o = new Array(n).fill(0); o[0] = amount; return o; }
+  const out = weights.map(w => Math.floor(amount * w / tot));
+  const rest = amount - out.reduce((a, b) => a + b, 0); // floor なので 0 以上
+  const order = weights.map((w, i) => [w, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[1]);
+  for (let k = 0; k < rest; k++) out[order[k % n]] += 1;
+  return out;
+}
+
+// 売上の配列を受け取り、紹介料を「配信者×日」で計算して各レコードへ按分した結果を返す。
+// 返り値：
+//   bySaleId[売上id] = { r1, r2, total }   … 明細行に出す按分後の額（行を足すと下の合計に一致する）
+//   byCasterId[配信者id] = { r1, r2, total } … 配信者ごとの合計
+//   byReferrerId[紹介者id] = { r1, r2, total } … 紹介者ごとの合計
+//   r1 / r2 / total                        … 全体合計
+function calcRefAllocation(sales) {
+  const bySaleId = {}, byCasterId = {}, byReferrerId = {};
+  let r1All = 0, r2All = 0, totalAll = 0;
+  const groups = {};
+  sales.forEach(s => {
+    const c = getCaster(s.casterId);
+    if (!c || !c.refId || !getReferrer(c.refId)) { bySaleId[s.id] = { r1: 0, r2: 0, total: 0 }; return; }
+    const k = c.id + '|' + s.date;
+    (groups[k] = groups[k] || []).push(s);
+  });
+  Object.values(groups).forEach(g => {
+    const c = getCaster(g[0].casterId);
+    const ref = getReferrer(c.refId);
+    // 紹介料除外フラグが立った売上は日別コイン合計に含めず、按分もしない
+    g.filter(s => s.excludeRef).forEach(s => { bySaleId[s.id] = { r1: 0, r2: 0, total: 0 }; });
+    const live = g.filter(s => !s.excludeRef);
+    if (live.length === 0) return;
+    const dayCoins = live.reduce((s, x) => s + x.coins, 0);
+    const rc = calcRefTotal(dayCoins, calcReward(coinToYen(dayCoins), c.rate), ref);
+    const w = live.map(s => s.coins);
+    const a1 = apportionRef(rc.r1, w), a2 = apportionRef(rc.r2, w);
+    live.forEach((s, i) => { bySaleId[s.id] = { r1: a1[i], r2: a2[i], total: a1[i] + a2[i] }; });
+    if (!byCasterId[c.id]) byCasterId[c.id] = { r1: 0, r2: 0, total: 0 };
+    byCasterId[c.id].r1 += rc.r1; byCasterId[c.id].r2 += rc.r2; byCasterId[c.id].total += rc.total;
+    if (!byReferrerId[ref.id]) byReferrerId[ref.id] = { r1: 0, r2: 0, total: 0 };
+    byReferrerId[ref.id].r1 += rc.r1; byReferrerId[ref.id].r2 += rc.r2; byReferrerId[ref.id].total += rc.total;
+    r1All += rc.r1; r2All += rc.r2; totalAll += rc.total;
+  });
+  return { bySaleId, byCasterId, byReferrerId, r1: r1All, r2: r2All, total: totalAll };
+}
+
+// 売上1件ぶんの按分後の紹介料を取る小道具（明細行の描画用）
+const refOfSale = (alloc, saleId) => alloc.bySaleId[saleId] || { r1: 0, r2: 0, total: 0 };
+
+// 紹介者×月の合計（紹介者報告書・支払い記録モーダルが使う）
 function calcReferrerMonthTotal(referrerId, y, m) {
   const ref = state.referrers.find(r => r.id === referrerId);
   if (!ref) return { ref: null, rows: [], casterCount: 0, totalR1: 0, totalR2: 0, total: 0 };
-  const sales = salesOfMonth(y, m);
   const casters = state.casters.filter(c => c.refId === referrerId);
+  const casterIds = new Set(casters.map(c => c.id));
+  const sales = salesOfMonth(y, m).filter(s => casterIds.has(s.casterId));
+  const alloc = calcRefAllocation(sales);
   let totalR1 = 0, totalR2 = 0, total = 0;
   const rows = [];
   casters.forEach(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return;
-    const totalCoins = cSales.reduce((s, x) => s + x.coins, 0);
-    // 報酬：1件ずつ計算して合計（配信者支払い用。紹介料とは集計単位が異なる）
-    const totalReward = cSales.reduce((s, x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    // 紹介料：同日コイン合計→1回計算（調整レコードも含む）
-    let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
-    const dateMap = {};
-    cSales.forEach(x => {
-      if (x.excludeRef) return; // 紹介料除外フラグが立った売上は日別コイン合計に含めない
-      if (!dateMap[x.date]) dateMap[x.date] = 0;
-      dateMap[x.date] += x.coins;
+    const a = alloc.byCasterId[c.id] || { r1: 0, r2: 0, total: 0 };
+    rows.push({
+      c,
+      totalCoins: cSales.reduce((s, x) => s + x.coins, 0),
+      // 報酬：1件ずつ計算して合計（配信者支払い用。紹介料とは集計単位が異なる）
+      totalReward: cSales.reduce((s, x) => s + calcReward(coinToYen(x.coins), c.rate), 0),
+      r1: a.r1, r2: a.r2, refTotal: a.total,
     });
-    Object.values(dateMap).forEach(dayCoins => {
-      const rw = calcReward(coinToYen(dayCoins), c.rate);
-      const rc = calcRefTotal(dayCoins, rw, ref);
-      r1Sum += rc.r1;
-      r2Sum += rc.r2;
-      refTotalSum += rc.total;
-    });
-    totalR1 += r1Sum;
-    totalR2 += r2Sum;
-    total += refTotalSum;
-    rows.push({ c, totalCoins, totalReward, r1: r1Sum, r2: r2Sum, refTotal: refTotalSum });
+    totalR1 += a.r1; totalR2 += a.r2; total += a.total;
   });
   return { ref, rows, casterCount: casters.length, totalR1, totalR2, total };
 }
@@ -4515,11 +4562,8 @@ function renderDashboard() {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
   const totalExp = exps.filter(isPlExpense).reduce((s, e) => s + e.amount, 0);
-  const totalRef = sales.reduce((s, x) => {
-    const c = getCaster(x.casterId);
-    if (!c?.refId) return s;
-    const _ref = getReferrer(c.refId); const _rw = calcReward(coinToYen(x.coins), c.rate); return s + calcRefTotal(x.excludeRef ? 0 : x.coins, x.excludeRef ? 0 : _rw, _ref).total;
-  }, 0);
+  // 【v37】紹介料は日次コイン合計方式（＝紹介者報告書・実際の支払額）に統一
+  const totalRef = calcRefAllocation(sales).total;
   const profit = totalSales - totalReward - totalRef - totalExp;
 
   document.getElementById('dash-cards').innerHTML = `
@@ -5447,6 +5491,9 @@ function updateSalePreview() {
   const src = calcSrcTax(reward);
   const transfer = reward - src;
   const ref = c.refId ? getReferrer(c.refId) : null;
+  // 【v37】ここは「まだ保存していない1件」の見積りなので、日次方式の按分は適用しない。
+  // 同じ日にすでに売上がある場合、保存後に表示される按分後の額とは数円ずれることがある。
+  // 保存後の一覧・集計はすべて calcRefAllocation() の日次方式で表示される。
   const _refCalc = calcRefTotal(coinsVal, reward, ref);
   const r1 = _refCalc.r1; const r2 = _refCalc.r2; const refTotal = _refCalc.total;
   const rate = parseFloat(document.getElementById('s-rate').value) || null;
@@ -6225,6 +6272,11 @@ function renderSales() {
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:16px">前払いなし</td></tr>';
 
+  // 【v37】紹介料は日次コイン合計で計算し、同日の各行へコイン比で按分した値を使う。
+  // 表示・ソート・グループ合計・明細行のすべてがこの1つの割り当てを参照するので、
+  // 行を足した額とグループ合計と紹介者報告書が必ず一致する。
+  const salesRefAlloc = calcRefAllocation(sales);
+
   // ソート
   // 各行の計算値キャッシュ（ソート用）
   const getSaleVals = s => {
@@ -6232,10 +6284,10 @@ function renderSales() {
     const sa = coinToYen(s.coins);
     const rw = c ? calcReward(sa, c.rate) : 0;
     const src = calcSrcTax(rw);
-    const ref = c?.refId ? getReferrer(c.refId) : null;
-    const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref).total;
+    const rcParts = refOfSale(salesRefAlloc, s.id);
+    const rc = rcParts.total;
     const office = calcOfficeSales(s.coins, s.rate, rw, rc);
-    return { sa, rw, src, transfer: rw - src, jpy: office?.jpy||0, office: office?.office||0, refamt: rc, rate: s.rate||0 };
+    return { sa, rw, src, transfer: rw - src, jpy: office?.jpy||0, office: office?.office||0, refamt: rc, r1: rcParts.r1, r2: rcParts.r2, rate: s.rate||0 };
   };
   const sortedSales = [...sales].sort((a, b) => {
     const k = salesSort.key, d = salesSort.dir;
@@ -6252,16 +6304,9 @@ function renderSales() {
     if (k === 'src')      return d * (va.src - vb.src);
     if (k === 'transfer') return d * (va.transfer - vb.transfer);
     if (k === 'refamt')   return d * (va.refamt - vb.refamt);
-    if (k === 'ref1') {
-      const ra = calcRefTotal(a.excludeRef ? 0 : a.coins, a.excludeRef ? 0 : (getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0), getReferrer(getCaster(a.casterId)?.refId)).r1;
-      const rb = calcRefTotal(b.excludeRef ? 0 : b.coins, b.excludeRef ? 0 : (getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0), getReferrer(getCaster(b.casterId)?.refId)).r1;
-      return d * (ra - rb);
-    }
-    if (k === 'ref2') {
-      const ra = calcRefTotal(a.excludeRef ? 0 : a.coins, a.excludeRef ? 0 : (getCaster(a.casterId)?calcReward(coinToYen(a.coins),getCaster(a.casterId).rate):0), getReferrer(getCaster(a.casterId)?.refId)).r2;
-      const rb = calcRefTotal(b.excludeRef ? 0 : b.coins, b.excludeRef ? 0 : (getCaster(b.casterId)?calcReward(coinToYen(b.coins),getCaster(b.casterId).rate):0), getReferrer(getCaster(b.casterId)?.refId)).r2;
-      return d * (ra - rb);
-    }
+    // 【v37】ソートも表示と同じ按分後の値で行う（表示とソート順が食い違わないように）
+    if (k === 'ref1')     return d * (va.r1 - vb.r1);
+    if (k === 'ref2')     return d * (va.r2 - vb.r2);
     return 0;
   });
   // 日付順にソート（固定）
@@ -6297,7 +6342,7 @@ function renderSales() {
       const sa = coinToYen(s.coins);
       const rw = c ? calcReward(sa, c.rate) : 0;
       const src = calcSrcTax(rw);
-      const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref);
+      const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
       const office = calcOfficeSales(s.coins, s.rate, rw, rc.total);
       sumCoins   += s.coins;
       sumReward  += rw;
@@ -6354,7 +6399,7 @@ function renderSales() {
         const sa = coinToYen(s.coins);
         const reward = c ? calcReward(sa, c.rate) : 0;
         const src = calcSrcTax(reward);
-        const rc = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : reward, ref);
+        const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
         const r1=rc.r1, r2=rc.r2, rcTotal=rc.total;
         const office = calcOfficeSales(s.coins, s.rate, reward, rcTotal);
         const isRefund = s.coins < 0;
@@ -7237,11 +7282,8 @@ function renderPL() {
   const totalReward = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
-  const totalRef = sales.reduce((s,x) => {
-    const c = getCaster(x.casterId); if (!c?.refId) return s;
-    const ref = getReferrer(c.refId); const rw = calcReward(coinToYen(x.coins), c.rate);
-    return s + calcRefTotal(x.excludeRef ? 0 : x.coins, x.excludeRef ? 0 : rw, ref).total;
-  }, 0);
+  // 【v37】紹介料は日次コイン合計方式（＝紹介者報告書・実際の支払額）に統一
+  const totalRef = calcRefAllocation(sales).total;
   const totalSrc = sales.reduce((s,x) => {
     const c = getCaster(x.casterId); return s + (c ? calcSrcTax(calcReward(coinToYen(x.coins), c.rate)) : 0);
   }, 0);
@@ -7282,6 +7324,7 @@ function renderPL() {
 
   // 配信者ごとに集計
   const byId = {};
+  const plRefAlloc = calcRefAllocation(sales); // 【v37】紹介料は日次方式で按分済みの値を使う
   sales.forEach(s => {
     const c = getCaster(s.casterId);
     if (!c) return;
@@ -7289,8 +7332,7 @@ function renderPL() {
       byId[c.id] = { c, ref: c.refId ? getReferrer(c.refId) : null, totalCoins: 0, reward: 0, src: 0, r1: 0, r2: 0, refTotal: 0 };
     }
     const rw = calcReward(coinToYen(s.coins), c.rate);
-    const ref = byId[c.id].ref;
-    const {r1, r2, total: refTot} = calcRefTotal(s.excludeRef ? 0 : s.coins, s.excludeRef ? 0 : rw, ref);
+    const {r1, r2, total: refTot} = refOfSale(plRefAlloc, s.id);
     byId[c.id].totalCoins += s.coins;
     byId[c.id].reward += rw;
     byId[c.id].src += calcSrcTax(rw);
@@ -8494,6 +8536,8 @@ function renderReport() {
   const { y, m } = state;
   const sales = salesOfMonth(y, m);
   const dailyPays = dailyPaysOfMonth(y, m);
+  // 【v37】紹介料は日次コイン合計方式。明細行は同日ぶんを按分した額を出す
+  const repRefAlloc = calcRefAllocation(sales);
 
   // 期間セレクターUI更新（DOM操作のみ・innerHTML書き換えなし）
   updatePeriodSelectorUI();
@@ -8523,7 +8567,7 @@ function renderReport() {
       const totalReward = cSales.reduce((s,x) => s+calcReward(coinToYen(x.coins),c.rate), 0);
       const totalSrc = calcSrcTax(totalReward);
       const ref = c.refId ? getReferrer(c.refId) : null;
-      const totalRef = cSales.reduce((s,x) => { const rw=calcReward(coinToYen(x.coins),c.rate); return s+calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total; }, 0);
+      const totalRef = (repRefAlloc.byCasterId[c.id] || { total: 0 }).total;
       const cDp = dailyPays.filter(d => d.casterId === c.id);
       const dpTotal = cDp.reduce((s,d)=>s+d.amount,0);
       const dpSrc = cDp.reduce((s,d)=>s+d.srcTax,0);
@@ -8534,7 +8578,7 @@ function renderReport() {
       const ratesValid = cSales.filter(s=>s.rate);
       const officeTotal = ratesValid.reduce((s,x) => {
         const rw=calcReward(coinToYen(x.coins),c.rate);
-        const rc=calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total;
+        const rc=refOfSale(repRefAlloc, x.id).total;
         const o=calcOfficeSales(x.coins,x.rate,rw,rc);
         return s+(o?o.office:0);
       }, 0);
@@ -8575,7 +8619,7 @@ function renderReport() {
     const totCoins = cSales.reduce((s,x)=>s+x.coins,0);
     const totReward = cSales.reduce((s,x)=>s+calcReward(coinToYen(x.coins),c.rate),0);
     const totSrc = calcSrcTax(totReward);
-    const totRef = cSales.reduce((s,x)=>{const rw=calcReward(coinToYen(x.coins),c.rate);return s+calcRefTotal(x.excludeRef?0:x.coins,x.excludeRef?0:rw,ref).total;},0);
+    const totRef = (repRefAlloc.byCasterId[c.id] || { total: 0 }).total;
     const dpAmt = cDp.reduce((s,d)=>s+d.amount,0);
     const dpSrc = cDp.reduce((s,d)=>s+d.srcTax,0);
     const remaining = Math.max(0, totReward - dpAmt);
@@ -8598,7 +8642,7 @@ function renderReport() {
             <tbody>${cSales.map(s => {
               const rw = calcReward(coinToYen(s.coins), c.rate);
               const src = calcSrcTax(rw);
-              const rc = calcRefTotal(s.excludeRef?0:s.coins, s.excludeRef?0:rw, ref).total;
+              const rc = refOfSale(repRefAlloc, s.id).total;
               const office = calcOfficeSales(s.coins, s.rate, rw, rc);
               return `<tr>
                 <td style="font-size:12px;color:var(--muted)">${s.date}</td>
@@ -8937,17 +8981,13 @@ function renderRefund() {
   // 紹介料：紹介者のインボイス登録済み→100%、未登録→経過措置率
   let refCredit = 0, refCredit100 = 0;
   let refBase100 = 0, refBase80 = 0; // 内訳用（80は経過措置分）
+  // 【v37】紹介料の仕入税額控除も日次コイン合計方式に統一。
+  // 控除の基礎は実際に支払った紹介料であるべきで、同ページ内の他の集計も日次方式だった。
   const refTotals = {};
-  sales.forEach(x => {
-    const c = getCaster(x.casterId);
-    if (!c?.refId) return;
-    if (x.excludeRef) return;
-    const ref = getReferrer(c.refId);
-    if (!ref) return;
-    const rw = calcReward(coinToYen(x.coins), c.rate);
-    const refAmt = calcRefTotal(x.coins, rw, ref).total;
-    if (!refTotals[ref.id]) refTotals[ref.id] = { ref, total: 0 };
-    refTotals[ref.id].total += refAmt;
+  const refundRefAlloc = calcRefAllocation(sales);
+  Object.entries(refundRefAlloc.byReferrerId).forEach(([refId, v]) => {
+    const ref = getReferrer(Number(refId));
+    if (ref) refTotals[ref.id] = { ref, total: v.total };
   });
   Object.values(refTotals).forEach(({ ref, total }) => {
     const base = taxAmountOf(total);
@@ -8981,22 +9021,8 @@ function renderRefund() {
     const totalReward = sales.reduce((s,x) => {
       const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
     }, 0);
-    const groupMap = {};
-    sales.forEach(x => {
-      const c = getCaster(x.casterId);
-      if (!c?.refId) return;
-      if (x.excludeRef) return;
-      const key = x.casterId + '_' + x.date;
-      if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
-      groupMap[key].coins += x.coins;
-    });
-    const totalRef = Object.values(groupMap).reduce((s, g) => {
-      const c = getCaster(g.casterId);
-      if (!c?.refId) return s;
-      const ref = getReferrer(c.refId);
-      const rw = calcReward(coinToYen(g.coins), c.rate);
-      return s + calcRefTotal(g.coins, rw, ref).total;
-    }, 0);
+    // 【v37】日次コイン合計方式の実装を共通関数へ移譲（従来と同じ計算・同じ結果）
+    const totalRef = calcRefAllocation(sales).total;
     const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
     const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
     const opProfit = totalSalesEstimate - totalReward - totalRef - totalExpForMgr;
@@ -9106,25 +9132,8 @@ function calcManagerReward(y, m) {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
   // 紹介料：同日コイン合計→1回計算（紹介者報告書と同じ方式）
-  const totalRef = (() => {
-    // 配信者×日付でコインを合計
-    const groupMap = {};
-    sales.forEach(x => {
-      const c = getCaster(x.casterId);
-      if (!c?.refId) return;
-      if (x.excludeRef) return;
-      const key = x.casterId + '_' + x.date;
-      if (!groupMap[key]) groupMap[key] = { casterId: x.casterId, coins: 0 };
-      groupMap[key].coins += x.coins;
-    });
-    return Object.values(groupMap).reduce((s, g) => {
-      const c = getCaster(g.casterId);
-      if (!c?.refId) return s;
-      const ref = getReferrer(c.refId);
-      const rw = calcReward(coinToYen(g.coins), c.rate);
-      return s + calcRefTotal(g.coins, rw, ref).total;
-    }, 0);
-  })();
+  // 【v37】実装を共通関数へ移譲（従来と同じ計算・同じ結果）
+  const totalRef = calcRefAllocation(sales).total;
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
   const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
   const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
