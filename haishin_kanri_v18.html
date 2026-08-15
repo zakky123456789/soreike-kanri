@@ -579,9 +579,10 @@
             <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="ref-pay-amount" type="number" placeholder="例：30000"></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-            <div class="form-group"><label>対象年</label><input id="ref-pay-target-y" type="number" placeholder="例：2026"></div>
-            <div class="form-group"><label>対象月</label><input id="ref-pay-target-m" type="number" min="1" max="12" placeholder="例：6"></div>
+            <div class="form-group"><label>対象年</label><input id="ref-pay-target-y" type="number" placeholder="例：2026" onchange="onRefPayTargetChange()"></div>
+            <div class="form-group"><label>対象月</label><input id="ref-pay-target-m" type="number" min="1" max="12" placeholder="例：6" onchange="onRefPayTargetChange()"></div>
           </div>
+          <div id="ref-pay-calc" style="margin-bottom:10px"></div>
           <div class="form-group" style="margin-bottom:10px"><label>メモ</label><input id="ref-pay-note" placeholder="任意"></div>
           <div class="form-group" style="margin-bottom:10px">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:400">
@@ -2732,6 +2733,48 @@ function calcRefTotal(coins, reward, ref) {
 // 非課税(0)・対象外(-1)はゼロのまま。
 const calcExpTax = (amt, rate) => rate <= 0 ? 0 : taxAmountOf(amt, rate);
 
+// 【v37】紹介料：紹介者×月の合計を1箇所に集約
+// 方式は「配信者ごとに同日のコインを合算 → 1回だけ calcRefTotal」（＝紹介者報告書と同一）。
+// calcRefTotal は内部で2回 Math.floor するため、売上レコード単位で計算して合計すると
+// 同日に複数レコードがある配信者で答えが小さくなり、報告書と食い違う。
+// 紹介者へ毎月送付している報告書の数値がそのまま支払額の根拠なので、報告書方式を正とする。
+// 支払い記録モーダルの自動入力もこの関数から取り、報告書と必ず同じ数字になるようにする。
+function calcReferrerMonthTotal(referrerId, y, m) {
+  const ref = state.referrers.find(r => r.id === referrerId);
+  if (!ref) return { ref: null, rows: [], casterCount: 0, totalR1: 0, totalR2: 0, total: 0 };
+  const sales = salesOfMonth(y, m);
+  const casters = state.casters.filter(c => c.refId === referrerId);
+  let totalR1 = 0, totalR2 = 0, total = 0;
+  const rows = [];
+  casters.forEach(c => {
+    const cSales = sales.filter(s => s.casterId === c.id);
+    if (cSales.length === 0) return;
+    const totalCoins = cSales.reduce((s, x) => s + x.coins, 0);
+    // 報酬：1件ずつ計算して合計（配信者支払い用。紹介料とは集計単位が異なる）
+    const totalReward = cSales.reduce((s, x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    // 紹介料：同日コイン合計→1回計算（調整レコードも含む）
+    let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
+    const dateMap = {};
+    cSales.forEach(x => {
+      if (x.excludeRef) return; // 紹介料除外フラグが立った売上は日別コイン合計に含めない
+      if (!dateMap[x.date]) dateMap[x.date] = 0;
+      dateMap[x.date] += x.coins;
+    });
+    Object.values(dateMap).forEach(dayCoins => {
+      const rw = calcReward(coinToYen(dayCoins), c.rate);
+      const rc = calcRefTotal(dayCoins, rw, ref);
+      r1Sum += rc.r1;
+      r2Sum += rc.r2;
+      refTotalSum += rc.total;
+    });
+    totalR1 += r1Sum;
+    totalR2 += r2Sum;
+    total += refTotalSum;
+    rows.push({ c, totalCoins, totalReward, r1: r1Sum, r2: r2Sum, refTotal: refTotalSum });
+  });
+  return { ref, rows, casterCount: casters.length, totalR1, totalR2, total };
+}
+
 // 月末精算分の源泉税集計（配信者ごとの「月間報酬－前払い累計」の残額から算出）の詳細版。
 // 源泉税合計に加え、対象人数・支払額・対象配信者idも返す（源泉税管理ページの納付書記入ガイドで使用）。
 // ダッシュボードのアラート・源泉税管理ページ・総勘定元帳（源泉税納付の仕訳金額）で共通利用する唯一の実装。
@@ -3626,6 +3669,48 @@ function resetRefPayForm() {
   document.getElementById('ref-pay-petty').checked = false;
   document.getElementById('ref-pay-form-title').textContent = '支払いを記録';
   document.getElementById('ref-pay-cancel-btn').style.display = 'none';
+  onRefPayTargetChange(); // 【v37】対象年月に応じた紹介料を表示し、金額欄に未払い残高を自動入力
+}
+
+// 【v37】支払い記録モーダル：対象年月の紹介料・支払い済み・未払い残高を表示する。
+// 数字は calcReferrerMonthTotal()（＝紹介者報告書と同じ計算）からのみ取る。
+// 戻り値：未払い残高。対象年月が未入力・不正なら null。
+function updateRefPayCalc() {
+  const el = document.getElementById('ref-pay-calc');
+  if (!el || refPayModalReferrerId == null) return null;
+  const y = parseInt(document.getElementById('ref-pay-target-y').value);
+  const m = parseInt(document.getElementById('ref-pay-target-m').value);
+  if (!y || !m || m < 1 || m > 12) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);padding:8px 10px;background:var(--surface);border:1px dashed var(--border);border-radius:6px">対象年月を入力すると、紹介者報告書と同じ計算の紹介料と未払い残高を表示します</div>';
+    return null;
+  }
+  const total = calcReferrerMonthTotal(refPayModalReferrerId, y, m).total;
+  const editId = parseInt(document.getElementById('ref-pay-edit-id').value) || null;
+  const paid = state.referrerPays
+    .filter(p => p.referrerId === refPayModalReferrerId && p.targetY === y && p.targetM === m && p.id !== editId)
+    .reduce((s, p) => s + (p.amount || 0), 0);
+  const remain = total - paid;
+  const remainColor = remain > 0 ? 'var(--accent)' : remain < 0 ? 'var(--red)' : 'var(--green)';
+  const rowStyle = 'display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:2px 0';
+  el.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 12px">
+      <div style="${rowStyle}"><span style="color:var(--muted)">${y}年${m}月分の紹介料<span style="font-size:10px">（報告書と同じ計算）</span></span><span style="font-family:var(--mono)">${yen(total)}</span></div>
+      <div style="${rowStyle}"><span style="color:var(--muted)">支払い済み合計${editId ? '<span style="font-size:10px">（編集中の記録を除く）</span>' : ''}</span><span style="font-family:var(--mono)">${yen(paid)}</span></div>
+      <div style="${rowStyle};border-top:1px solid var(--border);margin-top:6px;padding-top:6px"><span style="font-weight:600">未払い残高</span><span style="font-family:var(--mono);font-weight:700;color:${remainColor}">${yen(remain)}</span></div>
+      ${total === 0 ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">この月の紹介料は0円です。報酬なしとして記録する場合は金額に 0 を入れてください。</div>' : ''}
+      ${remain < 0 ? '<div style="font-size:11px;color:var(--red);margin-top:6px">⚠️ 支払い済みが紹介料を上回っています。金額は自動入力していません。</div>' : ''}
+    </div>`;
+  return remain;
+}
+
+// 【v37】対象年月が変わったとき：表示を更新し、新規登録時のみ金額欄に未払い残高を自動入力する。
+// 編集中は既存の金額を上書きしない。過払い（残高マイナス）のときも自動入力しない。
+function onRefPayTargetChange() {
+  const remain = updateRefPayCalc();
+  const editing = !!document.getElementById('ref-pay-edit-id').value;
+  if (!editing && remain != null && remain >= 0) {
+    document.getElementById('ref-pay-amount').value = remain;
+  }
 }
 
 function renderRefPayList() {
@@ -3640,12 +3725,12 @@ function renderRefPayList() {
     pays.map(p => `
       <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:var(--accent)">${yen(p.amount)}</strong>${p.viaPettyCash ? `　<span style="font-size:11px;padding:1px 6px;border-radius:4px;background:rgba(251,191,36,0.15);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)">🪙 小口現金</span>` : ''}</div>
+          <div style="font-size:13px"><span style="color:var(--muted)">${p.payDate}</span>　${p.targetY ? `<span class="badge badge-purple">${p.targetY}年${p.targetM}月分</span>　` : ''}<strong style="font-family:var(--mono);color:${p.amount === 0 ? 'var(--muted)' : 'var(--accent)'}">${yen(p.amount)}</strong>${p.amount === 0 ? `　<span style="font-size:11px;padding:1px 6px;border-radius:4px;background:var(--surface);color:var(--muted);border:1px solid var(--border)">報酬なし</span>` : ''}${p.viaPettyCash ? `　<span style="font-size:11px;padding:1px 6px;border-radius:4px;background:rgba(251,191,36,0.15);color:var(--yellow);border:1px solid rgba(251,191,36,0.3)">🪙 小口現金</span>` : ''}</div>
           ${p.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(p.note)}</div>` : ''}
         </div>
         ${payAttachBadge('referrer_pay', p.id)}
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editRefPay(${p.id})">編集</button>`}
-        <button class="btn btn-danger btn-sm" onclick="deleteRefPay(${p.id})">削除</button>
+        ${isViewerRole() ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteRefPay(${p.id})">削除</button>`}
       </div>`).join('');
 }
 
@@ -3661,20 +3746,24 @@ function editRefPay(id) {
   document.getElementById('ref-pay-petty').checked = !!p.viaPettyCash;
   document.getElementById('ref-pay-form-title').textContent = '支払い記録を編集';
   document.getElementById('ref-pay-cancel-btn').style.display = '';
+  updateRefPayCalc(); // 【v37】編集中は金額欄を自動入力しない（表示の更新のみ）
 }
 
 async function saveRefPay() {
   const referrerId = parseInt(document.getElementById('ref-pay-referrer-id').value);
   const editId = document.getElementById('ref-pay-edit-id').value;
   const payDate = document.getElementById('ref-pay-date').value;
-  const amount = parseInt(document.getElementById('ref-pay-amount').value) || 0;
+  // 【v37】0円（報酬なし）を記録できるようにした。空欄と0を区別するため `|| 0` は使わない
+  const amountRaw = document.getElementById('ref-pay-amount').value.trim();
+  const amount = parseInt(amountRaw, 10);
   const targetY = parseInt(document.getElementById('ref-pay-target-y').value) || null;
   const targetM = parseInt(document.getElementById('ref-pay-target-m').value) || null;
   const note = document.getElementById('ref-pay-note').value.trim();
   const viaPettyCash = document.getElementById('ref-pay-petty').checked;
 
   if (!payDate) { alert('支払日を入力してください'); return; }
-  if (!amount) { alert('金額を入力してください'); return; }
+  if (amountRaw === '' || !Number.isFinite(amount)) { alert('金額を入力してください（報酬が無い月は 0 と入力してください）'); return; }
+  if (amount < 0) { alert('金額に負の数は入力できません'); return; }
 
   const record = { referrerId, payDate, amount, targetY, targetM, note, viaPettyCash };
 
@@ -3707,6 +3796,7 @@ async function deleteRefPay(id) {
   await dbDelete('referrer_pays', id);
   state.referrerPays = state.referrerPays.filter(p => p.id !== id);
   renderRefPayList();
+  updateRefPayCalc(); // 【v37】支払い済み合計・未払い残高を再計算（金額欄は触らない）
   renderPettyCash();
 }
 
@@ -8585,37 +8675,12 @@ function renderRefReport() {
   const ref = state.referrers.find(r => r.id === refId);
   if (!ref) { el.innerHTML = '<p style="color:var(--muted)">紹介者を選択してください</p>'; return; }
 
-  const sales = salesOfMonth(y, m);
-  const casters = state.casters.filter(c => c.refId === refId);
-  if (casters.length === 0) { el.innerHTML = '<p style="color:var(--muted)">この紹介者に紐づく配信者がいません</p>'; return; }
-
-  let totalR1 = 0, totalR2 = 0, totalRefSum = 0;
-  const rows = casters.map(c => {
-    const cSales = sales.filter(s => s.casterId === c.id);
-    if (cSales.length === 0) return null;
-    const totalCoins = cSales.reduce((s,x) => s + x.coins, 0);
-    // 報酬：1件ずつ計算して合計（配信者支払い用）
-    const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
-    // 紹介料：全期間で同日コイン合計→1回計算（調整レコードも含む）
-    let r1Sum = 0, r2Sum = 0, refTotalSum = 0;
-    const dateMap = {};
-    cSales.forEach(x => {
-      if (x.excludeRef) return; // 紹介料除外フラグが立った売上は日別コイン合計に含めない
-      if (!dateMap[x.date]) dateMap[x.date] = 0;
-      dateMap[x.date] += x.coins;
-    });
-    Object.values(dateMap).forEach(dayCoins => {
-      const rw = calcReward(coinToYen(dayCoins), c.rate);
-      const rc = calcRefTotal(dayCoins, rw, ref);
-      r1Sum += rc.r1;
-      r2Sum += rc.r2;
-      refTotalSum += rc.total;
-    });
-    totalR1 += r1Sum;
-    totalR2 += r2Sum;
-    totalRefSum += refTotalSum;
-    return { c, totalCoins, totalReward, r1: r1Sum, r2: r2Sum, refTotal: refTotalSum };
-  }).filter(Boolean);
+  // 【v37】計算は calcReferrerMonthTotal() に集約した。
+  // 支払い記録モーダルの自動入力が同じ関数を使うため、報告書と支払い記録は必ず同額になる。
+  const calc = calcReferrerMonthTotal(refId, y, m);
+  if (calc.casterCount === 0) { el.innerHTML = '<p style="color:var(--muted)">この紹介者に紐づく配信者がいません</p>'; return; }
+  const rows = calc.rows;
+  const totalR1 = calc.totalR1, totalR2 = calc.totalR2, totalRefSum = calc.total;
 
   if (rows.length === 0) { el.innerHTML = `<p style="color:var(--muted)">${y}年${m}月の売上データがありません</p>`; return; }
 
