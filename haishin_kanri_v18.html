@@ -766,14 +766,21 @@
           </div>
         </div>
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
-          <div class="form-group"><label>金額（税込）</label><input id="exp-edit-amount" type="number"></div>
+          <div class="form-group"><label>金額（税込）</label><input id="exp-edit-amount" type="number" oninput="updateTaxAmtHint('exp-edit-amount','exp-edit-tax','exp-edit-taxamt','exp-edit-taxamt-hint')"></div>
           <div class="form-group"><label>消費税区分</label>
-            <select id="exp-edit-tax">
+            <select id="exp-edit-tax" onchange="updateTaxAmtHint('exp-edit-amount','exp-edit-tax','exp-edit-taxamt','exp-edit-taxamt-hint')">
               <option value="10">課税10%</option>
               <option value="8">課税8%（軽減）</option>
               <option value="0">非課税</option>
               <option value="-1">対象外</option>
             </select>
+          </div>
+        </div>
+        <div class="form-grid form-grid-2" style="margin-bottom:14px">
+          <div class="form-group"><label>消費税額（領収書記載）</label>
+            <input id="exp-edit-taxamt" type="number" placeholder="記載なしは空欄"
+                   oninput="updateTaxAmtHint('exp-edit-amount','exp-edit-tax','exp-edit-taxamt','exp-edit-taxamt-hint')">
+            <div id="exp-edit-taxamt-hint" style="font-size:10px;color:var(--muted);margin-top:3px;min-height:12px"></div>
           </div>
         </div>
         <div class="form-grid form-grid-2" style="margin-bottom:14px">
@@ -2244,7 +2251,8 @@ async function loadFromDB() {
         invoiceNo: r.invoice_no || '', payee: r.payee || '',
         participants: r.participants || '', purpose: r.purpose || '', settled: r.settled || false,
         excludeManager: r.exclude_manager || false, note: r.note || '',
-        entryType: r.entry_type || 'normal', prepaidId: r.prepaid_id || null
+        entryType: r.entry_type || 'normal', prepaidId: r.prepaid_id || null,
+        taxAmount: (r.tax_amount == null ? null : Number(r.tax_amount)) // v39：領収書記載の消費税額（集計には未使用）
       }));
     }
     if (dailyR.data?.length > 0) {
@@ -3273,7 +3281,7 @@ async function writeAuditLog(action, recordId, before, after, tableName = 'expen
 }
 
 function expToLogObj(e) {
-  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null };
+  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null, taxAmount: e.taxAmount ?? null };
 }
 
 // ===== 定期経費の自動登録（v32） =====
@@ -3396,6 +3404,7 @@ const AUDIT_FIELD_LABEL = {
   excludeRef: '紹介料除外', excludeReport: 'レポート除外', casterName: '配信者', refName: '紹介者',
   r1pct: '①率', r2a: '②A', r2b: '②B', r2pct: '②率', type: '種別', note: 'メモ',
   payDate: '支払日', targetY: '対象年', targetM: '対象月', name: '名前', retired: '退所', onHold: '休止',
+  taxAmount: '消費税額（領収書記載）',
 };
 
 async function openAuditModal(presetTable) {
@@ -4183,6 +4192,31 @@ function selectMonth(y, m) {
 }
 
 
+// ===== レシート記載の消費税額（v39） =====
+// 【重要】この値は「記録するだけ」。元帳・消費税還付・経費一覧の集計には一切使っていない。
+// 仕入税額控除を積上げ計算にするかは税理士の回答待ちのため、金額ロジックは1円も変えていない。
+// 回答が来たら、calcExpTax() を使っている箇所で「taxAmountがあればそれを使う」に切り替える。
+// 入力欄の値を取り出す（空欄・数値でない場合は null）
+function readTaxAmtInput(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return null;
+  const v = String(el.value || '').trim();
+  if (v === '') return null;
+  const n = parseInt(v, 10);
+  return isFinite(n) ? n : null;
+}
+// レシート記載額とシステム計算値がずれているときだけ小さく併記する（読み取りミスに気づくため）
+function updateTaxAmtHint(amountId, taxId, taxAmtId, hintId) {
+  const hint = document.getElementById(hintId);
+  if (!hint) return;
+  const amount = parseFloat(document.getElementById(amountId)?.value);
+  const rate   = parseInt(document.getElementById(taxId)?.value);
+  const entered = readTaxAmtInput(taxAmtId);
+  if (!isFinite(amount) || entered === null) { hint.textContent = ''; return; }
+  const calc = calcExpTax(amount, rate);
+  hint.textContent = (entered !== calc) ? `システム計算：${calc.toLocaleString()}円` : '';
+}
+
 // ===== AI レシート読み込み =====
 const RECEIPT_CAT_OPTIONS = ['消耗品費','固定資産','接待交際費','外注費','家賃','水道光熱費','通信費','旅費交通費','広告宣伝費','衣装・美容費','新聞図書費','会議費','支払手数料','長期前払費用','保険料','保証料','清掃費','その他'];
 // 経費明細の勘定科目フィルター用の選択肢。過去データ用に廃止済みの「機材・設備費」も含める（新規入力の選択肢には出さない）
@@ -4319,6 +4353,12 @@ async function readReceiptFile(file) {
       - 「消費税額」欄の数値を足した後の合計（税込）を使う
       - 例：税抜¥438・消費税¥35 → amountは¥473（税込）
       - 例：税抜¥6・消費税¥0 → amountは¥6（税込）
+      【消費税額の読み取り（v39・最重要）】レシート・請求書に消費税額が明記されている場合は、その数値を **そのまま** taxAmount に入れてください。
+      - 「消費税」「消費税額」「内消費税」「(10% 対象¥2,473 消費税¥247)」等の表記から読み取ります
+      - 分割した場合は、その税率区分の消費税額だけを入れます
+      - **記載がない場合は必ず null にしてください。税込金額から自分で逆算してはいけません。**
+      - 例：税抜¥438・消費税¥35 → amount=473、taxAmount=35
+      - 例：合計¥1,000としか書かれていない → amount=1000、taxAmount=null
       - レシート全体の「合計」と各税率の税込金額の合計が一致することを確認してください
       - 「（10.0% 本体価格2,473円 消費税247円）」のように税率ごとに本体価格と消費税が明記されている場合は、本体価格＋消費税を税込金額として使用してください。入湯税など別途記載の税は合計に含まれているかどうか領収証の合計金額と照合して判断してください。
       - 例：合計¥3,010のレシートに「10.0% 本体2,473円 消費税247円」「8.0% 本体269円 消費税21円（入湯税0円）」と記載→ 10%分のamount=2720（2473+247）、8%分のamount=290（269+21）として2要素に分割
@@ -4417,6 +4457,7 @@ async function readReceiptFile(file) {
     "payee": "支払先の店舗名・会社名のみ（例：セブン-イレブン千代田店）",
     "amount": その分割区分の税込合計金額（数値）※必ず税込金額。税抜金額は使わないこと。税抜+消費税=税込で計算して入力。,
     "tax": "10" か "8" か "0" か "-1"（食品・飲料→8、それ以外→10、切手・家賃・非課税→0、保険金・補助金・対価性なし→-1）,
+    "taxAmount": レシートに明記されている消費税額（数値）。記載がなければ null。逆算は禁止,
     "cat": "${catList}" のいずれか最も適切なもの（飲食店のレシートは迷ったら「会議費」を選択すること。居酒屋の懇親会など明らかに接待交際費に該当するとわかる場合のみ「接待交際費」としてよい。PC・カメラ・照明・什器等の物品は、金額（税込）が10万円未満なら「消耗品費」、10万円以上なら「固定資産」を選択すること）,
     "invoiceNo": "T+13桁のインボイス番号（レシートに「登録番号」「適格請求書発行事業者登録番号」「インボイス番号」等で記載されているTから始まる14桁の番号）、なければ空文字",
     "note": "備考欄に記載すべき内容があれば記載、なければ空文字"
@@ -4508,8 +4549,13 @@ function renderReceiptResults() {
             <div class="form-group"><label>日付</label><input id="rc-date-${r._id}" type="date" value="${r.date||''}" style="background:var(--surface2);font-size:12px"></div>
             <div class="form-group" style="grid-column:span 2"><label>品名</label><input id="rc-name-${r._id}" value="${(r.name||'').replace(/"/g,'&quot;')}" style="background:var(--surface2);font-size:12px"></div>
             <div class="form-group"><label>支払先</label><input id="rc-payee-${r._id}" value="${(r.payee||'').replace(/"/g,'&quot;')}" style="background:var(--surface2);font-size:12px"></div>
-            <div class="form-group"><label>金額（税込）</label><input id="rc-amount-${r._id}" type="number" value="${r.amount||''}" style="background:var(--surface2);font-size:12px"></div>
-            <div class="form-group"><label>消費税区分</label><select id="rc-tax-${r._id}" style="background:var(--surface2);font-size:12px">${taxOpts}</select></div>
+            <div class="form-group"><label>金額（税込）</label><input id="rc-amount-${r._id}" type="number" value="${r.amount||''}" style="background:var(--surface2);font-size:12px" oninput="updateTaxAmtHint('rc-amount-${r._id}','rc-tax-${r._id}','rc-taxamt-${r._id}','rc-taxamt-hint-${r._id}')"></div>
+            <div class="form-group"><label>消費税区分</label><select id="rc-tax-${r._id}" style="background:var(--surface2);font-size:12px" onchange="updateTaxAmtHint('rc-amount-${r._id}','rc-tax-${r._id}','rc-taxamt-${r._id}','rc-taxamt-hint-${r._id}')">${taxOpts}</select></div>
+            <div class="form-group"><label>消費税額（レシート記載）</label>
+              <input id="rc-taxamt-${r._id}" type="number" placeholder="記載なしは空欄" value="${r.taxAmount ?? ''}" style="background:var(--surface2);font-size:12px"
+                     oninput="updateTaxAmtHint('rc-amount-${r._id}','rc-tax-${r._id}','rc-taxamt-${r._id}','rc-taxamt-hint-${r._id}')">
+              <div id="rc-taxamt-hint-${r._id}" style="font-size:10px;color:var(--muted);margin-top:3px;min-height:12px"></div>
+            </div>
             <div class="form-group" style="grid-column:span 1">
               <label>勘定科目</label>
               <select id="rc-cat-${r._id}" style="background:var(--surface2);font-size:12px" onchange="toggleReceiptEntertainFields(${r._id})">${catOpts}</select>
@@ -4662,6 +4708,7 @@ async function addCheckedReceipts() {
     const payee = document.getElementById(`rc-payee-${r._id}`)?.value.trim() || '';
     const amount = parseFloat(document.getElementById(`rc-amount-${r._id}`)?.value);
     const tax   = parseInt(document.getElementById(`rc-tax-${r._id}`)?.value);
+    const taxAmount = readTaxAmtInput(`rc-taxamt-${r._id}`); // v39：レシート記載額（記録のみ）
     const cat   = document.getElementById(`rc-cat-${r._id}`)?.value || 'その他';
     const participants = (cat === '接待交際費' || cat === '会議費') ? (document.getElementById(`rc-participants-${r._id}`)?.value.trim() || '') : '';
     const purpose      = (cat === '接待交際費' || cat === '会議費') ? (document.getElementById(`rc-purpose-${r._id}`)?.value.trim()      || '') : '';
@@ -4702,7 +4749,7 @@ async function addCheckedReceipts() {
       }
       prepaidConfig = { assetCat, expCat, startDate, endDate, months, amorDay };
     }
-    toAdd.push({ r, date, name, payee, amount, tax, cat, method, ey, em, excludeManager, note, participants, purpose, invoiceNo, isPrepaid, prepaidConfig });
+    toAdd.push({ r, date, name, payee, amount, tax, taxAmount, cat, method, ey, em, excludeManager, note, participants, purpose, invoiceNo, isPrepaid, prepaidConfig });
   }
 
   if (toAdd.length === 0) {
@@ -4721,13 +4768,14 @@ async function addCheckedReceipts() {
       newId = await insertWithFreshId('expenses', id => ({
         id, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax,
         method: item.method, invoice_no: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'',
-        y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: entryType, prepaid_id: null
+        y: item.ey, m: item.em, exclude_manager: item.excludeManager, note: item.note||'', entry_type: entryType, prepaid_id: null,
+        tax_amount: item.taxAmount
       }));
     } catch(e) {
       document.getElementById('receipt-add-msg').textContent = `⚠️ 「${item.name}」の保存に失敗しました: ${e.message}`;
       return;
     }
-    const newExp = { id: newId, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null };
+    const newExp = { id: newId, date: item.date, name: item.name, payee: item.payee||'', cat: actualCat, amount: item.amount, tax: item.tax, method: item.method, invoiceNo: item.invoiceNo||'', participants: item.participants||'', purpose: item.purpose||'', y: item.ey, m: item.em, excludeManager: item.excludeManager, note: item.note||'', entryType, prepaidId: null, taxAmount: item.taxAmount };
     state.expenses.push(newExp);
     item.newExp = newExp;
     await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
@@ -6812,7 +6860,7 @@ function addExpRow(prefill) {
         <select id="er-cat-${rid}" onchange="toggleRowEntertain(${rid})">${catOptions(prefill?.cat||'消耗品費')}</select>
       </div>
       <div class="form-group"><label>消費税区分</label>
-        <select id="er-tax-${rid}">
+        <select id="er-tax-${rid}" onchange="updateTaxAmtHint('er-amount-${rid}','er-tax-${rid}','er-taxamt-${rid}','er-taxamt-hint-${rid}')">
           <option value="10"${(!prefill||prefill.tax==10)?' selected':''}>課税10%</option>
           <option value="8"${prefill?.tax==8?' selected':''}>課税8%（軽減）</option>
           <option value="0"${prefill?.tax==0?' selected':''}>非課税</option>
@@ -6821,7 +6869,12 @@ function addExpRow(prefill) {
       </div>
     </div>
     <div class="form-grid form-grid-4">
-      <div class="form-group"><label>金額（税込）</label><input id="er-amount-${rid}" type="number" placeholder="例：2720" value="${prefill?.amount||''}"></div>
+      <div class="form-group"><label>金額（税込）</label><input id="er-amount-${rid}" type="number" placeholder="例：2720" value="${prefill?.amount||''}" oninput="updateTaxAmtHint('er-amount-${rid}','er-tax-${rid}','er-taxamt-${rid}','er-taxamt-hint-${rid}')"></div>
+      <div class="form-group"><label>消費税額（領収書記載）</label>
+        <input id="er-taxamt-${rid}" type="number" placeholder="記載なしは空欄" value="${prefill?.taxAmount ?? ''}"
+               oninput="updateTaxAmtHint('er-amount-${rid}','er-tax-${rid}','er-taxamt-${rid}','er-taxamt-hint-${rid}')">
+        <div id="er-taxamt-hint-${rid}" style="font-size:10px;color:var(--muted);margin-top:3px;min-height:12px"></div>
+      </div>
     </div>
     <div id="er-entertain-${rid}" style="display:none;margin-top:8px">
       <div class="form-grid form-grid-2">
@@ -6956,11 +7009,12 @@ async function addExpense() {
     const cat = document.getElementById(`er-cat-${rid}`)?.value || '消耗品費';
     const tax = parseInt(document.getElementById(`er-tax-${rid}`)?.value || '10');
     const amount = parseFloat(document.getElementById(`er-amount-${rid}`)?.value || '');
+    const taxAmount = readTaxAmtInput(`er-taxamt-${rid}`); // v39：領収書記載額（記録のみ）
     const participants = (cat === '接待交際費' || cat === '会議費') ? (document.getElementById(`er-participants-${rid}`)?.value.trim() || '') : '';
     const purpose = (cat === '接待交際費' || cat === '会議費') ? (document.getElementById(`er-purpose-${rid}`)?.value.trim() || '') : '';
     if (!name || isNaN(amount)) { alert(`明細 ${rid}：品名と金額を入力してください`); return; }
     if ((cat === '接待交際費' || cat === '会議費') && (!participants || !purpose)) { alert(`明細 ${rid}：${cat}は参加者と目的・事由が必須です`); return; }
-    rows.push({ name, cat, tax, amount, participants, purpose });
+    rows.push({ name, cat, tax, amount, taxAmount, participants, purpose });
   }
 
   // 期間按分の検証（チェック時）
@@ -6996,7 +7050,7 @@ async function addExpense() {
         id, date, name: r.name, payee, cat: actualCat, amount: r.amount,
         tax: r.tax, method, invoice_no: invoiceNo, participants: r.participants,
         purpose: r.purpose, y, m, exclude_manager: excludeManager, note,
-        entry_type: entryType, prepaid_id: null
+        entry_type: entryType, prepaid_id: null, tax_amount: r.taxAmount
       }));
     } catch(e) {
       alert(`明細「${r.name}」の保存に失敗しました: ${e.message}`);
@@ -7006,7 +7060,7 @@ async function addExpense() {
       id: newId, date, name: r.name, payee, cat: actualCat,
       amount: r.amount, tax: r.tax, method, invoiceNo, participants: r.participants,
       purpose: r.purpose, y, m, excludeManager, note,
-      entryType, prepaidId: null
+      entryType, prepaidId: null, taxAmount: r.taxAmount
     };
     state.expenses.push(newExp);
     await writeAuditLog('add', newExp.id, null, expToLogObj(newExp));
@@ -7198,6 +7252,8 @@ function openExpEditModal(id) {
   document.getElementById('exp-edit-cat').value = e.cat;
   document.getElementById('exp-edit-amount').value = e.amount;
   document.getElementById('exp-edit-tax').value = e.tax;
+  document.getElementById('exp-edit-taxamt').value = (e.taxAmount ?? ''); // v39
+  updateTaxAmtHint('exp-edit-amount', 'exp-edit-tax', 'exp-edit-taxamt', 'exp-edit-taxamt-hint');
   document.getElementById('exp-edit-method').value = e.method;
   document.getElementById('exp-edit-invoice').value = e.invoiceNo || '';
   document.getElementById('exp-edit-participants').value = e.participants || '';
@@ -7222,6 +7278,7 @@ async function saveExpEdit() {
   const cat = document.getElementById('exp-edit-cat').value;
   const amount = parseFloat(document.getElementById('exp-edit-amount').value);
   const tax = parseInt(document.getElementById('exp-edit-tax').value);
+  const taxAmount = readTaxAmtInput('exp-edit-taxamt'); // v39：領収書記載額（記録のみ）
   const method = document.getElementById('exp-edit-method').value;
   const invoiceNo = document.getElementById('exp-edit-invoice').value.trim();
   const participants = (cat === '接待交際費' || cat === '会議費') ? document.getElementById('exp-edit-participants').value.trim() : '';
@@ -7238,7 +7295,7 @@ async function saveExpEdit() {
     const entryType = state.expenses[idx].entryType || 'normal';
     const prepaidId = state.expenses[idx].prepaidId || null;
     state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat: finalCat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note, entryType, prepaidId };
-    await dbSaveAsync('expenses', { id, date, name, payee, cat: finalCat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId });
+    await dbSaveAsync('expenses', { id, date, name, payee, cat: finalCat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId, tax_amount: taxAmount });
     await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   }
   closeExpEditModal();
