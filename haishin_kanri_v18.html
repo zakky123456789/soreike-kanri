@@ -10780,16 +10780,17 @@ function closeMepModal() {
 // 新規作成が完了して mep-edit-id がセットされるまでに別の保存が始まると、
 // どちらも「空」と判定して2件作ってしまう（保存ボタンの連打、
 // 請求書と振込明細を続けてドロップ、などで発生しうる）。実際に重複レコードが1件できていた。
-let mepSaving = false;
+// 【v41】従来は保存が重なると後から来た方を「捨てて」いた（return null）。
+//   そのため「保存ボタンを押したのに何も起きない」「ファイルが添付されないのに
+//   無関係なエラーが出る」が起きていた。捨てずに、直前の保存の完了を待ってから
+//   順番に実行する。待てば mep-edit-id がセット済みなので、重複レコードを作らない
+//   という従来の目的はそのまま満たせる（v35のロックの意図を維持している）。
+let mepSaveChain = Promise.resolve();
 
-async function saveMepRecord() {
-  if (mepSaving) { console.warn('月末精算の保存が進行中のため、重複した保存要求を無視しました'); return null; }
-  mepSaving = true;
-  try {
-    return await saveMepRecordInner();
-  } finally {
-    mepSaving = false;
-  }
+function saveMepRecord() {
+  const next = mepSaveChain.then(() => saveMepRecordInner(), () => saveMepRecordInner());
+  mepSaveChain = next.then(() => {}, () => {}); // 失敗しても後続を止めない
+  return next;
 }
 
 async function saveMepRecordInner() {
@@ -10999,7 +11000,10 @@ async function extractOfficerPaySlip(base64, contentType) {
 // レコードを作成/更新し、ファイルを指定のnoteで添付する共通処理
 async function saveMepAndAttach(file, note) {
   const id = await saveMepRecord();
-  if (id == null) throw new Error('支払日が未入力です');
+  // 【v41】従来は理由を問わず「支払日が未入力です」と出していた（保存が重なって捨てられた
+  //   場合もこの文面になっていた）。支払日未入力・ID採番エラーはそれぞれ別にalertが出ているので、
+  //   ここでは「ファイルが添付されていない」ことを確実に伝える。
+  if (id == null) throw new Error('支払い記録を保存できなかったため、ファイルは添付されていません');
   await uploadFileToPayTarget('month_end_pay', id, file, note);
   renderSales();
 }
@@ -11019,25 +11023,34 @@ async function handleMepInvoiceFiles(fileList) {
     } catch(e) {
       console.warn('請求書の解析に失敗:', e.message);
     }
-    if (extracted && extracted.amount != null) document.getElementById('mep-amount').value = extracted.amount;
-    // srcTaxがnull（請求書に項目自体が見当たらない）の場合も、欄には便宜上0を入れるが、
-    // 「0だから安心」ではなく「読み取れなかったかもしれない」ことが分かるよう警告を分けて出す
+    // 【v41】請求書として読めたかどうかを先に判定する。
+    //   従来は源泉徴収税額だけ無条件に上書きしていたため、AI呼び出しが失敗した場合
+    //   （APIの障害・クレジット切れ等）に、自動計算されていた源泉徴収税額が0で潰され、
+    //   そのまま保存されていた。v35の方針で「記録があれば再計算しない」ため、
+    //   この0が事実として扱われ、源泉税の納付額・支払調書・元帳の預り金が過少になる。
+    //   読めなかったときは、金額も源泉徴収税額も一切触らない（自動計算値をそのまま残す）。
+    const readOk = !!(extracted && extracted.amount != null);
+    // 請求書は読めたが源泉徴収税額の記載が見当たらない場合は、従来どおり0を入れて警告を分ける
+    //（「0だから安心」ではなく「記載漏れかもしれない」と分かるようにするための既存仕様）
     const srcTaxMissing = !extracted || extracted.srcTax == null;
     const srcTaxValue = (extracted && extracted.srcTax != null) ? extracted.srcTax : 0;
-    document.getElementById('mep-src-tax').value = srcTaxValue;
+    if (readOk) {
+      document.getElementById('mep-amount').value = extracted.amount;
+      document.getElementById('mep-src-tax').value = srcTaxValue;
+    }
     await saveMepAndAttach(_origFile, '請求書');
-    if (extracted && extracted.amount != null && !srcTaxMissing && srcTaxValue > 0) {
+    if (readOk && !srcTaxMissing && srcTaxValue > 0) {
       statusEl.style.color = 'var(--green)';
       statusEl.textContent = `✅ 添付完了（金額¥${extracted.amount.toLocaleString()}／源泉¥${srcTaxValue.toLocaleString()} を自動入力）`;
-    } else if (extracted && extracted.amount != null && srcTaxMissing) {
+    } else if (readOk && srcTaxMissing) {
       statusEl.style.color = 'var(--yellow)';
       statusEl.textContent = `⚠️ 添付完了（金額¥${extracted.amount.toLocaleString()}を自動入力）。源泉徴収税額は請求書から読み取れなかったため0としています。記載漏れでないかご確認ください。`;
-    } else if (extracted && extracted.amount != null && srcTaxValue === 0) {
+    } else if (readOk && srcTaxValue === 0) {
       statusEl.style.color = 'var(--yellow)';
       statusEl.textContent = `⚠️ 添付完了（金額¥${extracted.amount.toLocaleString()}を自動入力）。源泉徴収税額が0円と記載されています。意図した内容かご確認ください。`;
     } else {
       statusEl.style.color = 'var(--yellow)';
-      statusEl.textContent = '⚠️ 添付しましたが金額の読み取りに失敗しました。下の欄を確認・修正してください。';
+      statusEl.textContent = '⚠️ 添付しましたが請求書を読み取れませんでした。金額・源泉徴収税額は自動計算値のままです。下の欄をご確認ください。';
     }
   } catch(e) {
     statusEl.style.color = 'var(--red)';
