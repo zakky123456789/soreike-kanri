@@ -10887,7 +10887,26 @@ async function prepareFileForMepAI(file) {
   }
 }
 
+// AIの応答からJSONオブジェクトを取り出す（v40）
+// コードフェンス付き・前置き付き・末尾に余計な文がある応答のいずれにも耐える。
+// 取り出せなければ null を返す（例外は投げない）。
+function parseJsonLoose(text) {
+  if (!text) return null;
+  let t = String(text).trim();
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  const candidates = [t];
+  const first = t.indexOf('{'), last = t.lastIndexOf('}');
+  if (first !== -1 && last > first) candidates.push(t.slice(first, last + 1));
+  for (const c of candidates) {
+    try { const v = JSON.parse(c); if (v && typeof v === 'object') return v; } catch(e) { /* 次の候補へ */ }
+  }
+  return null;
+}
+
 // claude-proxy呼び出し共通部分。systemプロンプトに従ってJSONオブジェクトのみを返すことを期待する。
+// 【v40】max_tokens が 500 だったため、応答が途中で切れると「{」はあるが「}」が無い状態になり、
+//   JSON抽出に失敗して「JSONが取得できませんでした」になっていた（請求書・振込明細の読み取り失敗の原因）。
+//   実績のあるAIレシート読み込みと同じ 2000 に引き上げ、失敗時は何が返ってきたのかを画面とconsoleに出す。
 async function callMepAI(systemPrompt, base64, contentType) {
   const isPdf = contentType === 'application/pdf';
   const content = isPdf
@@ -10898,14 +10917,28 @@ async function callMepAI(systemPrompt, base64, contentType) {
   const resp = await fetch(CLAUDE_PROXY, {
     method: 'POST',
     headers: await authHeaders(),
-    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 500, system: systemPrompt, messages: [{ role: 'user', content }] })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, system: systemPrompt, messages: [{ role: 'user', content }] })
   });
-  if (!resp.ok) throw new Error(`API Error ${resp.status}`);
+  if (!resp.ok) {
+    let detail = '';
+    try { detail = String(await resp.text() || '').slice(0, 200); } catch(e) { /* 本文が読めなくても続行 */ }
+    throw new Error(`API Error ${resp.status}` + (detail ? ' / ' + detail : ''));
+  }
   const data = await resp.json();
-  const text = data.content?.find(b => b.type === 'text')?.text || '';
-  const objMatch = text.match(/\{[\s\S]*\}/);
-  if (!objMatch) throw new Error('JSONが取得できませんでした');
-  return JSON.parse(objMatch[0]);
+  if (data && data.error) {
+    throw new Error('APIエラー: ' + String(data.error.message || JSON.stringify(data.error)).slice(0, 200));
+  }
+  // textブロックが複数に分かれて返ることがあるため全部つなぐ（従来は先頭1つだけを見ていた）
+  const text = (Array.isArray(data.content) ? data.content : [])
+    .filter(b => b && b.type === 'text' && typeof b.text === 'string')
+    .map(b => b.text).join('');
+  const parsed = parseJsonLoose(text);
+  if (!parsed) {
+    console.warn('AI応答をJSONとして解釈できませんでした。stop_reason=', data && data.stop_reason, '／応答=', text, data);
+    if (data && data.stop_reason === 'max_tokens') throw new Error('AIの応答が長すぎて途中で切れました（max_tokens）');
+    throw new Error('JSONが取得できませんでした（応答：' + (text.trim().slice(0, 120) || '空') + '）');
+  }
+  return parsed;
 }
 
 async function extractInvoiceAmounts(base64, contentType) {
