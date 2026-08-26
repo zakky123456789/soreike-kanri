@@ -1834,7 +1834,12 @@
             <div class="form-group"><label>対象月 <span style="color:var(--red)">*</span></label><input id="mgr-adj-target-m" type="number" min="1" max="12" placeholder="例：7"></div>
           </div>
           <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="mgr-adj-amount" type="number" placeholder="例：15000"></div>
-          <div class="form-group"><label>メモ</label><input id="mgr-adj-note" placeholder="例：6月分紹介料除外による差額"></div>
+          <div class="form-group"><label>摘要</label><input id="mgr-adj-note" placeholder="例：6月分紹介料除外による差額">
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">請求書の明細に「追加報酬　{摘要}」として記載されます</div>
+          </div>
+          <div class="form-group"><label>備考</label><input id="mgr-adj-memo" placeholder="社内用のメモ（任意）">
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">請求書には出ません</div>
+          </div>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button class="btn" id="mgr-adj-cancel-btn" style="display:none" onclick="resetMgrAdjForm()">キャンセル</button>
             <button class="btn btn-primary" onclick="saveMgrAdj()">登録</button>
@@ -2343,7 +2348,9 @@ async function loadFromDB() {
     }
     if (mgrAdjR.data?.length > 0) {
       state.managerRewardAdjustments = mgrAdjR.data.map(r => ({
-        id: r.id, targetY: r.target_y, targetM: r.target_m, amount: Number(r.amount), note: r.note || ''
+        id: r.id, targetY: r.target_y, targetM: r.target_m, amount: Number(r.amount),
+        note: r.note || '',   // 摘要（請求書に記載される）
+        memo: r.memo || ''    // 備考（請求書には出ない・社内用）
       }));
     }
     if (tripR.data?.length > 0) {
@@ -9568,6 +9575,7 @@ function renderManagerReward() {
     <div class="sim-row"><div class="sim-label">管理人報酬（×50%）</div><div style="font-family:var(--mono);color:var(--accent2);font-weight:700">${yen(r.mgrReward)}</div></div>
     <div class="sim-row"><div class="sim-label">立替経費精算</div><div style="font-family:var(--mono);color:var(--yellow)">${yen(r.replaceTotal)}</div></div>
     ${r.adjustmentTotal !== 0 ? `<div class="sim-row"><div class="sim-label">追加報酬</div><div style="font-family:var(--mono);color:var(--green)">${yen(r.adjustmentTotal)}</div></div>` : ''}
+    ${r.adjustments.filter(a => a.note).map(a => `<div class="sim-row"><div class="sim-label" style="color:var(--accent2);font-size:11px">　${escapeHtml(a.note)}</div><div style="font-family:var(--mono);color:var(--accent2);font-size:11px">${yen(a.amount)}</div></div>`).join('')}
     <div class="sim-row total"><div>支払合計</div><div style="font-family:var(--mono)">${yen(r.totalPayment)}</div></div>
   </div>
   ${r.replaceExps.length > 0 ? `
@@ -9620,8 +9628,10 @@ function renderManagerInvoice() {
   // 明細行：管理報酬
   const rows = [
     { label: `管理報酬（${y}年${m}月分　営業利益 ${yen(r.opProfit)} × 50%）`, amount: r.mgrReward, taxRate: 10 },
+    // 【v42】摘要（note）を明細に載せる。備考（memo）は社内用なので載せない。
+    //   labelは描画時に escapeHtml() を通しているため、自由記述をそのまま入れてよい。
     ...r.adjustments.map(a => ({
-      label: `追加報酬`,
+      label: a.note ? `追加報酬　${a.note}` : `追加報酬`,
       amount: a.amount,
       taxRate: 10
     })),
@@ -9899,6 +9909,7 @@ function resetMgrAdjForm() {
   document.getElementById('mgr-adj-target-m').value = state.m;
   document.getElementById('mgr-adj-amount').value = '';
   document.getElementById('mgr-adj-note').value = '';
+  document.getElementById('mgr-adj-memo').value = '';
   document.getElementById('mgr-adj-form-title').textContent = '追加報酬を登録';
   document.getElementById('mgr-adj-cancel-btn').style.display = 'none';
 }
@@ -9915,7 +9926,8 @@ function renderMgrAdjList() {
     <div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;margin-bottom:8px">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px"><span class="badge badge-purple">${a.targetY}年${a.targetM}月分</span>　<strong style="font-family:var(--mono);color:var(--accent)">${yen(a.amount)}</strong></div>
-        ${a.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📝 ${escapeHtml(a.note)}</div>` : ''}
+        ${a.note ? `<div style="font-size:11px;color:var(--yellow);margin-top:2px">📄 摘要：${escapeHtml(a.note)}<span style="color:var(--muted);margin-left:6px">（請求書に記載）</span></div>` : ''}
+        ${a.memo ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">📝 備考：${escapeHtml(a.memo)}</div>` : ''}
       </div>
       ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="editMgrAdj(${a.id})">編集</button>`}
       <button class="btn btn-danger btn-sm" onclick="deleteMgrAdj(${a.id})">削除</button>
@@ -9930,6 +9942,7 @@ function editMgrAdj(id) {
   document.getElementById('mgr-adj-target-m').value = a.targetM || '';
   document.getElementById('mgr-adj-amount').value = a.amount;
   document.getElementById('mgr-adj-note').value = a.note || '';
+  document.getElementById('mgr-adj-memo').value = a.memo || '';
   document.getElementById('mgr-adj-form-title').textContent = '追加報酬を編集';
   document.getElementById('mgr-adj-cancel-btn').style.display = '';
 }
@@ -9939,21 +9952,22 @@ async function saveMgrAdj() {
   const targetY = parseInt(document.getElementById('mgr-adj-target-y').value) || null;
   const targetM = parseInt(document.getElementById('mgr-adj-target-m').value) || null;
   const amount = parseInt(document.getElementById('mgr-adj-amount').value) || 0;
-  const note = document.getElementById('mgr-adj-note').value.trim();
+  const note = document.getElementById('mgr-adj-note').value.trim();   // 摘要（請求書に出る）
+  const memo = document.getElementById('mgr-adj-memo').value.trim();   // 備考（請求書に出ない）
 
   if (!targetY || !targetM) { alert('対象年・対象月を入力してください'); return; }
   if (!amount) { alert('金額を入力してください'); return; }
 
-  const record = { targetY, targetM, amount, note };
+  const record = { targetY, targetM, amount, note, memo };
 
   if (editId) {
     const id = parseInt(editId);
     const idx = state.managerRewardAdjustments.findIndex(a => a.id === id);
     if (idx !== -1) state.managerRewardAdjustments[idx] = { ...state.managerRewardAdjustments[idx], ...record };
-    await dbSave('manager_reward_adjustments', { id, target_y: targetY, target_m: targetM, amount, note });
+    await dbSave('manager_reward_adjustments', { id, target_y: targetY, target_m: targetM, amount, note, memo });
   } else {
     try {
-      const id = await insertWithFreshId('manager_reward_adjustments', id => ({ id, target_y: targetY, target_m: targetM, amount, note }));
+      const id = await insertWithFreshId('manager_reward_adjustments', id => ({ id, target_y: targetY, target_m: targetM, amount, note, memo }));
       state.managerRewardAdjustments.push({ id, ...record });
     } catch(e) {
       alert('保存に失敗しました（ID採番エラー）。もう一度お試しください: ' + e.message);
