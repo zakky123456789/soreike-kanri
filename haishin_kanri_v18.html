@@ -1884,6 +1884,9 @@
         <button class="btn btn-primary" style="margin-top:18px" onclick="printRefReport()">🖨️ 報告書を印刷</button>
         <button class="btn" id="btn-ref-invoice" style="margin-top:18px;background:var(--accent2);color:#fff;display:none" onclick="printRefInvoice()">🧾 請求書を印刷</button>
       </div>
+      <!-- 【v43】当月の全紹介者の内訳。printRefReport() は #refReport-print-area だけを印刷するため、
+           ここに置いた内容は先方に渡る書類には一切出ない（他社の金額が漏れない）。 -->
+      <div id="refReport-allsummary" style="margin-bottom:20px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div id="refReport-preview"></div>
         <div id="refInvoice-preview"></div>
@@ -2897,6 +2900,19 @@ function calcRefAllocation(sales) {
     r1All += rc.r1; r2All += rc.r2; totalAll += rc.total;
   });
   return { bySaleId, byCasterId, byReferrerId, r1: r1All, r2: r2All, total: totalAll };
+}
+
+// 【v43】紹介者ごとの内訳を返す。合計は calcRefAllocation().total と必ず一致する
+// （同じ byReferrerId を足し直しているだけなので、数式上ズレようがない）。
+// 管理人ページの「▲紹介料合計」と、紹介者報告書ページの全紹介者一覧の両方で使う。
+function refBreakdownOfMonth(sales) {
+  const alloc = calcRefAllocation(sales);
+  const rows = Object.keys(alloc.byReferrerId).map(id => {
+    const rid = Number(id);
+    const ref = getReferrer(rid);
+    return { id: rid, name: (ref && (ref.company || ref.name)) || `（削除済みの紹介者 id=${rid}）`, total: alloc.byReferrerId[id].total };
+  }).filter(r => r.total !== 0).sort((a, b) => b.total - a.total);
+  return { rows, total: alloc.total };
 }
 
 // 売上1件ぶんの按分後の紹介料を取る小道具（明細行の描画用）
@@ -9110,6 +9126,7 @@ function renderRefReportSelects() {
 
 function renderRefReport() {
   const { y, m } = state;
+  renderRefAllSummary();   // 【v43】全紹介者の内訳（画面のみ）
   const el = document.getElementById('refReport-preview');
   if (!el) return;
   const refId = parseInt(document.getElementById('refReport-sel')?.value);
@@ -9327,6 +9344,36 @@ function printRefInvoice() {
   win.onload = () => { win.print(); };
 }
 
+// 【v43】当月の紹介料を紹介者ごとに一覧する（画面のみ・印刷されない）。
+// 管理人ページの「▲紹介料合計」と同じ refBreakdownOfMonth() を使うので、必ず同じ数字になる。
+function renderRefAllSummary() {
+  const el = document.getElementById('refReport-allsummary');
+  if (!el) return;
+  const { y, m } = state;
+  const selId = parseInt(document.getElementById('refReport-sel')?.value);
+  const bd = refBreakdownOfMonth(salesOfMonth(y, m));
+  if (bd.rows.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-title">📋 ${y}年${m}月の紹介料（全紹介者）</div>
+        <div style="font-size:11px;color:var(--muted)">画面のみ・報告書には印刷されません</div>
+      </div>
+      <div style="padding:12px 16px">
+        ${bd.rows.map(b => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:6px;${b.id === selId ? 'background:rgba(79,156,249,0.12)' : ''}">
+            <div style="font-size:13px;${b.id === selId ? 'font-weight:700;color:var(--accent)' : ''}">${b.id === selId ? '▶ ' : '　'}${escapeHtml(b.name)}</div>
+            <div style="font-family:var(--mono);font-size:13px;color:#fb923c">${yen(b.total)}</div>
+          </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;margin-top:4px;border-top:1px solid var(--border);font-weight:700">
+          <div style="font-size:13px">合計</div>
+          <div style="font-family:var(--mono);font-size:13px;color:#fb923c">${yen(bd.total)}</div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px">※ 合計は管理人ページの「▲紹介料合計」と一致します</div>
+      </div>
+    </div>`;
+}
+
 function printRefReport() {
   const area = document.getElementById('refReport-print-area');
   if (!area) { alert('表示するデータがありません'); return; }
@@ -9530,7 +9577,8 @@ function calcManagerReward(y, m) {
   }, 0);
   // 紹介料：同日コイン合計→1回計算（紹介者報告書と同じ方式）
   // 【v37】実装を共通関数へ移譲（従来と同じ計算・同じ結果）
-  const totalRef = calcRefAllocation(sales).total;
+  const refBd = refBreakdownOfMonth(sales);              // 【v43】紹介者ごとの内訳
+  const totalRef = refBd.total;                           // 合計は従来と同じ（calcRefAllocation().total）
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
   const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
   const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
@@ -9545,7 +9593,7 @@ function calcManagerReward(y, m) {
   const adjustments = state.managerRewardAdjustments.filter(a => a.targetY === y && a.targetM === m);
   const adjustmentTotal = adjustments.reduce((s,a) => s + a.amount, 0);
 
-  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, adjustments, adjustmentTotal, totalPayment: mgrReward + replaceTotal + adjustmentTotal };
+  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, refBreakdown: refBd.rows, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, adjustments, adjustmentTotal, totalPayment: mgrReward + replaceTotal + adjustmentTotal };
 }
 
 function renderManagerReward() {
@@ -9566,6 +9614,7 @@ function renderManagerReward() {
     <div class="sim-row"><div class="sim-label">売上高${salesSubLabel}</div><div style="font-family:var(--mono);color:var(--accent)">${yen(r.totalSales)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 配信者報酬合計</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalReward)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 紹介料合計</div><div style="font-family:var(--mono);color:#fb923c">▲${yen(r.totalRef)}</div></div>
+    ${r.refBreakdown.length > 1 ? r.refBreakdown.map(b => `<div class="sim-row"><div class="sim-label" style="color:#fb923c;font-size:11px;padding-left:12px">${escapeHtml(b.name)}</div><div style="font-family:var(--mono);color:#fb923c;font-size:11px">▲${yen(b.total)}</div></div>`).join('') : ''}
     <div class="sim-row"><div class="sim-label">▲ 経費合計（管理人対象分）</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalExpForMgr)}</div></div>
     ${r.totalExp !== r.totalExpForMgr ? `<div class="sim-row"><div class="sim-label" style="color:var(--accent2)">　うち除外分</div><div style="font-family:var(--mono);color:var(--accent2)">▲${yen(r.totalExp - r.totalExpForMgr)}</div></div>` : ''}
     <div class="sim-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px">
