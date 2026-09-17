@@ -3304,7 +3304,7 @@ async function writeAuditLog(action, recordId, before, after, tableName = 'expen
 }
 
 function expToLogObj(e) {
-  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null, taxAmount: e.taxAmount ?? null };
+  return { id: e.id, date: e.date, name: e.name, payee: e.payee, cat: e.cat, amount: e.amount, tax: e.tax, method: e.method, invoiceNo: e.invoiceNo, participants: e.participants, purpose: e.purpose, note: e.note, entryType: e.entryType || 'normal', prepaidId: e.prepaidId || null, taxAmount: e.taxAmount ?? null, settled: !!e.settled };
 }
 
 // ===== 定期経費の自動登録（v32） =====
@@ -3427,7 +3427,7 @@ const AUDIT_FIELD_LABEL = {
   excludeRef: '紹介料除外', excludeReport: 'レポート除外', casterName: '配信者', refName: '紹介者',
   r1pct: '①率', r2a: '②A', r2b: '②B', r2pct: '②率', type: '種別', note: 'メモ',
   payDate: '支払日', targetY: '対象年', targetM: '対象月', name: '名前', retired: '退所', onHold: '休止',
-  taxAmount: '消費税額（領収書記載）',
+  taxAmount: '消費税額（領収書記載）', settled: '立替精算の状況',
 };
 
 async function openAuditModal(presetTable) {
@@ -7318,16 +7318,30 @@ async function saveExpEdit() {
     const entryType = state.expenses[idx].entryType || 'normal';
     const prepaidId = state.expenses[idx].prepaidId || null;
     state.expenses[idx] = { ...state.expenses[idx], date, name, payee, cat: finalCat, amount, tax, method, invoiceNo, participants, purpose, y, m, excludeManager, note, entryType, prepaidId };
-    await dbSaveAsync('expenses', { id, date, name, payee, cat: finalCat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId, tax_amount: taxAmount });
+    await dbSaveAsync('expenses', { id, date, name, payee, cat: finalCat, amount, tax, method, invoice_no: invoiceNo, participants, purpose, y, m, exclude_manager: excludeManager, note, entry_type: entryType, prepaid_id: prepaidId, tax_amount: taxAmount, settled: !!state.expenses[idx].settled });
     await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   }
   closeExpEditModal();
   renderAll();
 }
 
-function settleExpense(id) {
+// 【v44】立替精算サマリーの「精算済にする」をDBに保存する。
+// これまでは state だけを書き換えて renderAll() していたため、
+// 画面上は精算済になるのにリロードすると未精算に戻っていた（saveDpEdit の事故と同型）。
+// expenses.settled 列はこのバージョンで新設する（v44_migration.sql を先に実行すること）。
+// 保存に失敗した場合は画面も変えない＝「見た目だけ精算済」を作らない。
+async function settleExpense(id, value = true) {
+  if (isViewerRole()) return;
   const idx = state.expenses.findIndex(e => e.id === id);
-  if (idx !== -1) state.expenses[idx].settled = true;
+  if (idx === -1) return;
+  const next = !!value;
+  if (!!state.expenses[idx].settled === next) return;
+  if (!next && !confirm('この経費の「精算済」を取り消して、未精算に戻しますか？')) return;
+  const before = expToLogObj(state.expenses[idx]);
+  const ok = checkDbWrite(await sb.from('expenses').update({ settled: next }).eq('id', id), '更新', 'expenses');
+  if (!ok) return;
+  state.expenses[idx].settled = next;
+  await writeAuditLog('edit', id, before, expToLogObj(state.expenses[idx]));
   renderAll();
 }
 
@@ -7667,8 +7681,8 @@ function renderExpenses() {
               <td style="padding:6px 10px;text-align:right;font-family:var(--mono);color:${color};font-weight:600">${yen(e.amount)}</td>
               <td style="padding:6px 10px">
                 ${e.settled
-                  ? '<span class="badge badge-green">✅ 精算済</span>'
-                  : `<button class="btn btn-sm" style="background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);font-size:11px" onclick="settleExpense(${e.id})">精算済にする</button>`}
+                  ? `<span class="badge badge-green">✅ 精算済</span>${isViewerRole() ? '' : ` <button class="btn btn-sm" style="background:var(--surface2);color:var(--muted);border:1px solid var(--border);font-size:11px;margin-left:6px" onclick="settleExpense(${e.id}, false)">取消</button>`}`
+                  : `<span class="badge badge-red">未精算</span>${isViewerRole() ? '' : ` <button class="btn btn-sm" style="background:rgba(52,211,153,0.15);color:var(--green);border:1px solid rgba(52,211,153,0.3);font-size:11px;margin-left:6px" onclick="settleExpense(${e.id}, true)">精算済にする</button>`}`}
               </td>
             </tr>`).join('')}
             <tr style="border-top:2px solid var(--border);background:var(--surface2)">
