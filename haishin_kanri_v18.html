@@ -9767,8 +9767,48 @@ function refLinePeriodLabel(y, m, key) {
   return `${y}年${m}月${a}日〜${Math.min(b, last)}日分`;
 }
 
+// 【v45】10日ごとの報告：日付ごとに配信者と獲得コイン（紹介者向けコイン）だけを並べる。金額は出さない。
+// 同じ日に同じ配信者が複数回配信していれば合算して1行。「配信なし扱い」の売上は出さない（月間の報告書と同じ基準）。
+function buildRefLinePeriodText(refId, y, m, key) {
+  const [from, to] = REF_LINE_PERIODS[key];
+  const last = new Date(y, m, 0).getDate();
+  const toDay = Math.min(to, last);
+  const casters = state.casters.filter(c => c.refId === refId);
+  const order = new Map(casters.map((c, i) => [c.id, i]));
+  const sales = salesOfMonth(y, m).filter(s => {
+    if (!order.has(s.casterId) || s.refCoins === 0) return false;
+    const d = parseInt(String(s.date).slice(8, 10), 10);
+    return d >= from && d <= to;
+  });
+  const byDay = {};
+  sales.forEach(s => {
+    const day = parseInt(String(s.date).slice(8, 10), 10);
+    byDay[day] = byDay[day] || {};
+    byDay[day][s.casterId] = (byDay[day][s.casterId] || 0) + refCoinsOf(s);
+  });
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+  const range = `${m}/${from}〜${m}/${toDay}`;
+  const lines = ['お疲れさまです。'];
+  const days = Object.keys(byDay).map(Number).sort((a, b) => a - b);
+  if (days.length === 0) {
+    lines.push(`${range}の期間は、配信がありませんでした。`, '', '引き続きよろしくお願いいたします。');
+    return lines.join('\n');
+  }
+  lines.push(`${range}までの獲得コインを報告させていただきます。`);
+  days.forEach(day => {
+    const wd = WD[new Date(y, m - 1, day).getDay()];
+    lines.push('', `▼ ${m}/${day}（${wd}）`);
+    Object.keys(byDay[day]).map(Number).sort((a, b) => order.get(a) - order.get(b)).forEach(cid => {
+      lines.push(`${getCaster(cid)?.name || '?'}　${fmt(byDay[day][cid])}コイン`);
+    });
+  });
+  lines.push('', '以上となります。', '引き続きよろしくお願いいたします。');
+  return lines.join('\n');
+}
+
 function buildRefLineText(refId, y, m, key) {
-  const [from, to] = REF_LINE_PERIODS[key] || REF_LINE_PERIODS.month;
+  if (key !== 'month' && REF_LINE_PERIODS[key]) return buildRefLinePeriodText(refId, y, m, key);
+  const [from, to] = REF_LINE_PERIODS.month;
   const calc = calcReferrerPeriodTotal(refId, y, m, from, to);
   const ref = calc.ref;
   if (!ref) return '';
