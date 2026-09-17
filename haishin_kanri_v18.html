@@ -726,14 +726,18 @@
         <div style="font-size:12px;color:var(--muted);margin-bottom:16px">配信者の報酬・売上・源泉税は変わりません。紹介料と紹介者報告書だけに効きます。</div>
         <input type="hidden" id="ra-id">
         <div id="ra-info" style="font-size:13px;line-height:1.8;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:16px"></div>
-        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;margin-bottom:14px">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="ra-mode" value="normal" onchange="refAdjModeChanged()">通常（実際のコインで伝える）</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="ra-mode" value="hide" onchange="refAdjModeChanged()">配信なし扱い（紹介者には、この配信は無かったものとして伝える）</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap"><input type="radio" name="ra-mode" value="coins" onchange="refAdjModeChanged()">コイン数を指定：
-            <input id="ra-coins" type="number" min="0" step="1" placeholder="例：3000" style="width:120px" oninput="refAdjPreview()">コイン</label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap"><input type="radio" name="ra-mode" value="pct" onchange="refAdjModeChanged()">割合で減らす：
-            <input id="ra-pct" type="number" min="1" max="100" step="1" placeholder="例：30" style="width:80px" oninput="refAdjPreview()">％引き
-            <span id="ra-pct-result" style="font-size:12px;color:var(--muted)"></span></label>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;margin-bottom:14px">
+          <label style="display:grid;grid-template-columns:16px 1fr;column-gap:10px;align-items:center;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><input type="radio" name="ra-mode" onchange="refAdjModeChanged()" style="width:16px;height:16px;margin:0;padding:0;flex-shrink:0;accent-color:var(--accent);cursor:pointer" value="normal">
+            <span>通常<span style="color:var(--muted);font-size:12px">（実際のコインで伝える）</span></span></label>
+          <label style="display:grid;grid-template-columns:16px 1fr;column-gap:10px;align-items:center;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><input type="radio" name="ra-mode" onchange="refAdjModeChanged()" style="width:16px;height:16px;margin:0;padding:0;flex-shrink:0;accent-color:var(--accent);cursor:pointer" value="hide">
+            <span>配信なし扱い<span style="color:var(--muted);font-size:12px">（この配信は無かったものとして伝える）</span></span></label>
+          <label style="display:grid;grid-template-columns:16px 1fr;column-gap:10px;align-items:center;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><input type="radio" name="ra-mode" onchange="refAdjModeChanged()" style="width:16px;height:16px;margin:0;padding:0;flex-shrink:0;accent-color:var(--accent);cursor:pointer" value="coins">
+            <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="min-width:96px">コイン数を指定</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><input id="ra-coins" type="number" min="0" step="1" placeholder="例：3000" style="width:110px;flex-shrink:0;padding:6px 10px;text-align:right" oninput="refAdjPreview()"><span>コイン</span></span></span></label>
+          <label style="display:grid;grid-template-columns:16px 1fr;column-gap:10px;align-items:center;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:8px"><input type="radio" name="ra-mode" onchange="refAdjModeChanged()" style="width:16px;height:16px;margin:0;padding:0;flex-shrink:0;accent-color:var(--accent);cursor:pointer" value="pct">
+            <span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="min-width:96px">割合で減らす</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><input id="ra-pct" type="number" min="1" max="100" step="1" placeholder="例：30" style="width:110px;flex-shrink:0;padding:6px 10px;text-align:right" oninput="refAdjPreview()"><span>％引き</span></span>
+              <span id="ra-pct-result" style="font-size:12px;color:var(--muted)"></span></span></label>
         </div>
         <div id="ra-preview" style="font-size:12px;color:var(--muted);margin-bottom:18px;min-height:18px"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
