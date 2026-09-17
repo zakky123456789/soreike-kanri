@@ -1915,6 +1915,8 @@
       <!-- 【v43】当月の全紹介者の内訳。printRefReport() は #refReport-print-area だけを印刷するため、
            ここに置いた内容は先方に渡る書類には一切出ない（他社の金額が漏れない）。 -->
       <div id="refReport-allsummary" style="margin-bottom:20px"></div>
+      <!-- 【v45】🎯紹介者向け調整の詳細。これも印刷領域の外（紹介者に絶対に渡してはいけない情報）。 -->
+      <div id="refReport-adjsummary" style="margin-bottom:20px"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div id="refReport-preview"></div>
         <div id="refInvoice-preview"></div>
@@ -6372,14 +6374,18 @@ function refAdjPreview() {
   if (!r.ok) { el.innerHTML = `<span style="color:var(--red)">${escapeHtml(r.msg)}</span>`; return; }
   const next = {}; list.forEach((x, i) => { next[x.id] = r.values[i]; });
   const day = state.sales.filter(x => x.casterId === s.casterId && x.date === s.date);
-  const before = calcRefAllocation(day).total;
+  // 【v45】比較の基準は「この日に紹介者向けの調整を一切しない本来の紹介料」。
+  // 保存済みの値と比べると、保存後に開き直したとき「変化なし」になって本来からの減額が見えなくなるため。
+  const original = calcRefAllocation(day.map(x => ({ ...x, refCoins: null }))).total;
+  const saved = calcRefAllocation(day).total;
   const after = calcRefAllocation(day.map(x => (x.id in next) ? { ...x, refCoins: next[x.id] } : x)).total;
-  const diff = after - before;
+  const diffTxt = (d) => d === 0 ? '±0円' : `<span style="color:${d < 0 ? 'var(--green)' : 'var(--red)'}">${d > 0 ? '+' : ''}${fmt(d)}円</span>`;
   const split = (list.length > 1 && r.target != null)
     ? `<br>割り振り：${list.map((x, i) => `${i + 1}回目 ${fmt(r.values[i] == null ? x.coins : r.values[i])}`).join(' ／ ')}`
     : '';
-  el.innerHTML = `この日（${escapeHtml(s.date)}）の紹介料：${yen(before)} → <strong>${yen(after)}</strong>` +
-    (diff !== 0 ? `（<span style="color:${diff < 0 ? 'var(--green)' : 'var(--red)'}">${diff > 0 ? '+' : ''}${fmt(diff)}円</span>）` : '（変化なし）') + split;
+  el.innerHTML = `この日（${escapeHtml(s.date)}）の紹介料：本来 ${yen(original)} → <strong>${yen(after)}</strong>（本来から ${diffTxt(after - original)}）` +
+    (saved !== original && saved !== after ? `<br>※保存済みの紹介料 ${yen(saved)} からは ${diffTxt(after - saved)}` : '') +
+    split;
 }
 
 async function saveRefAdj() {
@@ -6917,6 +6923,14 @@ function renderSales() {
   // 表示・ソート・グループ合計・明細行のすべてがこの1つの割り当てを参照するので、
   // 行を足した額とグループ合計と紹介者報告書が必ず一致する。
   const salesRefAlloc = calcRefAllocation(sales);
+  // 【v45】🎯調整による紹介料の増減を一覧に出すため、「紹介者向け調整を一切しない本来の紹介料」も計算しておく。
+  // 按分の合計は必ず日次の紹介料に一致するので、明細行の差を足すと合計行の差に一致する。
+  const salesRefAllocOrig = calcRefAllocation(sales.map(x => ({ ...x, refCoins: null })));
+  const refAdjDiffLine = (list) => {
+    if (list.every(x => x.refCoins == null)) return '';
+    const d = list.reduce((a, x) => a + refOfSale(salesRefAlloc, x.id).total - refOfSale(salesRefAllocOrig, x.id).total, 0);
+    return `<div style="font-size:10px;font-weight:700;color:#a78bfa;white-space:nowrap;margin-top:2px" title="🎯紹介者向け調整による紹介料の増減（本来の紹介料との差）">🎯 ${d > 0 ? '+' : ''}${fmt(d)}円</div>`;
+  };
 
   // ソート
   // 各行の計算値キャッシュ（ソート用）
@@ -7022,7 +7036,7 @@ function renderSales() {
       <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
       <td class="num" style="color:var(--muted);${fw}">${sumR1!==0?yen(sumR1):'-'}</td>
       <td class="num" style="color:var(--muted);${fw}">${sumR2!==0?yen(sumR2):'-'}</td>
-      <td class="num" style="color:#fb923c;${fw}">${sumRcTotal!==0?yen(sumRcTotal):'-'}</td>
+      <td class="num" style="color:#fb923c;${fw}">${sumRcTotal!==0?yen(sumRcTotal):'-'}${refAdjDiffLine(g.sales)}</td>
       <td class="num" style="color:var(--muted);font-size:11px">${(() => { const rates = [...new Set(g.sales.map(s=>s.rate).filter(Boolean))]; return rates.length>0 ? rates.join(', ') : '-'; })()}</td>
       <td class="num" style="color:var(--muted)">${hasRate?'$'+sumUsd.toFixed(2):'-'}</td>
       <td class="num" style="color:var(--accent);${fw}">${hasRate?yen(sumJpy):'-'}</td>
@@ -7065,7 +7079,7 @@ function renderSales() {
           <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${r1!==0?yen(r1):'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${r2!==0?yen(r2):'-'}</td>
-          <td class="num" style="color:#fb923c;font-weight:700">${rcTotal!==0?yen(rcTotal):'-'}</td>
+          <td class="num" style="color:#fb923c;font-weight:700">${rcTotal!==0?yen(rcTotal):'-'}${refAdjDiffLine([s])}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${s.rate?s.rate:'-'}</td>
           <td class="num" style="color:var(--muted);font-size:12px">${office?'$'+(Math.floor(s.coins*0.05*100)/100).toFixed(2):'-'}</td>
           <td class="num" style="color:var(--accent)">${office?yen(office.jpy):'-'}</td>
@@ -9385,6 +9399,7 @@ function renderRefReportSelects() {
 function renderRefReport() {
   const { y, m } = state;
   renderRefAllSummary();   // 【v43】全紹介者の内訳（画面のみ）
+  renderRefAdjSummary();   // 【v45】🎯紹介者向け調整の詳細（画面のみ・折りたたみ）
   const el = document.getElementById('refReport-preview');
   if (!el) return;
   const refId = parseInt(document.getElementById('refReport-sel')?.value);
@@ -9632,6 +9647,90 @@ function renderRefAllSummary() {
     </div>`;
 }
 
+// ===== 【v45】🎯紹介者向け調整の月次集計 =====
+// 紹介料は「配信者×日」で1回計算するので、調整の単位も配信者×日で集計する。
+// 各日の差額を足した月合計は、calcRefAllocation(実際).total − calcRefAllocation(調整なし).total に必ず一致する
+// （calcRefAllocation は配信者×日ごとの独立した計算の足し算なので）。
+function refAdjustmentsOfMonth(sales) {
+  const groups = {};
+  sales.forEach(s => { const k = s.casterId + '|' + s.date; (groups[k] = groups[k] || []).push(s); });
+  const rows = [];
+  Object.values(groups).forEach(g => {
+    if (g.every(x => x.refCoins == null)) return;
+    const c = getCaster(g[0].casterId);
+    const ref = c?.refId ? getReferrer(c.refId) : null;
+    const orig = calcRefAllocation(g.map(x => ({ ...x, refCoins: null }))).total;
+    const adj = calcRefAllocation(g).total;
+    rows.push({
+      date: g[0].date, casterId: g[0].casterId, casterName: c?.name || '?',
+      refId: ref ? ref.id : null, refName: ref ? (ref.company || ref.name) : '（紹介者なし）',
+      count: g.length, realCoins: g.reduce((a, x) => a + x.coins, 0), shownCoins: g.reduce((a, x) => a + refCoinsOf(x), 0),
+      hidden: g.every(x => x.refCoins === 0), orig, adj, diff: adj - orig,
+    });
+  });
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.casterName.localeCompare(b.casterName, 'ja'));
+  const byRef = {};
+  rows.forEach(r => {
+    const k = r.refId ?? 0;
+    if (!byRef[k]) byRef[k] = { id: r.refId, name: r.refName, count: 0, orig: 0, adj: 0, diff: 0 };
+    byRef[k].count++; byRef[k].orig += r.orig; byRef[k].adj += r.adj; byRef[k].diff += r.diff;
+  });
+  const refRows = Object.values(byRef).sort((a, b) => a.diff - b.diff);
+  const sum = key => rows.reduce((a, r) => a + r[key], 0);
+  return { rows, refRows, count: rows.length, orig: sum('orig'), adj: sum('adj'), diff: sum('diff') };
+}
+
+// 紹介者報告書ページの詳細パネル（画面のみ・#refReport-print-area の外。初期状態は折りたたみ）
+let refAdjSummaryOpen = false;
+function renderRefAdjSummary() {
+  const el = document.getElementById('refReport-adjsummary');
+  if (!el) return;
+  const { y, m } = state;
+  const selId = parseInt(document.getElementById('refReport-sel')?.value);
+  const a = refAdjustmentsOfMonth(salesOfMonth(y, m));
+  if (a.count === 0) { el.innerHTML = ''; return; }
+  const sd = d => `<span style="color:${d < 0 ? 'var(--green)' : d > 0 ? 'var(--red)' : 'var(--muted)'}">${d > 0 ? '+' : ''}${fmt(d)}円</span>`;
+  const th = 'padding:6px 10px;font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap;border-bottom:1px solid var(--border)';
+  const td = 'padding:6px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--border)';
+  el.innerHTML = `
+    <details class="table-wrap" ${refAdjSummaryOpen ? 'open' : ''} ontoggle="refAdjSummaryOpen=this.open">
+      <summary class="table-header" style="cursor:pointer;list-style:none">
+        <div class="table-title">🎯 ${y}年${m}月の紹介者向け調整（${a.count}件・紹介料 ${sd(a.diff)}）</div>
+        <div style="font-size:11px;color:var(--muted)">画面のみ・報告書には印刷されません（クリックで開閉）</div>
+      </summary>
+      <div style="padding:12px 16px">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">
+          <div>本来の紹介料：<span style="font-family:var(--mono)">${yen(a.orig)}</span></div>
+          <div>調整後：<span style="font-family:var(--mono);color:#fb923c;font-weight:700">${yen(a.adj)}</span></div>
+          <div>差額：<span style="font-family:var(--mono);font-weight:700">${sd(a.diff)}</span></div>
+        </div>
+        ${a.refRows.map(r => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:6px;${r.id === selId ? 'background:rgba(79,156,249,0.12)' : ''}">
+            <div style="font-size:13px;${r.id === selId ? 'font-weight:700;color:var(--accent)' : ''}">${r.id === selId ? '▶ ' : '　'}${escapeHtml(r.name)}<span style="font-size:11px;color:var(--muted);margin-left:6px">${r.count}件</span></div>
+            <div style="font-family:var(--mono);font-size:12px">${yen(r.orig)} → <span style="color:#fb923c">${yen(r.adj)}</span>（${sd(r.diff)}）</div>
+          </div>`).join('')}
+        <div style="overflow-x:auto;margin-top:10px">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="${th};text-align:left">日付</th><th style="${th};text-align:left">配信者</th><th style="${th};text-align:left">紹介者</th>
+              <th style="${th};text-align:right">実際のコイン → 紹介者向け</th><th style="${th};text-align:right">本来の紹介料 → 調整後</th><th style="${th};text-align:right">差額</th>
+            </tr></thead>
+            <tbody>
+              ${a.rows.map(r => `<tr style="${r.refId === selId ? 'background:rgba(79,156,249,0.08)' : ''}">
+                <td style="${td};color:var(--muted)">${escapeHtml(r.date)}</td>
+                <td style="${td}">${escapeHtml(r.casterName)}${r.count > 1 ? `<span style="font-size:10px;color:var(--muted);margin-left:4px">${r.count}回</span>` : ''}</td>
+                <td style="${td};color:var(--muted)">${escapeHtml(r.refName)}</td>
+                <td style="${td};text-align:right;font-family:var(--mono)">${fmt(r.realCoins)} → ${r.hidden ? '<span style="color:#a78bfa">配信なし扱い</span>' : `<span style="color:#a78bfa">${fmt(r.shownCoins)}</span>`}</td>
+                <td style="${td};text-align:right;font-family:var(--mono)">${yen(r.orig)} → <span style="color:#fb923c">${yen(r.adj)}</span></td>
+                <td style="${td};text-align:right;font-family:var(--mono);font-weight:700">${sd(r.diff)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>`;
+}
+
 function printRefReport() {
   const area = document.getElementById('refReport-print-area');
   if (!area) { alert('表示するデータがありません'); return; }
@@ -9837,6 +9936,8 @@ function calcManagerReward(y, m) {
   // 【v37】実装を共通関数へ移譲（従来と同じ計算・同じ結果）
   const refBd = refBreakdownOfMonth(sales);              // 【v43】紹介者ごとの内訳
   const totalRef = refBd.total;                           // 合計は従来と同じ（calcRefAllocation().total）
+  // 【v45】🎯紹介者向け調整の前の紹介料と、その差（表示用。計算に使うのは totalRef だけ）
+  const refAdj = refAdjustmentsOfMonth(sales);
   const totalExp = exps.reduce((s,e) => s + e.amount, 0);
   const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
   const opProfit = totalSales - totalReward - totalRef - totalExpForMgr;
@@ -9851,7 +9952,7 @@ function calcManagerReward(y, m) {
   const adjustments = state.managerRewardAdjustments.filter(a => a.targetY === y && a.targetM === m);
   const adjustmentTotal = adjustments.reduce((s,a) => s + a.amount, 0);
 
-  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, refBreakdown: refBd.rows, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, adjustments, adjustmentTotal, totalPayment: mgrReward + replaceTotal + adjustmentTotal };
+  return { totalSales, totalSalesEstimate, totalSalesConfirmed, totalReward, totalRef, refBreakdown: refBd.rows, refAdjCount: refAdj.count, refAdjDiff: refAdj.diff, refOriginal: totalRef - refAdj.diff, totalExp, totalExpForMgr, opProfit, mgrReward, replaceTotal, replaceExps, adjustments, adjustmentTotal, totalPayment: mgrReward + replaceTotal + adjustmentTotal };
 }
 
 function renderManagerReward() {
@@ -9873,6 +9974,8 @@ function renderManagerReward() {
     <div class="sim-row"><div class="sim-label">▲ 配信者報酬合計</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalReward)}</div></div>
     <div class="sim-row"><div class="sim-label">▲ 紹介料合計</div><div style="font-family:var(--mono);color:#fb923c">▲${yen(r.totalRef)}</div></div>
     ${r.refBreakdown.length > 1 ? r.refBreakdown.map(b => `<div class="sim-row"><div class="sim-label" style="color:#fb923c;font-size:11px;padding-left:12px">${escapeHtml(b.name)}</div><div style="font-family:var(--mono);color:#fb923c;font-size:11px">▲${yen(b.total)}</div></div>`).join('') : ''}
+    ${r.refAdjCount > 0 ? `<div class="sim-row"><div class="sim-label" style="color:#a78bfa;font-size:11px;padding-left:12px">本来の紹介料（🎯調整前）</div><div style="font-family:var(--mono);color:#a78bfa;font-size:11px">${yen(r.refOriginal)}</div></div>
+    <div class="sim-row"><div class="sim-label" style="color:#a78bfa;font-size:11px;padding-left:12px">うち🎯調整による${r.refAdjDiff <= 0 ? '減額' : '増額'}（${r.refAdjCount}件・明細は紹介者報告書ページ）</div><div style="font-family:var(--mono);color:#a78bfa;font-size:11px">${r.refAdjDiff > 0 ? '+' : ''}${fmt(r.refAdjDiff)}円</div></div>` : ''}
     <div class="sim-row"><div class="sim-label">▲ 経費合計（管理人対象分）</div><div style="font-family:var(--mono);color:var(--red)">▲${yen(r.totalExpForMgr)}</div></div>
     ${r.totalExp !== r.totalExpForMgr ? `<div class="sim-row"><div class="sim-label" style="color:var(--accent2)">　うち除外分</div><div style="font-family:var(--mono);color:var(--accent2)">▲${yen(r.totalExp - r.totalExpForMgr)}</div></div>` : ''}
     <div class="sim-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px">
