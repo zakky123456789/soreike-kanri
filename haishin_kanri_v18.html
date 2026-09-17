@@ -731,6 +731,9 @@
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="ra-mode" value="hide" onchange="refAdjModeChanged()">配信なし扱い（紹介者には、この配信は無かったものとして伝える）</label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap"><input type="radio" name="ra-mode" value="coins" onchange="refAdjModeChanged()">コイン数を指定：
             <input id="ra-coins" type="number" min="0" step="1" placeholder="例：3000" style="width:120px" oninput="refAdjPreview()">コイン</label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-wrap:wrap"><input type="radio" name="ra-mode" value="pct" onchange="refAdjModeChanged()">割合で減らす：
+            <input id="ra-pct" type="number" min="1" max="100" step="1" placeholder="例：30" style="width:80px" oninput="refAdjPreview()">％引き
+            <span id="ra-pct-result" style="font-size:12px;color:var(--muted)"></span></label>
         </div>
         <div id="ra-preview" style="font-size:12px;color:var(--muted);margin-bottom:18px;min-height:18px"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end">
@@ -2919,6 +2922,9 @@ function calcRefAllocation(sales) {
     g.filter(s => s.excludeRef).forEach(s => { bySaleId[s.id] = { r1: 0, r2: 0, total: 0 }; });
     const live = g.filter(s => !s.excludeRef);
     if (live.length === 0) return;
+    // 【v45】その日の売上がすべて「配信なし扱い」なら、🤝除外と同じく集計エントリ自体を作らない
+    //（0円の配信者行が内訳に紛れ込まないように。旧🤝→配信なし扱いへの変換で構造まで一致させる）
+    if (live.every(s => s.refCoins === 0)) { live.forEach(s => { bySaleId[s.id] = { r1: 0, r2: 0, total: 0 }; }); return; }
     const dayCoins = live.reduce((s, x) => s + refCoinsOf(x), 0);   // 【v45】紹介者向けコインで日次合計
     const rc = calcRefTotal(dayCoins, calcReward(coinToYen(dayCoins), c.rate), ref);
     const w = live.map(s => refCoinsOf(s));
@@ -5992,10 +5998,10 @@ function sgeRenderRow(container, s, num) {
         <input type="checkbox" class="sge-exclude-report" ${s.excludeReport?'checked':''} style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
         <span>レポート除外（平均値の計算から除外）</span>
       </label>
-      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
-        <input type="checkbox" class="sge-exclude-ref" ${s.excludeRef?'checked':''} style="width:14px;height:14px;accent-color:#fb923c;cursor:pointer">
-        <span>紹介料除外（紹介料の計算対象から除外）</span>
-      </label>
+      ${s.excludeRef ? `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
+        <input type="checkbox" class="sge-exclude-ref" checked style="width:14px;height:14px;accent-color:#fb923c;cursor:pointer">
+        <span>紹介料除外（旧機能・チェックを外すと解除。新しく除外する場合は🎯の「配信なし扱い」を使う）</span>
+      </label>` : ''}
     </div>`;
   container.appendChild(div);
 }
@@ -6040,10 +6046,6 @@ function sgeAddRow() {
       <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
         <input type="checkbox" class="sge-exclude-report" style="width:14px;height:14px;accent-color:var(--yellow);cursor:pointer">
         <span>レポート除外（平均値の計算から除外）</span>
-      </label>
-      <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--muted);user-select:none">
-        <input type="checkbox" class="sge-exclude-ref" style="width:14px;height:14px;accent-color:#fb923c;cursor:pointer">
-        <span>紹介料除外（紹介料の計算対象から除外）</span>
       </label>
     </div>`;
   container.appendChild(div);
@@ -6225,8 +6227,11 @@ async function toggleExcludeRef(id) {
   if (idx === -1) return;
   if (isViewerRole()) return;
   const s = state.sales[idx];
+  // 【v45】🤝は廃止。新たに除外はできず、既存の除外を解除することだけできる（新規は🎯「配信なし扱い」）
+  if (!s.excludeRef) return;
+  if (!confirm('この売上の「紹介料除外（旧機能）」を解除しますか？\n解除すると紹介料の計算対象に戻ります。\n紹介者に伝えないなら、🎯の「配信なし扱い」を設定してください。')) return;
   const beforeToggle = saleToLogObj(s);
-  const next = !s.excludeRef;
+  const next = false;
   // 【v45】保存に失敗したら画面も変えない（従来は先にstateを書き換え、失敗しても除外中に見えていた）
   const ok = checkDbWrite(await sb.from('sales').update({ exclude_ref: next }).eq('id', s.id), '更新', 'sales');
   if (!ok) return;
@@ -6238,7 +6243,7 @@ async function toggleExcludeRef(id) {
 // ===== 【v45】紹介者向けコインの調整 =====
 // 実際のコインを変えたときに、既に設定した紹介者向けコインと矛盾しないかを見る。問題なければ ''。
 function refCoinsConflict(sale, newCoins) {
-  if (sale.refCoins == null) return '';
+  if (sale.refCoins == null || sale.refCoins === 0) return '';   // 配信なし扱いは実コインが何でも矛盾しない
   if (newCoins <= 0) return `この売上には紹介者向けの調整（${sale.refCoins === 0 ? '配信なし扱い' : fmt(sale.refCoins) + 'コイン'}）が設定されています。コイン数を0以下にする場合は、先に🎯から調整を「通常」に戻してください。`;
   if (sale.refCoins > newCoins) return `紹介者向けコイン（${fmt(sale.refCoins)}）が、実際のコイン数（${fmt(newCoins)}）を上回ってしまいます。先に🎯から紹介者向けコインを変更してください。`;
   return '';
@@ -6277,6 +6282,7 @@ function openRefAdjModal(id) {
   const mode = s.refCoins == null ? 'normal' : (s.refCoins === 0 ? 'hide' : 'coins');
   document.querySelectorAll('input[name="ra-mode"]').forEach(r => { r.checked = (r.value === mode); });
   document.getElementById('ra-coins').value = mode === 'coins' ? s.refCoins : '';
+  document.getElementById('ra-pct').value = '';   // 【v45】割合は保存しない（保存するのは計算後のコイン数）
   refAdjModeChanged();
   document.getElementById('ref-adj-modal').style.display = 'flex';
 }
@@ -6285,9 +6291,11 @@ function closeRefAdjModal() {
 }
 function refAdjModeChanged() {
   const mode = document.querySelector('input[name="ra-mode"]:checked')?.value || 'normal';
-  const inp = document.getElementById('ra-coins');
-  inp.disabled = mode !== 'coins';
-  inp.style.opacity = mode === 'coins' ? '1' : '0.4';
+  [['ra-coins', 'coins'], ['ra-pct', 'pct']].forEach(([elId, m]) => {
+    const inp = document.getElementById(elId);
+    inp.disabled = mode !== m;
+    inp.style.opacity = mode === m ? '1' : '0.4';
+  });
   refAdjPreview();
 }
 
@@ -6295,8 +6303,16 @@ function refAdjModeChanged() {
 function readRefAdjInput(sale) {
   const mode = document.querySelector('input[name="ra-mode"]:checked')?.value || 'normal';
   if (mode === 'normal') return { ok: true, value: null };
-  if (sale.coins <= 0) return { ok: false, msg: 'コイン数が0以下（調整レコード等）の売上は、紹介者向けの調整ができません。' };
   if (mode === 'hide') return { ok: true, value: 0 };
+  if (sale.coins <= 0) return { ok: false, msg: 'コイン数が0以下（調整レコード等）の売上は「コイン数を指定」「割合で減らす」ができません。「配信なし扱い」は設定できます。' };
+  if (mode === 'pct') {
+    // 【v45】30 と入れたら 30％引き。整数演算で1コイン未満は切り捨て（紹介者に伝えるコインが小さくなる側）。
+    // DBには割合ではなく計算後のコイン数を保存する（後で実コインを直しても割合は追従しない）。
+    const rawP = document.getElementById('ra-pct').value.trim();
+    if (!/^\d+$/.test(rawP) || Number(rawP) < 1 || Number(rawP) > 100) return { ok: false, msg: '割合は1〜100の整数で入力してください（30なら30％引き）。' };
+    const v = Math.floor(sale.coins * (100 - Number(rawP)) / 100);
+    return { ok: true, value: v, pctResult: v };
+  }
   const raw = document.getElementById('ra-coins').value.trim();
   if (!/^\d+$/.test(raw)) return { ok: false, msg: '紹介者向けコインは0以上の整数で入力してください。' };
   const v = Number(raw);
@@ -6311,6 +6327,8 @@ function refAdjPreview() {
   const s = state.sales.find(x => x.id === parseInt(document.getElementById('ra-id').value));
   if (!el || !s) return;
   const r = readRefAdjInput(s);
+  const pr = document.getElementById('ra-pct-result');
+  if (pr) pr.textContent = (r.ok && r.pctResult != null) ? `→ ${fmt(r.pctResult)}コイン${r.pctResult === 0 ? '（配信なし扱いと同じ）' : ''}` : '';
   if (!r.ok) { el.innerHTML = `<span style="color:var(--red)">${escapeHtml(r.msg)}</span>`; return; }
   const day = state.sales.filter(x => x.casterId === s.casterId && x.date === s.date);
   const before = calcRefAllocation(day).total;
@@ -6340,12 +6358,13 @@ async function saveRefAdj() {
 // 紹介料除外の表示：管理者はON/OFF切替ボタン、閲覧者は状態を示す読み取り専用バッジ（クリック不可）。
 // 除外されていない通常の配信は閲覧者には何も表示しない（特に伝える情報がないため）。
 function refExcludeControl(saleId, excluded) {
+  if (!excluded) return '';   // 【v45】🤝は廃止。除外中の売上にだけ解除用として出す
   if (isViewerRole()) {
     return excluded
       ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);border:1px solid #fb923c;color:#fb923c;border-radius:6px;padding:5px 10px;display:inline-flex;align-items:center" title="紹介料の計算対象から除外されています">🤝除外中</span>`
       : '';
   }
-  return `<button class="btn btn-sm" style="background:${excluded?'rgba(251,146,60,0.2)':'var(--surface2)'};border:1px solid ${excluded?'#fb923c':'var(--border)'};color:${excluded?'#fb923c':'var(--muted)'};font-size:10px" onclick="toggleExcludeRef(${saleId})" title="紹介料の計算対象から除外">${excluded?'🤝除外中':'🤝'}</button>`;
+  return `<button class="btn btn-sm" style="background:${excluded?'rgba(251,146,60,0.2)':'var(--surface2)'};border:1px solid ${excluded?'#fb923c':'var(--border)'};color:${excluded?'#fb923c':'var(--muted)'};font-size:10px" onclick="toggleExcludeRef(${saleId})" title="紹介料除外（旧機能）を解除する">🤝除外中</button>`;
 }
 
 // ===== DAILY PAY =====
