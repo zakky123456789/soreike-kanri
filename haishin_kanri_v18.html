@@ -6272,21 +6272,48 @@ function refAdjControl(s) {
   return `<button class="btn btn-sm" style="background:${on?'rgba(167,139,250,0.2)':'var(--surface2)'};border:1px solid ${on?'#a78bfa':'var(--border)'};color:${on?'#a78bfa':'var(--muted)'};font-size:10px" onclick="openRefAdjModal(${s.id})" title="紹介者に伝えるコイン数を調整">🎯</button>`;
 }
 
-function openRefAdjModal(id) {
+// 【v45】対象は「売上の配列」。1件（明細行の🎯）でも、同じ配信者・同じ日の全件（合計行の🎯）でも同じ処理を通す。
+// ra-id には対象の売上idをカンマ区切りで持つ。
+function refAdjTargets() {
+  const ids = (document.getElementById('ra-id').value || '').split(',').map(Number).filter(Boolean);
+  return ids.map(id => state.sales.find(x => x.id === id)).filter(Boolean);
+}
+
+function openRefAdjModal(id) { openRefAdjModalFor([id]); }
+
+// 合計行の🎯：その日のその配信者の全売上をまとめて調整する
+function openRefAdjGroupModal(date, casterId) {
+  const ids = state.sales.filter(x => x.date === date && x.casterId === casterId).sort((a, b) => a.id - b.id).map(x => x.id);
+  openRefAdjModalFor(ids);
+}
+
+function openRefAdjModalFor(ids) {
   if (isViewerRole()) return;
-  const s = state.sales.find(x => x.id === id);
-  if (!s) return;
+  const list = ids.map(id => state.sales.find(x => x.id === id)).filter(Boolean);
+  if (list.length === 0) return;
+  const s = list[0];
+  const isGroup = list.length > 1;
   const c = getCaster(s.casterId);
   const ref = c?.refId ? getReferrer(c.refId) : null;
-  document.getElementById('ra-id').value = id;
+  const total = list.reduce((a, x) => a + x.coins, 0);
+  document.getElementById('ra-id').value = list.map(x => x.id).join(',');
+  const rowsInfo = isGroup
+    ? `<div style="margin-top:6px;font-size:12px;color:var(--muted);line-height:1.7">` +
+      list.map((x, i) => `${i + 1}回目：${fmt(x.coins)} コイン` + (x.refCoins == null ? '' : `（現在 紹介者向け ${x.refCoins === 0 ? '配信なし扱い' : fmt(x.refCoins)}）`)).join('<br>') +
+      `<br>※「コイン数を指定」「割合で減らす」は、合計を各回の実際のコイン比で割り振ります。</div>`
+    : '';
   document.getElementById('ra-info').innerHTML =
-    `${escapeHtml(s.date)}　<strong>${escapeHtml(c?.name || '?')}</strong>　／　紹介者：${ref ? escapeHtml(ref.company || ref.name) : '（なし）'}<br>` +
-    `実際の獲得コイン：<strong>${fmt(s.coins)}</strong> コイン` +
-    (s.excludeRef ? `<br><span style="color:#fb923c">※この売上は🤝紹介料除外中です。紹介料は0円のままで、報告書のコイン数・報酬額にだけ反映されます。</span>` : '');
-  const mode = s.refCoins == null ? 'normal' : (s.refCoins === 0 ? 'hide' : 'coins');
+    `${escapeHtml(s.date)}　<strong>${escapeHtml(c?.name || '?')}</strong>${isGroup ? `（${list.length}回配信）` : ''}　／　紹介者：${ref ? escapeHtml(ref.company || ref.name) : '（なし）'}<br>` +
+    `実際の獲得コイン${isGroup ? '（合計）' : ''}：<strong>${fmt(total)}</strong> コイン` +
+    rowsInfo +
+    (list.some(x => x.excludeRef) ? `<br><span style="color:#fb923c">※🤝紹介料除外中の売上が含まれています。その売上の紹介料は0円のままで、報告書のコイン数・報酬額にだけ反映されます。</span>` : '');
+  let mode, coinsVal = '';
+  if (list.every(x => x.refCoins == null)) mode = 'normal';
+  else if (list.every(x => x.refCoins === 0)) mode = 'hide';
+  else { mode = 'coins'; coinsVal = list.reduce((a, x) => a + refCoinsOf(x), 0); }
   document.querySelectorAll('input[name="ra-mode"]').forEach(r => { r.checked = (r.value === mode); });
-  document.getElementById('ra-coins').value = mode === 'coins' ? s.refCoins : '';
-  document.getElementById('ra-pct').value = '';   // 【v45】割合は保存しない（保存するのは計算後のコイン数）
+  document.getElementById('ra-coins').value = coinsVal;
+  document.getElementById('ra-pct').value = '';   // 割合は保存しない（保存するのは計算後のコイン数）
   refAdjModeChanged();
   document.getElementById('ref-adj-modal').style.display = 'flex';
 }
@@ -6303,60 +6330,102 @@ function refAdjModeChanged() {
   refAdjPreview();
 }
 
-// 入力値から保存する refCoins を決める。{ ok, value, msg }
-function readRefAdjInput(sale) {
+// 入力値から、対象の各売上に保存する refCoins を決める。{ ok, values:[...], target, msg }
+function readRefAdjInput(list) {
+  if (!Array.isArray(list)) list = [list];
+  const isGroup = list.length > 1;
   const mode = document.querySelector('input[name="ra-mode"]:checked')?.value || 'normal';
-  if (mode === 'normal') return { ok: true, value: null };
-  if (mode === 'hide') return { ok: true, value: 0 };
-  if (sale.coins <= 0) return { ok: false, msg: 'コイン数が0以下（調整レコード等）の売上は「コイン数を指定」「割合で減らす」ができません。「配信なし扱い」は設定できます。' };
+  if (mode === 'normal') return { ok: true, values: list.map(() => null) };
+  if (mode === 'hide') return { ok: true, values: list.map(() => 0) };
+  if (list.some(x => x.coins <= 0)) return { ok: false, msg: isGroup
+    ? 'コイン数が0以下の売上（調整レコード等）を含む日は、まとめて「コイン数を指定」「割合で減らす」ができません。各回の🎯から個別に調整してください（「配信なし扱い」はまとめて設定できます）。'
+    : 'コイン数が0以下（調整レコード等）の売上は「コイン数を指定」「割合で減らす」ができません。「配信なし扱い」は設定できます。' };
+  const total = list.reduce((a, x) => a + x.coins, 0);
+  let target;
   if (mode === 'pct') {
-    // 【v45】30 と入れたら 30％引き。整数演算で1コイン未満は切り捨て（紹介者に伝えるコインが小さくなる側）。
-    // DBには割合ではなく計算後のコイン数を保存する（後で実コインを直しても割合は追従しない）。
+    // 30 と入れたら 30％引き。整数演算で1コイン未満は切り捨て。
     const rawP = document.getElementById('ra-pct').value.trim();
     if (!/^\d+$/.test(rawP) || Number(rawP) < 1 || Number(rawP) > 100) return { ok: false, msg: '割合は1〜100の整数で入力してください（30なら30％引き）。' };
-    const v = Math.floor(sale.coins * (100 - Number(rawP)) / 100);
-    return { ok: true, value: v, pctResult: v };
+    target = Math.floor(total * (100 - Number(rawP)) / 100);
+  } else {
+    const raw = document.getElementById('ra-coins').value.trim();
+    if (!/^\d+$/.test(raw)) return { ok: false, msg: '紹介者向けコインは0以上の整数で入力してください。' };
+    target = Number(raw);
+    if (target > total) return { ok: false, msg: `紹介者向けコイン（${fmt(target)}）は、実際のコイン${isGroup ? 'の合計' : ''}（${fmt(total)}）以下にしてください。` };
   }
-  const raw = document.getElementById('ra-coins').value.trim();
-  if (!/^\d+$/.test(raw)) return { ok: false, msg: '紹介者向けコインは0以上の整数で入力してください。' };
-  const v = Number(raw);
-  if (v > sale.coins) return { ok: false, msg: `紹介者向けコイン（${fmt(v)}）は、実際のコイン（${fmt(sale.coins)}）以下にしてください。` };
-  // 実際と同じなら調整なし（通常）として保存する
-  return { ok: true, value: v === sale.coins ? null : v };
+  // 合計を各回の実コイン比で割り振る（端数はコインの多い回から1コインずつ）。合計は必ず target に一致し、
+  // target ≤ 合計 なので各回とも実コインを超えない。実コインと同じになった回は「通常」(null) として保存する。
+  const parts = apportionRef(target, list.map(x => x.coins));
+  const values = parts.map((v, i) => (v === list[i].coins ? null : v));
+  return { ok: true, values, target, pctResult: mode === 'pct' ? target : null };
 }
 
 // その日の紹介料が調整前後でいくら変わるか（同じ配信者・同じ日の他の売上も含めた日次方式で見せる）
 function refAdjPreview() {
   const el = document.getElementById('ra-preview');
-  const s = state.sales.find(x => x.id === parseInt(document.getElementById('ra-id').value));
-  if (!el || !s) return;
-  const r = readRefAdjInput(s);
+  const list = refAdjTargets();
+  if (!el || list.length === 0) return;
+  const s = list[0];
+  const r = readRefAdjInput(list);
   const pr = document.getElementById('ra-pct-result');
   if (pr) pr.textContent = (r.ok && r.pctResult != null) ? `→ ${fmt(r.pctResult)}コイン${r.pctResult === 0 ? '（配信なし扱いと同じ）' : ''}` : '';
   if (!r.ok) { el.innerHTML = `<span style="color:var(--red)">${escapeHtml(r.msg)}</span>`; return; }
+  const next = {}; list.forEach((x, i) => { next[x.id] = r.values[i]; });
   const day = state.sales.filter(x => x.casterId === s.casterId && x.date === s.date);
   const before = calcRefAllocation(day).total;
-  const after = calcRefAllocation(day.map(x => x.id === s.id ? { ...x, refCoins: r.value } : x)).total;
+  const after = calcRefAllocation(day.map(x => (x.id in next) ? { ...x, refCoins: next[x.id] } : x)).total;
   const diff = after - before;
+  const split = (list.length > 1 && r.target != null)
+    ? `<br>割り振り：${list.map((x, i) => `${i + 1}回目 ${fmt(r.values[i] == null ? x.coins : r.values[i])}`).join(' ／ ')}`
+    : '';
   el.innerHTML = `この日（${escapeHtml(s.date)}）の紹介料：${yen(before)} → <strong>${yen(after)}</strong>` +
-    (diff !== 0 ? `（<span style="color:${diff < 0 ? 'var(--green)' : 'var(--red)'}">${diff > 0 ? '+' : ''}${fmt(diff)}円</span>）` : '（変化なし）');
+    (diff !== 0 ? `（<span style="color:${diff < 0 ? 'var(--green)' : 'var(--red)'}">${diff > 0 ? '+' : ''}${fmt(diff)}円</span>）` : '（変化なし）') + split;
 }
 
 async function saveRefAdj() {
   if (isViewerRole()) return;
-  const id = parseInt(document.getElementById('ra-id').value);
-  const idx = state.sales.findIndex(x => x.id === id);
-  if (idx === -1) return;
-  const r = readRefAdjInput(state.sales[idx]);
+  const list = refAdjTargets();
+  if (list.length === 0) return;
+  const r = readRefAdjInput(list);
   if (!r.ok) { alert(r.msg); return; }
-  if ((state.sales[idx].refCoins ?? null) === r.value) { closeRefAdjModal(); return; }   // 無駄な書き込みをしない
-  const before = saleToLogObj(state.sales[idx]);
-  const ok = checkDbWrite(await sb.from('sales').update({ ref_coins: r.value }).eq('id', id), '更新', 'sales');
+  const changed = list.map((x, i) => ({ sale: x, value: r.values[i] })).filter(o => (o.sale.refCoins ?? null) !== o.value);
+  if (changed.length === 0) { closeRefAdjModal(); return; }   // 無駄な書き込みをしない
+  const befores = changed.map(o => saleToLogObj(o.sale));
+  let ok;
+  if (changed.length === 1) {
+    ok = checkDbWrite(await sb.from('sales').update({ ref_coins: changed[0].value }).eq('id', changed[0].sale.id), '更新', 'sales');
+  } else {
+    // 複数件は1回のupsertでまとめて書く（途中まで保存されて合計が崩れる、を起こさない）
+    const rows = changed.map(({ sale: x, value }) => ({ id: x.id, caster_id: x.casterId, coins: x.coins, date: x.date, note: x.note || '', y: x.y, m: x.m, rate: x.rate ?? null, type: x.type || 'normal', exclude_report: !!x.excludeReport, exclude_ref: !!x.excludeRef, ref_coins: value }));
+    ok = checkDbWrite(await sb.from('sales').upsert(rows, { onConflict: 'id' }), '更新', 'sales');
+  }
   if (!ok) return;                                   // 失敗したら画面も変えない
-  state.sales[idx].refCoins = r.value;
-  await writeAuditLog('edit', id, before, saleToLogObj(state.sales[idx]), 'sales');
+  for (let i = 0; i < changed.length; i++) {
+    changed[i].sale.refCoins = changed[i].value;
+    await writeAuditLog('edit', changed[i].sale.id, befores[i], saleToLogObj(changed[i].sale), 'sales');
+  }
   closeRefAdjModal();
   renderAll();
+}
+
+// 合計行のバッジ：その日の紹介者向けコインの合計（どれか1回でも調整していれば出す）
+function refAdjGroupBadge(sales) {
+  if (sales.every(x => x.refCoins == null)) return '';
+  const style = 'font-size:10px;background:rgba(167,139,250,0.2);color:#a78bfa;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;white-space:nowrap';
+  const real = sales.reduce((a, x) => a + x.coins, 0);
+  const shown = sales.reduce((a, x) => a + refCoinsOf(x), 0);
+  return sales.every(x => x.refCoins === 0)
+    ? `<span style="${style}" title="紹介者には、この日の配信はすべて無かったものとして伝えます">🎯配信なし扱い</span>`
+    : `<span style="${style}" title="実際のコイン合計 ${fmt(real)} → 紹介者には合計 ${fmt(shown)} コインで伝えます">🎯紹介者向け 合計 ${fmt(shown)}</span>`;
+}
+// 合計行の🎯ボタン
+function refAdjGroupControl(sales) {
+  if (isViewerRole()) return '';
+  const c = getCaster(sales[0].casterId);
+  const hasRef = !!(c && c.refId && getReferrer(c.refId));
+  const on = sales.some(x => x.refCoins != null);
+  if (!hasRef && !on) return '';
+  return `<button class="btn btn-sm" style="background:${on?'rgba(167,139,250,0.2)':'var(--surface2)'};border:1px solid ${on?'#a78bfa':'var(--border)'};color:${on?'#a78bfa':'var(--muted)'};font-size:10px" onclick="openRefAdjGroupModal('${sales[0].date}',${sales[0].casterId})" title="この日の${sales.length}回分をまとめて、紹介者に伝えるコイン数を調整">🎯</button>`;
 }
 
 // 紹介料除外の表示：管理者はON/OFF切替ボタン、閲覧者は状態を示す読み取り専用バッジ（クリック不可）。
@@ -6938,7 +7007,7 @@ function renderSales() {
         ${g.sales.length===1 && g.sales[0].type==='adjust' ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">調整</span>` : ''}
         ${g.sales.length===1 && g.sales[0].excludeReport ? `<span style="font-size:10px;background:rgba(251,191,36,0.2);color:var(--yellow);border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">レポート除外</span>` : ''}
         ${g.sales.length===1 && g.sales[0].excludeRef ? `<span style="font-size:10px;background:rgba(251,146,60,0.2);color:#fb923c;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">紹介料除外</span>` : ''}
-        ${g.sales.length===1 ? refAdjBadge(g.sales[0]) : ''}
+        ${g.sales.length===1 ? refAdjBadge(g.sales[0]) : refAdjGroupBadge(g.sales)}
       </td>
       <td>
         ${isMulti
@@ -6960,6 +7029,7 @@ function renderSales() {
       <td class="num" style="color:var(--green);${fw}">${hasRate?yen(sumOffice):'-'}</td>
       <td style="display:flex;gap:6px;flex-wrap:nowrap">
         ${isViewerRole() ? '' : `<button class="btn btn-sm" style="background:var(--surface2);border:1px solid var(--border);color:var(--text)" onclick="openSaleGroupEditModal('${g.date}',${g.casterId})">編集</button>`}
+        ${isMulti ? refAdjGroupControl(g.sales) : ''}
         ${!isMulti ? reportExcludeControl(g.sales[0].id, g.sales[0].excludeReport) : ''}
         ${!isMulti ? refExcludeControl(g.sales[0].id, g.sales[0].excludeRef) : ''}
         ${!isMulti ? refAdjControl(g.sales[0]) : ''}
