@@ -1914,6 +1914,8 @@
       </div>
       <!-- 【v43】当月の全紹介者の内訳。printRefReport() は #refReport-print-area だけを印刷するため、
            ここに置いた内容は先方に渡る書類には一切出ない（他社の金額が漏れない）。 -->
+      <!-- 【v45】LINE用テキスト（紹介者に送る内容そのもの。報告書と同じ数字だけを出す） -->
+      <div id="refReport-line" style="margin-bottom:20px"></div>
       <div id="refReport-allsummary" style="margin-bottom:20px"></div>
       <!-- 【v45】🎯紹介者向け調整の詳細。これも印刷領域の外（紹介者に絶対に渡してはいけない情報）。 -->
       <div id="refReport-adjsummary" style="margin-bottom:20px"></div>
@@ -2963,11 +2965,18 @@ const refOfSale = (alloc, saleId) => alloc.bySaleId[saleId] || { r1: 0, r2: 0, t
 
 // 紹介者×月の合計（紹介者報告書・支払い記録モーダルが使う）
 function calcReferrerMonthTotal(referrerId, y, m) {
+  // 月間は日付で絞らない（dayFrom/dayTo=null）。v44までと完全に同じ対象（salesOfMonth の全件）になる。
+  return calcReferrerPeriodTotal(referrerId, y, m, null, null);
+}
+// 【v45】紹介者×期間（月内の日付範囲）の合計。月間は 1〜31日。10日ごとのLINE報告もこれを使う。
+// 紹介料は配信者×日で計算するので、日付で絞ってから calcRefAllocation しても日単位の金額は月間と変わらない。
+function calcReferrerPeriodTotal(referrerId, y, m, dayFrom, dayTo) {
   const ref = state.referrers.find(r => r.id === referrerId);
   if (!ref) return { ref: null, rows: [], casterCount: 0, totalR1: 0, totalR2: 0, total: 0 };
   const casters = state.casters.filter(c => c.refId === referrerId);
   const casterIds = new Set(casters.map(c => c.id));
-  const sales = salesOfMonth(y, m).filter(s => casterIds.has(s.casterId));
+  const inRange = s => { if (dayFrom == null) return true; const d = parseInt(String(s.date).slice(8, 10), 10); return d >= dayFrom && d <= dayTo; };
+  const sales = salesOfMonth(y, m).filter(s => casterIds.has(s.casterId) && inRange(s));
   const alloc = calcRefAllocation(sales);
   let totalR1 = 0, totalR2 = 0, total = 0;
   const rows = [];
@@ -9400,6 +9409,7 @@ function renderRefReport() {
   const { y, m } = state;
   renderRefAllSummary();   // 【v43】全紹介者の内訳（画面のみ）
   renderRefAdjSummary();   // 【v45】🎯紹介者向け調整の詳細（画面のみ・折りたたみ）
+  renderRefLineText();     // 【v45】LINE用テキスト（10日ごと／月間）
   const el = document.getElementById('refReport-preview');
   if (!el) return;
   const refId = parseInt(document.getElementById('refReport-sel')?.value);
@@ -9729,6 +9739,123 @@ function renderRefAdjSummary() {
         </div>
       </div>
     </details>`;
+}
+
+// ===== 【v45】LINE用テキスト（紹介者報告書） =====
+// 期間：月間／1〜10日／11〜20日／21日〜月末。数字はすべて calcReferrerPeriodTotal()（＝印刷する報告書と同じ計算）から取る。
+// 紹介料は「配信者×日」単位の計算の足し算なので、3期間の合計は月間の報告書と1円まで一致する。
+let refLinePeriod = 'p1';
+const REF_LINE_PERIODS = { p1: [1, 10], p2: [11, 20], p3: [21, 31], month: [null, null] };
+
+// 3期間のどれにも入らない売上（日付が壊れている／日付の年月と y・m がずれている）を返す。
+// これがあると「3期間の合計＝月間」が崩れるので、画面で警告する（アプリから登録した売上では起きない）。
+function refLineOutOfPeriodSales(refId, y, m) {
+  const casterIds = new Set(state.casters.filter(c => c.refId === refId).map(c => c.id));
+  const ym = `${y}-${String(m).padStart(2, '0')}-`;
+  return salesOfMonth(y, m).filter(s => {
+    if (!casterIds.has(s.casterId)) return false;
+    const d = String(s.date || '');
+    const day = parseInt(d.slice(8, 10), 10);
+    return !/^\d{4}-\d{2}-\d{2}$/.test(d) || !d.startsWith(ym) || !(day >= 1 && day <= 31);
+  });
+}
+
+function refLinePeriodLabel(y, m, key) {
+  const last = new Date(y, m, 0).getDate();
+  if (key === 'month') return `${y}年${m}月分`;
+  const [a, b] = REF_LINE_PERIODS[key];
+  return `${y}年${m}月${a}日〜${Math.min(b, last)}日分`;
+}
+
+function buildRefLineText(refId, y, m, key) {
+  const [from, to] = REF_LINE_PERIODS[key] || REF_LINE_PERIODS.month;
+  const calc = calcReferrerPeriodTotal(refId, y, m, from, to);
+  const ref = calc.ref;
+  if (!ref) return '';
+  const honor = ref.honorific && ref.honorific !== 'なし' ? '　' + ref.honorific : '';
+  const lines = [];
+  lines.push(`${ref.company || ref.name}${honor}`);
+  lines.push('');
+  lines.push(`【${refLinePeriodLabel(y, m, key)}　ご報告】`);
+  if (calc.rows.length === 0) {
+    lines.push('');
+    lines.push('この期間の配信はありませんでした。');
+    return lines.join('\n');
+  }
+  const isA = ref.refType === 'A';
+  const r2label = isA ? `${((ref.r2b || 0) * 100).toFixed(0)}%(SB)` : '紹介料';
+  const r1label = isA ? `${((ref.r1pct || 0) * 100).toFixed(0)}%(顧問料)` : null;
+  calc.rows.forEach(r => {
+    lines.push('');
+    lines.push(`■ 配信者名：${r.c.name}`);
+    lines.push(`獲得コイン数：${fmt(r.totalCoins)}コイン`);
+    lines.push(`報酬額：${yen(r.totalReward)}`);
+    lines.push(`${r2label}：${yen(r.r2)}`);
+    if (isA) lines.push(`${r1label}：${yen(r.r1)}`);
+  });
+  lines.push('');
+  lines.push('━━━━━━━━━━━━');
+  if (calc.rows.length > 1) {
+    lines.push(`${r2label}合計：${yen(calc.totalR2)}`);
+    if (isA) lines.push(`${r1label}合計：${yen(calc.totalR1)}`);
+  }
+  lines.push(`合計：${yen(calc.total)}`);
+  return lines.join('\n');
+}
+
+function setRefLinePeriod(key) { refLinePeriod = key; renderRefLineText(); }
+
+function renderRefLineText() {
+  const el = document.getElementById('refReport-line');
+  if (!el) return;
+  const { y, m } = state;
+  const refId = parseInt(document.getElementById('refReport-sel')?.value);
+  const ref = state.referrers.find(r => r.id === refId);
+  if (!ref) { el.innerHTML = ''; return; }
+  if (!REF_LINE_PERIODS[refLinePeriod]) refLinePeriod = 'p1';
+  const last = new Date(y, m, 0).getDate();
+  const tabs = [['p1', '1〜10日'], ['p2', '11〜20日'], ['p3', `21〜${last}日`], ['month', '月間']];
+  const text = buildRefLineText(refId, y, m, refLinePeriod);
+  const bad = refLineOutOfPeriodSales(refId, y, m);
+  const warn = bad.length === 0 ? '' : `<div style="margin-bottom:8px;padding:8px 10px;border:1px solid var(--red);border-radius:6px;color:var(--red);font-size:12px;line-height:1.7">
+      ⚠️ 日付と年月が合わない売上が${bad.length}件あり、10日ごとの報告に含まれていません（月間には含まれるため、3期間の合計と月間が一致しません）。<br>
+      ${bad.map(x => `id=${x.id}　日付「${escapeHtml(String(x.date ?? ''))}」　${escapeHtml(getCaster(x.casterId)?.name || '?')}　${fmt(x.coins)}コイン`).join('<br>')}<br>
+      売上入力ページで日付を直してください。</div>`;
+  const tabBtn = ([k, label]) => `<button class="btn btn-sm" onclick="setRefLinePeriod('${k}')" style="background:${refLinePeriod === k ? 'var(--accent)' : 'var(--surface2)'};border:1px solid ${refLinePeriod === k ? 'var(--accent)' : 'var(--border)'};color:${refLinePeriod === k ? '#fff' : 'var(--muted)'}">${label}</button>`;
+  el.innerHTML = `
+    <div class="table-wrap">
+      <div class="table-header" style="flex-wrap:wrap;gap:8px">
+        <div class="table-title">💬 LINE用テキスト（${escapeHtml(ref.company || ref.name)}）</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${tabs.map(tabBtn).join('')}</div>
+      </div>
+      <div style="padding:12px 16px">
+        ${warn}
+        <textarea id="refReport-line-text" readonly style="width:100%;min-height:260px;resize:vertical;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:10px 12px;font-family:var(--font);font-size:13px;line-height:1.7">${escapeHtml(text)}</textarea>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+          <button class="btn btn-sm" onclick="copyRefLineText()" style="background:#06c755;border:1px solid #06c755;color:#fff;font-weight:700">📋 コピー</button>
+          <span id="refReport-line-copied" style="font-size:12px;color:var(--green)"></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function copyRefLineText() {
+  const ta = document.getElementById('refReport-line-text');
+  const msg = document.getElementById('refReport-line-copied');
+  if (!ta) return;
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(ta.value); ok = true; }
+  } catch (e) { ok = false; }
+  if (!ok) {
+    // httpでない環境・権限なしのときの予備（テキストを選択してコピー）
+    try { ta.focus(); ta.select(); ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  }
+  if (msg) {
+    msg.style.color = ok ? 'var(--green)' : 'var(--red)';
+    msg.textContent = ok ? '✅ コピーしました。LINEに貼り付けて送信できます' : 'コピーできませんでした。テキストを長押し（右クリック）でコピーしてください';
+    setTimeout(() => { if (msg) msg.textContent = ''; }, 4000);
+  }
 }
 
 function printRefReport() {
