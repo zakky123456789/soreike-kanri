@@ -1096,8 +1096,8 @@
   <th class="num">紹介料計</th>
   <th class="num">レート</th>
   <th class="num">ドル換算</th>
-  <th class="num">円換算</th>
-  <th class="num">事務所売上</th>
+  <th class="num" title="コイン×0.05×レートから出金手数料2%を引いた推計額">円換算<span style="font-size:9px;color:var(--muted)">(-2%)</span></th>
+  <th class="num" title="円換算（出金手数料2%控除後）− 配信者報酬 − 紹介料">事務所売上</th>
   <th>操作</th>
 </tr></thead>
         <tbody id="sales-table"></tbody></table>
@@ -4983,7 +4983,7 @@ function renderDashboard() {
   const exps = expOfMonth(y, m);
   const totalCoins = sales.reduce((s, x) => s + x.coins, 0);
   const fxRecs = fxOfMonth(y, m);
-  const totalSales = sales.reduce((s, x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const totalSales = sales.reduce((s, x) => x.rate ? s + estSalesYen(x.coins, x.rate) : s, 0);   // 【v45】手数料控除後
   const totalReward = sales.reduce((s, x) => {
     const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
   }, 0);
@@ -4993,7 +4993,7 @@ function renderDashboard() {
   const profit = totalSales - totalReward - totalRef - totalExp;
 
   document.getElementById('dash-cards').innerHTML = `
-    <div class="card"><div class="card-label">月間売上</div><div class="card-value blue">${yen(totalSales)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${coins(totalCoins)}</div></div>
+    <div class="card"><div class="card-label">月間売上<span style="font-size:9px;color:var(--muted);margin-left:4px">推計・${FX_FEE_NOTE}</span></div><div class="card-value blue">${yen(totalSales)}</div><div style="font-size:11px;color:var(--muted);margin-top:4px">${coins(totalCoins)}</div></div>
     <div class="card"><div class="card-label">配信者報酬合計</div><div class="card-value red">${yen(totalReward)}</div></div>
     <div class="card"><div class="card-label">紹介料合計</div><div class="card-value red">${yen(totalRef)}</div></div>
     <div class="card"><div class="card-label">経費合計</div><div class="card-value red">${yen(totalExp)}</div></div>
@@ -5843,11 +5843,20 @@ function renderFxRecords() {
 }
 
 // ===== SALES =====
+// 【v45】推計売上（コイン→USD→円）には、実際に日本円へ両替するときに引かれる出金手数料 約2% を反映する。
+// 確定売上（両替記録の実際の受取額）には一切かけない（すでに手数料が引かれた後の実額のため）。
+const FX_FEE_PCT = 2;
+const applyFxFee = jpy => Math.floor(jpy * (100 - FX_FEE_PCT) / 100);
+const FX_FEE_NOTE = `出金手数料-${FX_FEE_PCT}%`;
+// コイン×0.05×レート から手数料を引いた推計売上（ダッシュボード・月次損益・管理人報酬で共通）
+const estSalesYen = (coins, rate) => applyFxFee(Math.floor(coins * 0.05 * rate));
+
 const calcOfficeSales = (coins, rate, reward, refTotal) => {
   if (!rate) return null;
   const usd = Math.floor(coins * 0.05 * 100) / 100;
-  const jpy = Math.round(usd * rate);
-  return { usd, jpy, office: jpy - reward - refTotal };
+  const jpyGross = Math.round(usd * rate);
+  const jpy = applyFxFee(jpyGross);          // 手数料控除後（画面に出す円換算はこちら）
+  return { usd, jpyGross, jpy, office: jpy - reward - refTotal };
 };
 
 async function fetchRate(date) {
@@ -5951,8 +5960,10 @@ function updateSalePreview() {
   ` : '';
   document.getElementById('p-office-rows').innerHTML = office ? `
     <div class="sim-row"><div class="sim-label">ドル換算（コイン×0.05）</div><div style="font-family:var(--mono)">$${office.usd.toFixed(2)}</div></div>
-    <div class="sim-row"><div class="sim-label">日本円換算（$×${rate}）</div><div style="font-family:var(--mono)">${yen(office.jpy)}</div></div>
-    <div class="sim-row" style="border-top:1px solid var(--accent);margin-top:4px;padding-top:4px"><div style="font-weight:700">事務所売上（推定）</div><div style="font-family:var(--mono);font-weight:700;color:var(--green)">${yen(office.office)}</div></div>
+    <div class="sim-row"><div class="sim-label">日本円換算（$×${rate}）</div><div style="font-family:var(--mono);color:var(--muted)">${yen(office.jpyGross)}</div></div>
+    <div class="sim-row"><div class="sim-label">${FX_FEE_NOTE}</div><div style="font-family:var(--mono);color:var(--muted)">-${fmt(office.jpyGross - office.jpy)}円</div></div>
+    <div class="sim-row"><div class="sim-label">推計売上（手数料控除後）</div><div style="font-family:var(--mono)">${yen(office.jpy)}</div></div>
+    <div class="sim-row" style="border-top:1px solid var(--accent);margin-top:4px;padding-top:4px"><div style="font-weight:700">事務所売上（推定・${FX_FEE_NOTE}後）</div><div style="font-family:var(--mono);font-weight:700;color:var(--green)">${yen(office.office)}</div></div>
   ` : '<div style="font-size:11px;color:var(--muted);padding:4px 0">レートを入力すると事務所売上を計算します</div>';
   document.getElementById('s-preview').style.display = 'block';
 }
@@ -7986,10 +7997,10 @@ function renderPL() {
   exps.filter(isPlExpense).forEach(e => { catMap[e.cat] = (catMap[e.cat]||0) + e.amount; });
 
   // 推計
-  // 推計売上 = コイン×0.05×レート（売上明細の円換算列と同じ）
+  // 推計売上 = コイン×0.05×レート −出金手数料2%（売上明細の円換算列と同じ）
   const estSales = sales.reduce((s,x) => {
     if (!x.rate) return s;
-    return s + Math.floor(x.coins * 0.05 * x.rate);
+    return s + estSalesYen(x.coins, x.rate);
   }, 0);
   const estHasRate = sales.some(x => x.rate);
   const estGross = estSales - totalReward - totalRef;
@@ -8061,7 +8072,7 @@ function renderPL() {
 
   document.getElementById('pl-content').innerHTML =
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">'
-    + '<div class="table-wrap"><div class="table-header"><div class="table-title">📊 推計損益（円換算ベース）</div></div><div style="padding:16px">' + plBoxHtml('推計' + (estHasRate ? '' : '　※レート未入力'), estSales, estGross, estOp, 'var(--muted)') + '</div></div>'
+    + '<div class="table-wrap"><div class="table-header"><div class="table-title">📊 推計損益（円換算ベース・'+FX_FEE_NOTE+'）</div></div><div style="padding:16px">' + plBoxHtml('推計' + (estHasRate ? '' : '　※レート未入力'), estSales, estGross, estOp, 'var(--muted)') + '</div></div>'
     + '<div class="table-wrap"><div class="table-header"><div class="table-title">✅ 確定損益（両替記録ベース）</div></div><div style="padding:16px">' + confirmedHtml + '</div></div>'
     + '</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
@@ -9286,7 +9297,7 @@ function renderReport() {
         <table><thead><tr>
           <th>配信者</th><th class="num">コイン</th><th class="num">報酬(税込)</th>
           <th class="num">源泉税</th><th class="num">前払い累計</th>
-          <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num">事務所売上(推定)</th>
+          <th class="num">月末振込<br><span style="font-size:10px;font-weight:400;color:var(--yellow)">※参考値</span></th><th class="num">紹介料</th><th class="num" title="円換算（出金手数料2%控除後）− 配信者報酬 − 紹介料">事務所売上(推定)<br><span style="font-size:10px;font-weight:400;color:var(--muted)">※-2%控除後</span></th>
         </tr></thead><tbody>
         ${rows.map(r => `<tr>
           <td><strong>${escapeHtml(r.c.name)}</strong></td>
@@ -9332,7 +9343,7 @@ function renderReport() {
         <div>
           <div class="table-wrap">
             <div class="table-header"><div class="table-title">日別売上明細</div></div>
-            <table><thead><tr><th>配信日</th><th class="num">コイン</th><th class="num">報酬</th><th class="num">源泉税</th><th class="num">振込額</th><th class="num">事務所売上</th></tr></thead>
+            <table><thead><tr><th>配信日</th><th class="num">コイン</th><th class="num">報酬</th><th class="num">源泉税</th><th class="num">振込額</th><th class="num" title="円換算（出金手数料2%控除後）− 配信者報酬 − 紹介料">事務所売上<br><span style="font-size:10px;font-weight:400;color:var(--muted)">※-2%控除後</span></th></tr></thead>
             <tbody>${cSales.map(s => {
               const rw = calcReward(coinToYen(s.coins), c.rate);
               const src = calcSrcTax(rw);
@@ -9985,6 +9996,10 @@ function renderRefund() {
     }
   });
   // 管理人報酬：開始日フィルター済みのsales/expsで計算、インボイス未登録→経過措置率
+  // 【v45】売上は確定売上（両替記録の実際の受取額）を使う。推計売上（コイン×レート−出金手数料2%）は
+  // 見積りであって事実ではなく、税額の計算に見積りを混ぜないため。両替記録がない月は0になるので画面に明示する。
+  const mgrFxJpy = fxSalesOfMonth(y, m).totalJpy;
+  const mgrHasFx = mgrFxJpy > 0;
   const mgrRewardAmt = (() => {
     const totalReward = sales.reduce((s,x) => {
       const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
@@ -9992,8 +10007,7 @@ function renderRefund() {
     // 【v37】日次コイン合計方式の実装を共通関数へ移譲（従来と同じ計算・同じ結果）
     const totalRef = calcRefAllocation(sales).total;
     const totalExpForMgr = exps.filter(isMgrExpense).reduce((s,e) => s + e.amount, 0);
-    const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
-    const opProfit = totalSalesEstimate - totalReward - totalRef - totalExpForMgr;
+    const opProfit = mgrFxJpy - totalReward - totalRef - totalExpForMgr;
     return Math.floor(Math.max(0, opProfit) * 0.5);
   })();
   const mgrBase = taxAmountOf(mgrRewardAmt);
@@ -10024,7 +10038,8 @@ function renderRefund() {
             ${refBase80>0?`<div class="sim-row"><div class="sim-label">紹介料 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(refBase80)}</div></div>`:''}
             <div class="sim-row"><div class="sim-label">経費 控除額（100%）<br><span style="font-size:11px;color:var(--green)">✅ インボイス登録済</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(expTaxCredit - expTaxCreditTransit)}</div></div>
             ${expTaxCreditTransit>0?`<div class="sim-row"><div class="sim-label">経費 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(expTaxCreditTransit)}</div></div>`:''}
-            ${mgrCredit>0?`<div class="sim-row"><div class="sim-label">管理人報酬 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(mgrCredit)}</div></div>`:''}
+            ${mgrCredit>0?`<div class="sim-row"><div class="sim-label">管理人報酬 控除額（${transitPct}%）<br><span style="font-size:11px;color:var(--yellow)">⚠️ 未登録・${transitLabel}</span><br><span style="font-size:11px;color:var(--muted)">確定売上（両替記録）ベース</span></div><div style="font-family:var(--mono);color:var(--accent)">▲${yen(mgrCredit)}</div></div>`:''}
+            ${mgrHasFx ? '' : `<div class="sim-row"><div class="sim-label" style="color:var(--yellow);font-size:11px">⚠️ この月は両替記録（確定売上）がないため、管理人報酬の控除額を0として計算しています。両替を登録すると反映されます。</div><div></div></div>`}
             <div class="sim-row total"><div>💰 還付見込額</div><div style="font-family:var(--mono)">${yen(totalNow)}</div></div>
           </div>
         </div>
@@ -10092,7 +10107,7 @@ async function saveMgrInfo() {
 function calcManagerReward(y, m) {
   const sales = salesOfMonth(y, m);
   const exps  = expOfMonth(y, m);
-  const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + Math.floor(x.coins * 0.05 * x.rate) : s, 0);
+  const totalSalesEstimate = sales.reduce((s,x) => x.rate ? s + estSalesYen(x.coins, x.rate) : s, 0);   // 【v45】手数料控除後
   const fxData = fxSalesOfMonth(y, m);
   const totalSalesConfirmed = fxData.totalJpy;
   const totalSales = mgrSalesMode === 'confirmed' ? totalSalesConfirmed : totalSalesEstimate;
@@ -10127,11 +10142,11 @@ function renderManagerReward() {
   const el = document.getElementById('mgr-reward-summary');
   if (!el) return;
   const r = calcManagerReward(y, m);
-  const modeEstBtn = `<button onclick="mgrSalesMode='estimate';renderManagerReward()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:${mgrSalesMode==='estimate'?'var(--accent)':'var(--surface2)'};color:${mgrSalesMode==='estimate'?'#fff':'var(--muted)'}">推計売上</button>`;
+  const modeEstBtn = `<button onclick="mgrSalesMode='estimate';renderManagerReward()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:${mgrSalesMode==='estimate'?'var(--accent)':'var(--surface2)'};color:${mgrSalesMode==='estimate'?'#fff':'var(--muted)'}">推計売上(-${FX_FEE_PCT}%)</button>`;
   const modeConfBtn = `<button onclick="mgrSalesMode='confirmed';renderManagerReward()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);font-size:12px;cursor:pointer;background:${mgrSalesMode==='confirmed'?'var(--accent)':'var(--surface2)'};color:${mgrSalesMode==='confirmed'?'#fff':'var(--muted)'}">確定売上</button>`;
   const salesSubLabel = mgrSalesMode === 'confirmed'
     ? `<span style="font-size:10px;color:var(--muted);margin-left:6px">（両替記録ベース）</span>`
-    : `<span style="font-size:10px;color:var(--muted);margin-left:6px">（コイン×レート）</span>`;
+    : `<span style="font-size:10px;color:var(--muted);margin-left:6px">（コイン×レート・${FX_FEE_NOTE}）</span>`;
   el.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
     <span style="font-size:12px;color:var(--muted)">売上の計算方法：</span>
     ${modeEstBtn}${modeConfBtn}
