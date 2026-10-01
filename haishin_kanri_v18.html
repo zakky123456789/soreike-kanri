@@ -9923,20 +9923,41 @@ function printRefReport() {
 }
 
 // ===== REFUND =====
+// ===== インボイス経過措置（免税事業者等からの課税仕入れの控除割合） =====
+// 出典：国税庁「令和8年度税制改正特集　インボイス経過措置の見直し等」
+//   〜令和5年9月30日   : 100%（制度開始前）
+//   令和5年10月 〜 令和8年9月  : 80%
+//   令和8年10月 〜 令和10年9月 : 70%（見直し前は50%）
+//   令和10年10月〜 令和12年9月 : 50%
+//   令和12年10月〜 令和13年9月 : 30%
+//   令和13年10月以降           : 0%
+// ※ 率が変わるのはすべて10月1日なので、「月の初日」で判定すれば月内で率が変わることはない。
+const TRANSIT_SCHEDULE = [
+  { from: '2031-10-01', rate: 0,   label: '0%（経過措置終了）' },
+  { from: '2030-10-01', rate: 0.3, label: '30%（R12.10〜R13.9の経過措置）' },
+  { from: '2028-10-01', rate: 0.5, label: '50%（R10.10〜R12.9の経過措置）' },
+  { from: '2026-10-01', rate: 0.7, label: '70%（R8.10〜R10.9の経過措置）' },
+  { from: '2023-10-01', rate: 0.8, label: '80%（R5.10〜R8.9の経過措置）' },
+  { from: '0000-01-01', rate: 1,   label: '100%（インボイス制度開始前）' },
+];
+function transitInfoOfMonth(y, m) {
+  const first = `${y}-${String(m).padStart(2, '0')}-01`;
+  const hit = TRANSIT_SCHEDULE.find(t => first >= t.from);
+  return { rate: hit.rate, label: hit.label, pct: Math.round(hit.rate * 100) };
+}
+
 function renderRefund() {
   const { y, m } = state;
   const START_DATE = '2026-04-29';
   const sales = salesOfMonth(y, m).filter(x => x.date >= START_DATE);
   const exps = expOfMonth(y, m).filter(e => e.date >= START_DATE);
 
-  // 経過措置：令和8年9月末（2026-09-30）まで80%、令和11年9月末（2029-09-30）まで50%、以降0%
-  const today = new Date();
-  const transitRate = today <= new Date('2026-09-30') ? 0.8
-                    : today <= new Date('2029-09-30') ? 0.5
-                    : 0;
-  const transitLabel = today <= new Date('2026-09-30') ? '80%（R8.9月まで経過措置）'
-                     : today <= new Date('2029-09-30') ? '50%（R11.9月まで経過措置）'
-                     : '0%（経過措置終了）';
+  // 経過措置（インボイス発行事業者以外からの課税仕入れの控除割合）。
+  // 【v45】率は「今日」ではなく「対象の月の初日」で決める（過去月を開いても、その当時の率で計算するため）。
+  // 国税庁「令和8年度税制改正特集 インボイス経過措置の見直し等」に基づく。
+  const _tr = transitInfoOfMonth(y, m);
+  const transitRate = _tr.rate;
+  const transitLabel = _tr.label;
   const transitPct = Math.round(transitRate * 100);
 
   // 配信者報酬：インボイス登録済み→100%、未登録→経過措置率
