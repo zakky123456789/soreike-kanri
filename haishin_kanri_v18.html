@@ -300,6 +300,7 @@
               <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="c-name" placeholder="例：はなこ"></div>
               <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="c-rate" type="number" placeholder="例：70" step="0.1"></div>
               <div class="form-group"><label>紹介者</label><select id="c-ref"><option value="">なし</option></select></div>
+              <div class="form-group"><label>報酬の計算方式</label><select id="c-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option></select></div>
             </div>
           </div>
           <div style="margin-bottom:20px">
@@ -379,6 +380,7 @@
             <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="edit-name"></div>
             <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="edit-rate" type="number" step="0.1"></div>
             <div class="form-group"><label>紹介者</label><select id="edit-ref"><option value="">なし</option></select></div>
+            <div class="form-group"><label>報酬の計算方式</label><select id="edit-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option></select></div>
           </div>
         </div>
 
@@ -1065,7 +1067,7 @@
           </div>
           <div id="s-preview" style="display:none" class="sim-box">
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px">プレビュー</div>
-            <div class="sim-row"><div class="sim-label">売上金額（コイン×7）</div><div id="p-sales" style="font-family:var(--mono)"></div></div>
+            <div class="sim-row"><div class="sim-label" id="p-sales-label">売上金額（コイン×7）</div><div id="p-sales" style="font-family:var(--mono)"></div></div>
             <div class="sim-row"><div class="sim-label">報酬額（売上×報酬率）</div><div id="p-reward" style="font-family:var(--mono);color:var(--red)"></div></div>
             <div class="sim-row"><div class="sim-label">源泉税（報酬×10.21%）</div><div id="p-src" style="font-family:var(--mono);color:var(--yellow)"></div></div>
             <div class="sim-row"><div class="sim-label">振込額</div><div id="p-transfer" style="font-family:var(--mono);color:var(--green)"></div></div>
@@ -1861,7 +1863,7 @@
             <div class="form-group"><label>対象年 <span style="color:var(--red)">*</span></label><input id="mgr-adj-target-y" type="number" placeholder="例：2026"></div>
             <div class="form-group"><label>対象月 <span style="color:var(--red)">*</span></label><input id="mgr-adj-target-m" type="number" min="1" max="12" placeholder="例：7"></div>
           </div>
-          <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="mgr-adj-amount" type="number" placeholder="例：15000"></div>
+          <div class="form-group"><label>金額 <span style="color:var(--red)">*</span></label><input id="mgr-adj-amount" type="number" placeholder="例：15000（減額はマイナス：-15000）"><div style="font-size:10px;color:var(--muted);margin-top:2px">マイナスを入れると、その月の支払額から差し引かれます</div></div>
           <div class="form-group"><label>摘要</label><input id="mgr-adj-note" placeholder="例：6月分紹介料除外による差額">
             <div style="font-size:10px;color:var(--muted);margin-top:2px">請求書の明細に「追加報酬　{摘要}」として記載されます</div>
           </div>
@@ -1976,6 +1978,7 @@
         <div style="margin-bottom:14px">
           <div style="font-size:12px;color:var(--muted);margin-bottom:4px">配信者・対象月</div>
           <div id="mep-label" style="font-weight:600;color:var(--accent)"></div>
+          <div id="mep-fx-warn" style="display:none;font-size:11px;margin-top:6px;padding:6px 10px;border-radius:6px;background:rgba(251,191,36,0.1);border:1px solid var(--yellow);color:var(--yellow)"></div>
         </div>
         <div id="mep-quick-section" style="margin-bottom:16px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
@@ -2262,7 +2265,8 @@ async function loadFromDB() {
         address: r.address, bank: r.bank, branch: r.branch, account: r.account, holder: r.holder,
         realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||'',
         retired: !!r.retired, retiredDate: r.retired_date || '',
-        onHold: !!r.on_hold, onHoldDate: r.on_hold_date || ''
+        onHold: !!r.on_hold, onHoldDate: r.on_hold_date || '',
+        rewardBasis: r.reward_basis === 'fx' ? 'fx' : 'coin7'   // 【v46】報酬の計算方式
       }));
     }
     if (referrersR.data?.length > 0) {
@@ -2840,6 +2844,88 @@ const getCatBadge = cat => {
   return `<span style="display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:1px 7px;${s}">${cat}</span>`;
 };
 const calcReward = (yen, rate) => Math.floor(yen * rate / 100); // 税込報酬（切り捨て）
+// ===== 【v46】報酬の計算方式（配信者ごとに選択）=====
+//   'coin7' … 従来方式：コイン × 7円 × 料率（既存の配信者はすべてこれ）
+//   'fx'    … 換金額ベース：実際に日本円へ換金できた額 × 料率
+// 換金額ベースの配信1件あたりの円は、両替記録1件ごとに
+//   その記録の受取額（jpy） × この配信のコイン ÷ 記録の対象期間内にある全配信者のコイン合計
+// を足し合わせたもの。対象期間が未入力の両替記録は、その記録の年月の1日〜末日を対象期間とみなす。
+// どの両替記録の対象期間にも入っていない配信（＝まだ換金されていない）は推計で計算する：
+//   コイン × 0.05ドル × その配信のレート × (1 − 出金手数料2%)（＝推計売上と同じ式）
+// 日払いはこの推計で仮払いし、両替記録が入った後の月末精算で確定額との差額を精算する。
+// ※ 紹介料は報酬方式に関係なく従来どおり「コイン × 7円」基準のまま（calcRefTotal は変更しない）
+const REWARD_BASIS_LABEL = { coin7: 'コイン×7円', fx: '換金額ベース' };
+const isFxBasis = c => !!c && c.rewardBasis === 'fx';
+let _fxAllocCache = null, _fxAllocSig = '';
+function invalidateFxAlloc() { _fxAllocCache = null; }
+function fxRecordPeriod(r) {
+  const mm = String(r.m).padStart(2, '0');
+  const from = r.dateFrom || `${r.y}-${mm}-01`;
+  const to   = r.dateTo   || `${r.y}-${mm}-${String(new Date(r.y, r.m, 0).getDate()).padStart(2, '0')}`;
+  return { from, to };
+}
+// 配信ID → 換金額ベースの円（端数付き）。全配信者の売上で按分する（方式に関係なく、両替したドルは全員分のため）
+function fxAllocation() {
+  const sig = state.sales.length + '|' + (state.fxRecords || []).map(r => [r.id, r.jpy, r.dateFrom, r.dateTo, r.y, r.m].join(',')).join(';');
+  if (_fxAllocCache && _fxAllocSig === sig) return _fxAllocCache;
+  const yenOf = {}, recIdsOf = {};
+  (state.fxRecords || []).forEach(r => {
+    if (!(r.jpy > 0)) return;
+    const { from, to } = fxRecordPeriod(r);
+    const inPeriod = state.sales.filter(s => s.date && s.date >= from && s.date <= to);
+    const totalCoins = inPeriod.reduce((a, s) => a + (s.coins || 0), 0);
+    if (!(totalCoins > 0)) return;
+    inPeriod.forEach(s => {
+      yenOf[s.id] = (yenOf[s.id] || 0) + (s.coins || 0) * r.jpy / totalCoins;
+      if (!recIdsOf[s.id]) recIdsOf[s.id] = [];
+      recIdsOf[s.id].push(r.id);
+    });
+  });
+  _fxAllocCache = { yenOf, recIdsOf };
+  _fxAllocSig = sig;
+  return _fxAllocCache;
+}
+// 配信1件の「報酬計算の元になる円」
+function saleBaseYen(s, c) {
+  if (!isFxBasis(c)) return coinToYen(s.coins);
+  const v = fxAllocation().yenOf[s.id];
+  if (v != null) return Math.floor(v + 1e-6);          // 確定（両替記録あり）。浮動小数の誤差で1円落ちないよう微小値を足す
+  if (s.rate) return estSalesYen(s.coins, s.rate);     // 推計（まだ換金されていない）
+  return coinToYen(s.coins);                            // レートも未入力：最終手段として従来方式の額
+}
+// 'coin7' | 'fx-confirmed' | 'fx-estimate' | 'fx-norate'
+function saleBasisStatus(s, c) {
+  if (!isFxBasis(c)) return 'coin7';
+  if (fxAllocation().yenOf[s.id] != null) return 'fx-confirmed';
+  return s.rate ? 'fx-estimate' : 'fx-norate';
+}
+// 配信1件の報酬（税込）。報酬はすべてここを通す
+function saleRewardOf(s, c) { return c ? calcReward(saleBaseYen(s, c), c.rate) : 0; }
+// 換金額ベースの配信者について、その月の配信が確定済みか（月末精算の判断材料）
+function casterFxStatusOfMonth(casterId, y, m) {
+  const c = getCaster(casterId);
+  const list = state.sales.filter(s => s.casterId === casterId && s.y === y && s.m === m);
+  if (!isFxBasis(c)) return { fx: false, total: list.length, confirmed: list.length, estimate: 0, norate: 0 };
+  let confirmed = 0, estimate = 0, norate = 0;
+  list.forEach(s => { const st = saleBasisStatus(s, c); if (st === 'fx-confirmed') confirmed++; else if (st === 'fx-estimate') estimate++; else norate++; });
+  return { fx: true, total: list.length, confirmed, estimate, norate, allConfirmed: list.length > 0 && confirmed === list.length };
+}
+// 配信1件ぶんの小さな目印（日払いの配信選択・売上一覧で使う）
+function fxSaleTagHtml(s, c) {
+  const st = saleBasisStatus(s, c);
+  if (st === 'fx-estimate') return `<span style="color:var(--yellow);font-size:10px;margin-left:4px" title="換金額ベース：まだ両替記録の対象期間に入っていないため推計（コイン×0.05×レート×(1−${FX_FEE_PCT}%)）">推計</span>`;
+  if (st === 'fx-norate')   return `<span style="color:var(--red);font-size:10px;margin-left:4px" title="換金額ベース：レート未入力のため仮にコイン×7円で計算しています">レート未入力</span>`;
+  if (st === 'fx-confirmed') return `<span style="color:var(--green);font-size:10px;margin-left:4px" title="換金額ベース：両替記録の受取額から按分して確定">💱確定</span>`;
+  return '';
+}
+// 換金額ベースの配信者の状態バッジ（従来方式の配信者には何も出さない）
+function fxStatusBadgeHtml(casterId, y, m) {
+  const st = casterFxStatusOfMonth(casterId, y, m);
+  if (!st.fx) return '';
+  if (st.allConfirmed) return `<span class="badge badge-green" title="換金額ベース：この月の配信はすべて両替記録で確定しています">💱 換金額確定</span>`;
+  const rest = st.estimate + st.norate;
+  return `<span class="badge badge-yellow" title="換金額ベース：両替記録の対象期間に入っていない配信が${rest}件あり、推計で計算しています。月末精算は両替記録を入れてから行ってください">💱 推計${rest}件</span>`;
+}
 // 税込金額から税抜金額を求める（1円未満切り捨て）。
 // 【v35で修正】従来は Math.floor(x / 1.1) としていたが、JavaScriptでは 1.1 を正確に表せないため
 // 割り切れる金額（11の倍数）でも 1円下振れすることがある。
@@ -3038,7 +3124,7 @@ function calcCasterMonthEndAllocation(casterId, y, m) {
   const totalPrepaid = dpList.reduce((s, d) => s + d.amount, 0);
 
   const rewardOf = {};
-  sales.forEach(s2 => { rewardOf[s2.id] = c ? calcReward(coinToYen(s2.coins), c.rate) : 0; });
+  sales.forEach(s2 => { rewardOf[s2.id] = c ? saleRewardOf(s2, c) : 0; });
   const totalReward = sales.reduce((s, s2) => s + (rewardOf[s2.id] || 0), 0);
   const capOf = sid => Math.max(rewardOf[sid] || 0, 0);   // マイナス調整には前払いを充当しない
 
@@ -3437,7 +3523,8 @@ function casterToLogObj(c) {
     refId: c.refId ?? null, refName: c.refId ? (getReferrer(c.refId)?.name || '') : '',
     invoice: !!c.invoice, invoiceNo: c.invoiceNo || '',
     retired: !!c.retired, retiredDate: c.retiredDate || '',
-    onHold: !!c.onHold, onHoldDate: c.onHoldDate || '', memo: c.memo || ''
+    onHold: !!c.onHold, onHoldDate: c.onHoldDate || '', memo: c.memo || '',
+    rewardBasis: c.rewardBasis || 'coin7'
   };
 }
 function referrerToLogObj(r) {
@@ -3479,7 +3566,7 @@ const AUDIT_ACTION_LABEL = { add: '追加', edit: '編集', delete: '削除' };
 // 変更点の表示に使うフィールド名（これ以外の差分も出るが、金額に効くものを先に並べる）
 const AUDIT_FIELD_LABEL = {
   coins: 'コイン', rate: '料率', date: '日付', amount: '金額', srcTax: '源泉税',
-  excludeRef: '紹介料除外', excludeReport: 'レポート除外', casterName: '配信者', refName: '紹介者',
+  rewardBasis: '報酬の計算方式', excludeRef: '紹介料除外', excludeReport: 'レポート除外', casterName: '配信者', refName: '紹介者',
   r1pct: '①率', r2a: '②A', r2b: '②B', r2pct: '②率', type: '種別', note: 'メモ',
   payDate: '支払日', targetY: '対象年', targetM: '対象月', name: '名前', retired: '退所', onHold: '休止',
   taxAmount: '消費税額（領収書記載）', settled: '立替精算の状況', refCoins: '紹介者向けコイン',
@@ -4349,6 +4436,8 @@ async function handleReceiptFiles(files) {
         // 会議費・接待交際費の場合は品名を自動セット
         if (item.cat === '会議費') item.name = '会議飲食代';
         else if (item.cat === '接待交際費') item.name = '接待飲食代';
+        // GMOとくとくBBの支払方法は法人クレジットカード（三井住友カード）で固定
+        if (/GMOインターネット|GMOとくとくBB/.test((item.payee||'') + (item.name||''))) item.method = '法人クレジットカード（三井住友カード）';
         newResults.push(item);
       });
     } catch(e) {
@@ -4498,6 +4587,15 @@ async function readReceiptFile(file) {
           - invoiceNoは空文字（So-netのインボイスは使用不可）
           - noteは「継続課金の経費入力ルールに基づき、日付は請求書発行日を記載。So-net請求書内のKDDI各種料金（譲渡/回収代行）は、インボイス番号は本請求書では採用せず、消費税対象外として処理。」
      c) 両要素ともpayeeは「ソニーネットワークコミュニケーションズ株式会社」、catは「通信費」
+   - GMOとくとくBB請求書（GMOインターネット株式会社）の場合：
+     a) dateは「請求書発行日」を使用してください（So-netと同じ扱い）。
+     b) 要素は1つだけです（So-netのようなKDDI分割はありません）。明細内の割引行・値引行（クロスファミリー接続、工事費分割とその割引など）は個別に拾わず、「今回請求額（税込）」をamountにしてください。
+     c) nameは「GMOとくとくBB 利用料 ○年○月度請求」の形式にしてください（○年○月は「請求年月」を使用。例：「GMOとくとくBB 利用料 2026年10月度請求」）。
+     d) payeeは「GMOインターネット株式会社」、catは「通信費」、taxは「10」。
+     e) invoiceNoは請求書記載の登録番号（T1011001032872）。
+     f) taxAmountは請求書に記載の消費税額をそのまま入れてください（逆算しない）。
+     g) noteは「継続課金の経費入力ルールに基づき、日付は請求書発行日を記載。」
+     h) 支払方法は法人クレジットカード（三井住友カード）で固定（システム側で自動設定されます）。
    - 楽天モバイル利用明細（楽天モバイル株式会社）の場合：
      a) dateは「発行日」ではなく、明細内の「ご利用期間」の**末尾の日付**を使用してください（例：ご利用期間「2026/02/01 - 2026/02/28」→ date は2026-02-28）。
         ※ 項目ごとに利用期間の記載がない場合は、「ご利用年月」（例：2026/02）の月の末日を使用してください。
@@ -4958,6 +5056,7 @@ async function addCheckedReceipts() {
 
 // ===== RENDER ALL =====
 function renderAll() {
+  invalidateFxAlloc();   // 【v46】売上・両替記録の変更を換金額ベースの報酬に反映
   renderDashboard(); renderCasters(); renderReferrers(); renderManager(); renderPettyCash();
   renderSales(); renderExpenses(); renderPL(); renderFxRecords(); renderTax(); renderOfficerPayList(); renderRefund(); renderReport(); renderInvoiceSelects(); renderRefReportSelects(); renderWithholdingSelects(); renderPrepaid(); renderLedger(); renderTrips();
 }
@@ -4985,7 +5084,7 @@ function renderDashboard() {
   const fxRecs = fxOfMonth(y, m);
   const totalSales = sales.reduce((s, x) => x.rate ? s + estSalesYen(x.coins, x.rate) : s, 0);   // 【v45】手数料控除後
   const totalReward = sales.reduce((s, x) => {
-    const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
+    const c = getCaster(x.casterId); return s + (c ? saleRewardOf(x, c) : 0);
   }, 0);
   const totalExp = exps.filter(isPlExpense).reduce((s, e) => s + e.amount, 0);
   // 【v37】紹介料は日次コイン合計方式（＝紹介者報告書・実際の支払額）に統一
@@ -5010,7 +5109,7 @@ function renderDashboard() {
   // 報酬額も合算
   sales.forEach(s => {
     const c = getCaster(s.casterId);
-    if (c) casterTotals[s.casterId].reward = (casterTotals[s.casterId].reward||0) + calcReward(coinToYen(s.coins), c.rate);
+    if (c) casterTotals[s.casterId].reward = (casterTotals[s.casterId].reward||0) + saleRewardOf(s, c);
   });
   const sorted = Object.values(casterTotals).sort((a,b) => b.coins - a.coins).slice(0,5);
   document.getElementById('dash-top').innerHTML = sorted.map(s => {
@@ -5124,18 +5223,20 @@ async function addCaster() {
   const onHold = statusVal === 'onhold';
   const onHoldDate = onHold ? statusDate : '';
   const casterRefId = refId ? parseInt(refId) : null;
+  const rewardBasis = document.getElementById('c-basis').value === 'fx' ? 'fx' : 'coin7';   // 【v46】
   let newCasterId;
   try {
-    newCasterId = await insertWithFreshId('casters', id => ({ id, name, rate, ref_id: casterRefId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null }));
+    newCasterId = await insertWithFreshId('casters', id => ({ id, name, rate, ref_id: casterRefId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null, reward_basis: rewardBasis }));
   } catch(e) {
     showCasterError(`保存に失敗しました: ${e.message}`);
     return;
   }
-  const newCaster = { id: newCasterId, name, rate, refId: casterRefId, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
+  const newCaster = { id: newCasterId, name, rate, refId: casterRefId, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate, rewardBasis };
   state.casters.push(newCaster);
   await writeAuditLog('add', newCasterId, null, casterToLogObj(newCaster), 'casters');
   document.getElementById('c-name').value = '';
   document.getElementById('c-rate').value = '';
+  document.getElementById('c-basis').value = 'coin7';
   document.getElementById('c-invoiceno').value = '';
   document.getElementById('c-realname').value = '';
   document.getElementById('c-birthdate').value = '';
@@ -5196,7 +5297,7 @@ function renderCasters() {
     return `<tr${(c.retired || c.onHold) ? ' style="opacity:0.55"' : ''}>
       <td><strong>${escapeHtml(c.name)}</strong></td>
       <td>${statusBadge}</td>
-      <td class="num"><span class="badge badge-blue">${c.rate}%</span></td>
+      <td class="num"><span class="badge badge-blue">${c.rate}%</span>${isFxBasis(c) ? `<div style="margin-top:3px"><span class="badge badge-purple" title="実際に日本円へ換金できた額 × 料率">💱 換金額ベース</span></div>` : ''}</td>
       <td>${ref ? `<span class="badge badge-orange">${escapeHtml(ref.name)}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
       <td>${invBadge}</td>
       <td>${invNo}</td>
@@ -5231,6 +5332,7 @@ function openEditModal(id) {
   document.getElementById('edit-acnum').value = _acParts.slice(1).join(' ')||'';
   document.getElementById('edit-holder').value  = c.holder  || '';
   document.getElementById('edit-memo').value = c.memo || '';
+  document.getElementById('edit-basis').value = c.rewardBasis === 'fx' ? 'fx' : 'coin7';
   const currentStatus = c.retired ? 'retired' : (c.onHold ? 'onhold' : 'active');
   document.getElementById('edit-status').value = currentStatus;
   document.getElementById('edit-status-date').value = (c.retired ? c.retiredDate : c.onHold ? c.onHoldDate : '') || '';
@@ -5273,8 +5375,10 @@ async function saveEdit() {
     const onHold = statusVal === 'onhold';
     const onHoldDate = onHold ? statusDate : '';
     const beforeEdit = casterToLogObj(state.casters[idx]);
-    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate };
-    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null });
+    const rewardBasis = document.getElementById('edit-basis').value === 'fx' ? 'fx' : 'coin7';   // 【v46】
+    if (rewardBasis !== (state.casters[idx].rewardBasis || 'coin7') && !confirm(`報酬の計算方式を「${REWARD_BASIS_LABEL[rewardBasis]}」に変更します。\n\nこの配信者の過去の月も含めて、報酬・源泉税・月末精算の計算がすべて新しい方式で再計算されます（支払い済みの記録の金額は変わりません）。\n\nよろしいですか？`)) return;
+    state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate, rewardBasis };
+    await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null, reward_basis: rewardBasis });
     await writeAuditLog('edit', id, beforeEdit, casterToLogObj(state.casters[idx]), 'casters');
   }
   closeEditModal();
@@ -5932,20 +6036,26 @@ function updateSalePreview() {
   }
   const c = getCaster(casterId);
   if (!c) return;
-  const salesAmt = coinToYen(coinsVal);
+  // 【v46】換金額ベースの配信者は、保存前の見積りなので推計（コイン×0.05×レート×(1−2%)）で出す
+  const _pvRate = parseFloat(document.getElementById('s-rate').value) || null;
+  const salesAmt = isFxBasis(c) && _pvRate ? estSalesYen(coinsVal, _pvRate) : coinToYen(coinsVal);
   const reward = calcReward(salesAmt, c.rate);
+  const refBaseReward = calcReward(coinToYen(coinsVal), c.rate);   // 紹介料（パターンB）は報酬方式に関係なくコイン×7円基準
   const src = calcSrcTax(reward);
   const transfer = reward - src;
   const ref = c.refId ? getReferrer(c.refId) : null;
   // 【v37】ここは「まだ保存していない1件」の見積りなので、日次方式の按分は適用しない。
   // 同じ日にすでに売上がある場合、保存後に表示される按分後の額とは数円ずれることがある。
   // 保存後の一覧・集計はすべて calcRefAllocation() の日次方式で表示される。
-  const _refCalc = calcRefTotal(coinsVal, reward, ref);
+  const _refCalc = calcRefTotal(coinsVal, refBaseReward, ref);
   const r1 = _refCalc.r1; const r2 = _refCalc.r2; const refTotal = _refCalc.total;
   const rate = parseFloat(document.getElementById('s-rate').value) || null;
   const office = calcOfficeSales(coinsVal, rate, reward, refTotal);
 
   document.getElementById('p-sales').textContent = yen(salesAmt);
+  const _pvLbl = document.getElementById('p-sales-label');
+  if (_pvLbl) _pvLbl.textContent = !isFxBasis(c) ? '売上金額（コイン×7）'
+    : _pvRate ? `換金額の推計（コイン×0.05×${_pvRate}・${FX_FEE_NOTE}）※換金後に確定` : '売上金額（コイン×7）※レート未入力のため仮';
   document.getElementById('p-reward').textContent = yen(reward);
   document.getElementById('p-src').textContent = yen(src);
   document.getElementById('p-transfer').textContent = yen(transfer);
@@ -6499,7 +6609,7 @@ function updateDpSaleList() {
         let totalRw = 0;
         ids.forEach(sid => {
           const sv = cSales.find(x => x.id === sid);
-          const rw = sv && casterObj ? calcReward(coinToYen(sv.coins), casterObj.rate) : 0;
+          const rw = sv && casterObj ? saleRewardOf(sv, casterObj) : 0;
           rewardMap[sid] = rw;
           totalRw += rw;
         });
@@ -6524,7 +6634,7 @@ function updateDpSaleList() {
 
   el.innerHTML = cSales.map(s => {
     const c = getCaster(casterId);
-    const reward = c ? calcReward(coinToYen(s.coins), c.rate) : 0;
+    const reward = c ? saleRewardOf(s, c) : 0;
     const alreadyPaid = paidBySaleId[s.id] || 0;
     const remaining = reward - alreadyPaid;
     // 報酬額がマイナスの行（＝報酬を減らす調整）は前払いの対象にならないので選択不可にするが、
@@ -6544,7 +6654,7 @@ function updateDpSaleList() {
         : '';
     return `<label style="${labelStyle}" id="dp-sale-label-${s.id}">
       <input type="checkbox" value="${s.id}" data-reward="${reward}" data-remaining="${remaining}" onchange="onDpSaleCheck(this)" style="width:auto;accent-color:var(--accent)" ${fullyPaid ? 'disabled' : ''}>
-      <span>${s.date}　${fmt(s.coins)}C　<span style="color:var(--red)">${yen(reward)}</span>${remainingLabel}${paidLabel}</span>
+      <span>${s.date}　${fmt(s.coins)}C　<span style="color:var(--red)">${yen(reward)}</span>${fxSaleTagHtml(s, c)}${remainingLabel}${paidLabel}</span>
     </label>`;
   }).join('');
   updateDpPreview();
@@ -6567,7 +6677,7 @@ function calcDpFromSales() {
     if (cb) return s + parseInt(cb.dataset.remaining || cb.dataset.reward);
     const sale = state.sales.find(x => x.id === id);
     const c = sale ? getCaster(sale.casterId) : null;
-    return s + (c ? calcReward(coinToYen(sale.coins), c.rate) : 0);
+    return s + (c ? saleRewardOf(sale, c) : 0);
   }, 0);
   // 支払額 = 残額 - 源泉税
   const autoPayment = totalRemaining - calcSrcTax(totalRemaining);
@@ -6673,7 +6783,7 @@ function updateDpEditSaleList(casterId, checkedIds) {
   dpEditSelectedSaleIds = new Set(checkedIds);
   el.innerHTML = cSales.map(s => {
     const c = getCaster(casterId);
-    const reward = c ? calcReward(coinToYen(s.coins), c.rate) : 0;
+    const reward = c ? saleRewardOf(s, c) : 0;
     const checked = dpEditSelectedSaleIds.has(s.id);
     return `<label style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--surface);border:1px solid ${checked?'var(--accent)':'var(--border)'};border-radius:6px;cursor:pointer;font-size:12px" id="dp-edit-label-${s.id}">
       <input type="checkbox" value="${s.id}" ${checked?'checked':''} data-reward="${reward}" onchange="onDpEditSaleCheck(this)" style="width:auto;accent-color:var(--accent)">
@@ -6695,7 +6805,7 @@ function calcDpEditFromSales() {
   const total = [...dpEditSelectedSaleIds].reduce((s, sid) => {
     const sale = state.sales.find(x => x.id === sid);
     const c = sale ? getCaster(sale.casterId) : null;
-    return s + (c ? calcReward(coinToYen(sale.coins), c.rate) : 0);
+    return s + (c ? saleRewardOf(sale, c) : 0);
   }, 0);
   const autoPayment = total - calcSrcTax(total);
   document.getElementById('dp-edit-amount').value = autoPayment;
@@ -6820,14 +6930,19 @@ function renderSales() {
   const settlementRows = state.casters.map(c => {
     const cSales = sales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
-    const totalReward = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const totalReward = cSales.reduce((s,x) => s + saleRewardOf(x, c), 0);
     const cDailyPays = dailyPays.filter(d => d.casterId === c.id);
     const totalDailyAmt = cDailyPays.reduce((s,d) => s + d.amount, 0);
     const totalDailySrc = cDailyPays.reduce((s,d) => s + d.srcTax, 0);
     const totalDailyTransfer = cDailyPays.reduce((s,d) => s + (d.amount - d.srcTax), 0);
     // v36：残額は共通関数から取る（請求書・配信者レポート・支払調書と同じ数字）
-    const remaining = calcCasterMonthEndAllocation(c.id, y, m).billable;
+    const _alloc = calcCasterMonthEndAllocation(c.id, y, m);
+    const remaining = _alloc.billable;
     const remainingSrc = calcSrcTax(remaining > 0 ? remaining : 0);
+    // 【v46】換金額ベースの配信者：確定／推計の状態と、仮払い（日払い）が確定額を上回った分を表示
+    const fxBadge = fxStatusBadgeHtml(c.id, y, m);
+    const fxExcess = isFxBasis(c) && _alloc.excessPrepaid > 0
+      ? `<div style="font-size:10px;color:var(--red);margin-top:3px" title="日払いを推計で仮払いした結果、換金額で確定した報酬を上回りました。返金してもらうか、翌月分の追加報酬などで調整してください">⚠️ 仮払いが確定額を${yen(_alloc.excessPrepaid)}上回り</div>` : '';
     const transfer = (remaining > 0 ? remaining : 0) - remainingSrc;
     const existingMep = state.monthEndPays.find(p => p.casterId === c.id && p.targetY === y && p.targetM === m);
     const isViewer = isViewerRole();
@@ -6847,7 +6962,7 @@ function renderSales() {
             ? `<span style="color:var(--muted);font-size:11px">未登録</span>`
             : `<button class="btn btn-sm" style="background:var(--accent);color:#fff;font-size:11px" onclick="openMepModal(${c.id},${y},${m},null)">＋ 支払いを記録</button>`)
       : '<span style="color:var(--muted);font-size:11px">-</span>';
-    return { totalReward, totalDailyAmt, totalDailyTransfer, totalDailySrc, remaining, remainingSrc, transfer, mepBtn, name: c.name };
+    return { totalReward, totalDailyAmt, totalDailyTransfer, totalDailySrc, remaining, remainingSrc, transfer, mepBtn, name: c.name, fxBadge, fxExcess };
   }).filter(Boolean);
 
   // 合計行の計算
@@ -6872,7 +6987,7 @@ function renderSales() {
   </tr>` : '';
 
   document.getElementById('settlement-table').innerHTML = settlementRows.map(r => `<tr>
-    <td><strong>${escapeHtml(r.name)}</strong></td>
+    <td><strong>${escapeHtml(r.name)}</strong>${r.fxBadge ? `<div style="margin-top:3px">${r.fxBadge}</div>` : ''}${r.fxExcess}</td>
     <td class="num" style="color:var(--red)">${yen(r.totalReward)}</td>
     <td class="num" style="color:var(--yellow)">${r.totalDailyAmt>0?yen(r.totalDailyAmt):'-'}</td>
     <td class="num" style="color:var(--green);font-weight:600">${r.totalDailyTransfer>0?yen(r.totalDailyTransfer):'-'}</td>
@@ -6956,7 +7071,7 @@ function renderSales() {
   // 各行の計算値キャッシュ（ソート用）
   const getSaleVals = s => {
     const c = getCaster(s.casterId);
-    const sa = coinToYen(s.coins);
+    const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
     const rw = c ? calcReward(sa, c.rate) : 0;
     const src = calcSrcTax(rw);
     const rcParts = refOfSale(salesRefAlloc, s.id);
@@ -7014,7 +7129,7 @@ function renderSales() {
     let sumCoins=0, sumReward=0, sumSrc=0, sumR1=0, sumR2=0, sumRcTotal=0, sumJpy=0, sumOffice=0;
     let hasRate = false;
     g.sales.forEach(s => {
-      const sa = coinToYen(s.coins);
+      const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
       const rw = c ? calcReward(sa, c.rate) : 0;
       const src = calcSrcTax(rw);
       const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
@@ -7050,7 +7165,7 @@ function renderSales() {
         }
       </td>
       <td class="num"><span class="coin-badge" style="${fw}">${coins(sumCoins)}</span></td>
-      <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}</td>
+      <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}${isFxBasis(c) ? `<div>${(() => { const est = g.sales.find(x => saleBasisStatus(x, c) !== 'fx-confirmed'); return fxSaleTagHtml(est || g.sales[0], c); })()}</div>` : ''}</td>
       <td class="num" style="color:var(--yellow);${fw}">${yen(sumSrc)}</td>
       <td class="num" style="color:var(--green);${fw}">${yen(sumTransfer)}</td>
       <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
@@ -7074,7 +7189,7 @@ function renderSales() {
     // 複数回の場合のみ明細行を表示
     if (isMulti) {
       g.sales.forEach((s, idx) => {
-        const sa = coinToYen(s.coins);
+        const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
         const reward = c ? calcReward(sa, c.rate) : 0;
         const src = calcSrcTax(reward);
         const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
@@ -7093,7 +7208,7 @@ function renderSales() {
           </td>
           <td><span class="badge badge-blue">${c?.rate||0}%</span></td>
           <td class="num"><span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}">${coins(s.coins)}</span></td>
-          <td class="num" style="color:var(--red)">${yen(reward)}</td>
+          <td class="num" style="color:var(--red)">${yen(reward)}${isFxBasis(c) ? `<div>${fxSaleTagHtml(s, c)}</div>` : ''}</td>
           <td class="num" style="color:var(--yellow)">${yen(src)}</td>
           <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
           <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
@@ -7985,12 +8100,12 @@ function renderPL() {
   const hasFx = fxSales.hasData;
 
   const totalReward = sales.reduce((s,x) => {
-    const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
+    const c = getCaster(x.casterId); return s + (c ? saleRewardOf(x, c) : 0);
   }, 0);
   // 【v37】紹介料は日次コイン合計方式（＝紹介者報告書・実際の支払額）に統一
   const totalRef = calcRefAllocation(sales).total;
   const totalSrc = sales.reduce((s,x) => {
-    const c = getCaster(x.casterId); return s + (c ? calcSrcTax(calcReward(coinToYen(x.coins), c.rate)) : 0);
+    const c = getCaster(x.casterId); return s + (c ? calcSrcTax(saleRewardOf(x, c)) : 0);
   }, 0);
   const totalExp = exps.filter(isPlExpense).reduce((s,e) => s + e.amount, 0);
   const catMap = {};
@@ -8034,11 +8149,12 @@ function renderPL() {
     const c = getCaster(s.casterId);
     if (!c) return;
     if (!byId[c.id]) {
-      byId[c.id] = { c, ref: c.refId ? getReferrer(c.refId) : null, totalCoins: 0, reward: 0, src: 0, r1: 0, r2: 0, refTotal: 0 };
+      byId[c.id] = { c, ref: c.refId ? getReferrer(c.refId) : null, totalCoins: 0, baseYen: 0, reward: 0, src: 0, r1: 0, r2: 0, refTotal: 0 };
     }
-    const rw = calcReward(coinToYen(s.coins), c.rate);
+    const rw = saleRewardOf(s, c);
     const {r1, r2, total: refTot} = refOfSale(plRefAlloc, s.id);
     byId[c.id].totalCoins += s.coins;
+    byId[c.id].baseYen += saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
     byId[c.id].reward += rw;
     byId[c.id].src += calcSrcTax(rw);
     byId[c.id].r1 += r1;
@@ -8058,7 +8174,7 @@ function renderPL() {
 
   // 配信者別報酬
   const rewardRows = byIdList.map(x => {
-    const sa = coinToYen(x.totalCoins);
+    const sa = x.baseYen;
     return '<tr><td>' + x.c.name + '</td><td class="num">' + yen(sa) + '</td>'
       + '<td class="num" style="color:var(--red)">' + yen(x.reward) + '</td>'
       + '<td class="num" style="color:var(--yellow)">' + yen(x.src) + '</td>'
@@ -9127,11 +9243,11 @@ function buildPeriodStatsTableHTML(filteredSales, label) {
     const cSales = filteredSales.filter(s => s.casterId === c.id);
     if (cSales.length === 0) return null;
     const totalCoins   = cSales.reduce((s,x) => s + x.coins, 0);
-    const totalReward  = cSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const totalReward  = cSales.reduce((s,x) => s + saleRewardOf(x, c), 0);
     const normalSales  = cSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport);
     const activeDays   = new Set(normalSales.map(s => s.date)).size;
     const normalCoins  = normalSales.reduce((s,x) => s + x.coins, 0);
-    const normalReward = normalSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+    const normalReward = normalSales.reduce((s,x) => s + saleRewardOf(x, c), 0);
     const avgCoinPerDay  = activeDays > 0 ? Math.floor(normalCoins / activeDays) : 0;
     const avgCoinPerLive = normalSales.length > 0 ? Math.floor(normalCoins / normalSales.length) : 0;
     const hasExcludedRecs = cSales.some(s => s.excludeReport);
@@ -9200,11 +9316,11 @@ function buildCasterPeriodStatsHTML(casterId) {
   const label = getPeriodLabel();
   if (filteredSales.length === 0) return `<div style="color:var(--muted);padding:16px;background:var(--surface2);border-radius:8px;margin-bottom:20px;text-align:center">この期間のデータはありません（${label}）</div>`;
   const totalCoins   = filteredSales.reduce((s,x) => s + x.coins, 0);
-  const totalReward  = filteredSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+  const totalReward  = filteredSales.reduce((s,x) => s + saleRewardOf(x, c), 0);
   const normalSales  = filteredSales.filter(s => (s.type||'normal') === 'normal' && !s.excludeReport);
   const activeDays   = new Set(normalSales.map(s => s.date)).size;
   const normalCoins  = normalSales.reduce((s,x) => s + x.coins, 0);
-  const normalReward = normalSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), c.rate), 0);
+  const normalReward = normalSales.reduce((s,x) => s + saleRewardOf(x, c), 0);
   const avgCoinPerDay  = activeDays > 0 ? Math.floor(normalCoins / activeDays) : 0;
   const avgCoinPerLive = normalSales.length > 0 ? Math.floor(normalCoins / normalSales.length) : 0;
 
@@ -9269,7 +9385,7 @@ function renderReport() {
       const cSales = sales.filter(s => s.casterId === c.id);
       if (cSales.length === 0) return null;
       const totalCoins = cSales.reduce((s,x) => s+x.coins, 0);
-      const totalReward = cSales.reduce((s,x) => s+calcReward(coinToYen(x.coins),c.rate), 0);
+      const totalReward = cSales.reduce((s,x) => s+saleRewardOf(x, c), 0);
       const totalSrc = calcSrcTax(totalReward);
       const ref = c.refId ? getReferrer(c.refId) : null;
       const totalRef = (repRefAlloc.byCasterId[c.id] || { total: 0 }).total;
@@ -9282,7 +9398,7 @@ function renderReport() {
       const transfer = remaining - remainingSrc;
       const ratesValid = cSales.filter(s=>s.rate);
       const officeTotal = ratesValid.reduce((s,x) => {
-        const rw=calcReward(coinToYen(x.coins),c.rate);
+        const rw=saleRewardOf(x, c);
         const rc=refOfSale(repRefAlloc, x.id).total;
         const o=calcOfficeSales(x.coins,x.rate,rw,rc);
         return s+(o?o.office:0);
@@ -9322,7 +9438,7 @@ function renderReport() {
     const ref = c.refId ? getReferrer(c.refId) : null;
 
     const totCoins = cSales.reduce((s,x)=>s+x.coins,0);
-    const totReward = cSales.reduce((s,x)=>s+calcReward(coinToYen(x.coins),c.rate),0);
+    const totReward = cSales.reduce((s,x)=>s+saleRewardOf(x, c),0);
     const totSrc = calcSrcTax(totReward);
     const totRef = (repRefAlloc.byCasterId[c.id] || { total: 0 }).total;
     const dpAmt = cDp.reduce((s,d)=>s+d.amount,0);
@@ -9345,7 +9461,7 @@ function renderReport() {
             <div class="table-header"><div class="table-title">日別売上明細</div></div>
             <table><thead><tr><th>配信日</th><th class="num">コイン</th><th class="num">報酬</th><th class="num">源泉税</th><th class="num">振込額</th><th class="num" title="円換算（出金手数料2%控除後）− 配信者報酬 − 紹介料">事務所売上<br><span style="font-size:10px;font-weight:400;color:var(--muted)">※-2%控除後</span></th></tr></thead>
             <tbody>${cSales.map(s => {
-              const rw = calcReward(coinToYen(s.coins), c.rate);
+              const rw = saleRewardOf(s, c);
               const src = calcSrcTax(rw);
               const rc = refOfSale(repRefAlloc, s.id).total;
               const office = calcOfficeSales(s.coins, s.rate, rw, rc);
@@ -9966,7 +10082,7 @@ function renderRefund() {
   sales.forEach(x => {
     const c = getCaster(x.casterId);
     if (!c) return;
-    const rw = calcReward(coinToYen(x.coins), c.rate);
+    const rw = saleRewardOf(x, c);
     const base = taxAmountOf(rw);
     if (c.invoice === 'yes') {
       rewardBase100 += base;
@@ -10023,7 +10139,7 @@ function renderRefund() {
   const mgrHasFx = mgrFxJpy > 0;
   const mgrRewardAmt = (() => {
     const totalReward = sales.reduce((s,x) => {
-      const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
+      const c = getCaster(x.casterId); return s + (c ? saleRewardOf(x, c) : 0);
     }, 0);
     // 【v37】日次コイン合計方式の実装を共通関数へ移譲（従来と同じ計算・同じ結果）
     const totalRef = calcRefAllocation(sales).total;
@@ -10133,7 +10249,7 @@ function calcManagerReward(y, m) {
   const totalSalesConfirmed = fxData.totalJpy;
   const totalSales = mgrSalesMode === 'confirmed' ? totalSalesConfirmed : totalSalesEstimate;
   const totalReward = sales.reduce((s,x) => {
-    const c = getCaster(x.casterId); return s + (c ? calcReward(coinToYen(x.coins), c.rate) : 0);
+    const c = getCaster(x.casterId); return s + (c ? saleRewardOf(x, c) : 0);
   }, 0);
   // 紹介料：同日コイン合計→1回計算（紹介者報告書と同じ方式）
   // 【v37】実装を共通関数へ移譲（従来と同じ計算・同じ結果）
@@ -11362,6 +11478,15 @@ function openMepModal(casterId, y, m, editId) {
   document.getElementById('mep-target-m').value = m;
   document.getElementById('mep-edit-id').value = editId || '';
   document.getElementById('mep-label').textContent = `${caster.name}　${y}年${m}月分`;
+  // 【v46】換金額ベースの配信者で、まだ両替記録に入っていない配信があるときは、見積り額が推計であることを警告
+  const fxWarn = document.getElementById('mep-fx-warn');
+  if (fxWarn) {
+    const fst = casterFxStatusOfMonth(casterId, y, m);
+    if (fst.fx && !fst.allConfirmed && !existing) {
+      fxWarn.style.display = '';
+      fxWarn.textContent = `⚠️ 換金額ベースの配信者です。この月の配信${fst.total}件のうち${fst.estimate + fst.norate}件がまだ両替記録の対象期間に入っておらず、下の見積り額は推計を含みます。両替記録を登録してから精算してください。`;
+    } else { fxWarn.style.display = 'none'; fxWarn.textContent = ''; }
+  }
   // 既存レコードがあれば実際に保存されている金額を、無ければ見積り額をデフォルト表示する
   document.getElementById('mep-amount').value = existing ? existing.amount : (transfer > 0 ? transfer : 0);
   document.getElementById('mep-src-tax').value = existing ? existing.srcTax : remainingSrc;
@@ -11803,7 +11928,7 @@ function renderWithholding() {
 
   for (let m = 1; m <= 12; m++) {
     const mSales = state.sales.filter(s => s.casterId === casterId && s.y === year && s.m === m);
-    const mReward = mSales.reduce((s,x) => s + calcReward(coinToYen(x.coins), caster.rate), 0);
+    const mReward = mSales.reduce((s,x) => s + saleRewardOf(x, caster), 0);
     const mDailyPays = state.dailyPays.filter(d => {
       const ty = d.targetY ?? d.y; const tm = d.targetM ?? d.m;
       return d.casterId === casterId && ty === year && tm === m;
