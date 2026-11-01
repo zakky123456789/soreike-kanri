@@ -300,7 +300,7 @@
               <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="c-name" placeholder="例：はなこ"></div>
               <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="c-rate" type="number" placeholder="例：70" step="0.1"></div>
               <div class="form-group"><label>紹介者</label><select id="c-ref"><option value="">なし</option></select></div>
-              <div class="form-group"><label>報酬の計算方式</label><select id="c-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option></select></div>
+              <div class="form-group"><label>報酬の計算方式</label><select id="c-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します／ドル換算・当日確定：コイン×0.05ドル×料率×その日のレートで、その日に確定します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option><option value="usd">ドル換算・当日確定（コイン×0.05×レート×料率）</option></select></div>
             </div>
           </div>
           <div style="margin-bottom:20px">
@@ -380,7 +380,7 @@
             <div class="form-group"><label>配信者名 <span style="color:var(--red)">*</span></label><input id="edit-name"></div>
             <div class="form-group"><label>報酬率（%）<span style="color:var(--red)">*</span></label><input id="edit-rate" type="number" step="0.1"></div>
             <div class="form-group"><label>紹介者</label><select id="edit-ref"><option value="">なし</option></select></div>
-            <div class="form-group"><label>報酬の計算方式</label><select id="edit-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option></select></div>
+            <div class="form-group"><label>報酬の計算方式</label><select id="edit-basis" title="換金額ベース：実際に日本円へ換金できた額（両替記録）× 料率。換金前の日払いは推計で仮払いし、月末精算で差額を精算します／ドル換算・当日確定：コイン×0.05ドル×料率×その日のレートで、その日に確定します"><option value="coin7">コイン×7円（従来）</option><option value="fx">換金額ベース（換金できた円×料率）</option><option value="usd">ドル換算・当日確定（コイン×0.05×レート×料率）</option></select></div>
           </div>
         </div>
 
@@ -2266,7 +2266,7 @@ async function loadFromDB() {
         realname: r.realname, birthdate: r.birthdate||'', zip: r.zip, tel: r.tel, memo: r.memo||'',
         retired: !!r.retired, retiredDate: r.retired_date || '',
         onHold: !!r.on_hold, onHoldDate: r.on_hold_date || '',
-        rewardBasis: r.reward_basis === 'fx' ? 'fx' : 'coin7'   // 【v46】報酬の計算方式
+        rewardBasis: normRewardBasis(r.reward_basis)   // 【v46】報酬の計算方式
       }));
     }
     if (referrersR.data?.length > 0) {
@@ -2854,8 +2854,11 @@ const calcReward = (yen, rate) => Math.floor(yen * rate / 100); // 税込報酬�
 //   コイン × 0.05ドル × その配信のレート × (1 − 出金手数料2%)（＝推計売上と同じ式）
 // 日払いはこの推計で仮払いし、両替記録が入った後の月末精算で確定額との差額を精算する。
 // ※ 紹介料は報酬方式に関係なく従来どおり「コイン × 7円」基準のまま（calcRefTotal は変更しない）
-const REWARD_BASIS_LABEL = { coin7: 'コイン×7円', fx: '換金額ベース' };
+const REWARD_BASIS_LABEL = { coin7: 'コイン×7円', fx: '換金額ベース', usd: 'ドル換算・当日確定' };
 const isFxBasis = c => !!c && c.rewardBasis === 'fx';
+// 【v46】ドル換算・当日確定：コイン × 0.05ドル × 料率 × その配信のレート（出金手数料は引かない・換金を待たずにその日で確定）
+const isUsdBasis = c => !!c && c.rewardBasis === 'usd';
+const normRewardBasis = v => (v === 'fx' || v === 'usd') ? v : 'coin7';
 let _fxAllocCache = null, _fxAllocSig = '';
 function invalidateFxAlloc() { _fxAllocCache = null; }
 function fxRecordPeriod(r) {
@@ -2887,20 +2890,28 @@ function fxAllocation() {
 }
 // 配信1件の「報酬計算の元になる円」
 function saleBaseYen(s, c) {
+  if (isUsdBasis(c)) return s.rate ? Math.floor(s.coins * 0.05 * s.rate + 1e-6) : coinToYen(s.coins);   // 円換算（手数料なし）
   if (!isFxBasis(c)) return coinToYen(s.coins);
   const v = fxAllocation().yenOf[s.id];
   if (v != null) return Math.floor(v + 1e-6);          // 確定（両替記録あり）。浮動小数の誤差で1円落ちないよう微小値を足す
   if (s.rate) return estSalesYen(s.coins, s.rate);     // 推計（まだ換金されていない）
   return coinToYen(s.coins);                            // レートも未入力：最終手段として従来方式の額
 }
-// 'coin7' | 'fx-confirmed' | 'fx-estimate' | 'fx-norate'
+// 'coin7' | 'fx-confirmed' | 'fx-estimate' | 'fx-norate' | 'usd' | 'usd-norate'
 function saleBasisStatus(s, c) {
+  if (isUsdBasis(c)) return s.rate ? 'usd' : 'usd-norate';
   if (!isFxBasis(c)) return 'coin7';
   if (fxAllocation().yenOf[s.id] != null) return 'fx-confirmed';
   return s.rate ? 'fx-estimate' : 'fx-norate';
 }
 // 配信1件の報酬（税込）。報酬はすべてここを通す
-function saleRewardOf(s, c) { return c ? calcReward(saleBaseYen(s, c), c.rate) : 0; }
+function saleRewardOf(s, c) {
+  if (!c) return 0;
+  // ドル換算・当日確定は「コイン×0.05×料率×レート」を1回だけ切り捨てる（円換算を先に切り捨てると1円ずれることがあるため）
+  //   浮動小数の誤差（例：…9999999）で1円落ちないよう微小値を足してから切り捨てる
+  if (isUsdBasis(c) && s.rate) return Math.floor(s.coins * 0.05 * s.rate * c.rate / 100 + 1e-6);
+  return calcReward(saleBaseYen(s, c), c.rate);
+}
 // 換金額ベースの配信者について、その月の配信が確定済みか（月末精算の判断材料）
 function casterFxStatusOfMonth(casterId, y, m) {
   const c = getCaster(casterId);
@@ -2915,6 +2926,7 @@ function fxSaleTagHtml(s, c) {
   const st = saleBasisStatus(s, c);
   if (st === 'fx-estimate') return `<span style="color:var(--yellow);font-size:10px;margin-left:4px" title="換金額ベース：まだ両替記録の対象期間に入っていないため推計（コイン×0.05×レート×(1−${FX_FEE_PCT}%)）">推計</span>`;
   if (st === 'fx-norate')   return `<span style="color:var(--red);font-size:10px;margin-left:4px" title="換金額ベース：レート未入力のため仮にコイン×7円で計算しています">レート未入力</span>`;
+  if (st === 'usd-norate')  return `<span style="color:var(--red);font-size:10px;margin-left:4px" title="ドル換算・当日確定：レート未入力のため仮にコイン×7円で計算しています。レートを入力してください">レート未入力</span>`;
   if (st === 'fx-confirmed') return `<span style="color:var(--green);font-size:10px;margin-left:4px" title="換金額ベース：両替記録の受取額から按分して確定">💱確定</span>`;
   return '';
 }
@@ -5223,7 +5235,7 @@ async function addCaster() {
   const onHold = statusVal === 'onhold';
   const onHoldDate = onHold ? statusDate : '';
   const casterRefId = refId ? parseInt(refId) : null;
-  const rewardBasis = document.getElementById('c-basis').value === 'fx' ? 'fx' : 'coin7';   // 【v46】
+  const rewardBasis = normRewardBasis(document.getElementById('c-basis').value);   // 【v46】
   let newCasterId;
   try {
     newCasterId = await insertWithFreshId('casters', id => ({ id, name, rate, ref_id: casterRefId, invoice, invoice_no: invoiceNo, realname, birthdate: birthdate||null, zip, tel, address, bank, branch, account, holder, memo: memo||'', retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null, reward_basis: rewardBasis }));
@@ -5297,7 +5309,7 @@ function renderCasters() {
     return `<tr${(c.retired || c.onHold) ? ' style="opacity:0.55"' : ''}>
       <td><strong>${escapeHtml(c.name)}</strong></td>
       <td>${statusBadge}</td>
-      <td class="num"><span class="badge badge-blue">${c.rate}%</span>${isFxBasis(c) ? `<div style="margin-top:3px"><span class="badge badge-purple" title="実際に日本円へ換金できた額 × 料率">💱 換金額ベース</span></div>` : ''}</td>
+      <td class="num"><span class="badge badge-blue">${c.rate}%</span>${isFxBasis(c) ? `<div style="margin-top:3px"><span class="badge badge-purple" title="実際に日本円へ換金できた額 × 料率">💱 換金額ベース</span></div>` : isUsdBasis(c) ? `<div style="margin-top:3px"><span class="badge badge-purple" title="コイン × 0.05ドル × 料率 × その日のレート。その日で確定">💵 ドル換算・当日確定</span></div>` : ''}</td>
       <td>${ref ? `<span class="badge badge-orange">${escapeHtml(ref.name)}</span>` : '<span style="color:var(--muted)">なし</span>'}</td>
       <td>${invBadge}</td>
       <td>${invNo}</td>
@@ -5332,7 +5344,7 @@ function openEditModal(id) {
   document.getElementById('edit-acnum').value = _acParts.slice(1).join(' ')||'';
   document.getElementById('edit-holder').value  = c.holder  || '';
   document.getElementById('edit-memo').value = c.memo || '';
-  document.getElementById('edit-basis').value = c.rewardBasis === 'fx' ? 'fx' : 'coin7';
+  document.getElementById('edit-basis').value = normRewardBasis(c.rewardBasis);
   const currentStatus = c.retired ? 'retired' : (c.onHold ? 'onhold' : 'active');
   document.getElementById('edit-status').value = currentStatus;
   document.getElementById('edit-status-date').value = (c.retired ? c.retiredDate : c.onHold ? c.onHoldDate : '') || '';
@@ -5375,7 +5387,7 @@ async function saveEdit() {
     const onHold = statusVal === 'onhold';
     const onHoldDate = onHold ? statusDate : '';
     const beforeEdit = casterToLogObj(state.casters[idx]);
-    const rewardBasis = document.getElementById('edit-basis').value === 'fx' ? 'fx' : 'coin7';   // 【v46】
+    const rewardBasis = normRewardBasis(document.getElementById('edit-basis').value);   // 【v46】
     if (rewardBasis !== (state.casters[idx].rewardBasis || 'coin7') && !confirm(`報酬の計算方式を「${REWARD_BASIS_LABEL[rewardBasis]}」に変更します。\n\nこの配信者の過去の月も含めて、報酬・源泉税・月末精算の計算がすべて新しい方式で再計算されます（支払い済みの記録の金額は変わりません）。\n\nよろしいですか？`)) return;
     state.casters[idx] = { ...state.casters[idx], name, rate, refId: refId ? parseInt(refId) : null, invoice, invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retiredDate, onHold, onHoldDate, rewardBasis };
     await dbSave('casters', { id, name, rate, ref_id: refId ? parseInt(refId) : null, invoice, invoice_no: invoiceNo, realname, birthdate, zip, tel, address, bank, branch, account, holder, memo, retired, retired_date: retiredDate||null, on_hold: onHold, on_hold_date: onHoldDate||null, reward_basis: rewardBasis });
@@ -6038,8 +6050,10 @@ function updateSalePreview() {
   if (!c) return;
   // 【v46】換金額ベースの配信者は、保存前の見積りなので推計（コイン×0.05×レート×(1−2%)）で出す
   const _pvRate = parseFloat(document.getElementById('s-rate').value) || null;
-  const salesAmt = isFxBasis(c) && _pvRate ? estSalesYen(coinsVal, _pvRate) : coinToYen(coinsVal);
-  const reward = calcReward(salesAmt, c.rate);
+  const salesAmt = isFxBasis(c) && _pvRate ? estSalesYen(coinsVal, _pvRate)
+    : isUsdBasis(c) && _pvRate ? Math.floor(coinsVal * 0.05 * _pvRate + 1e-6)
+    : coinToYen(coinsVal);
+  const reward = isUsdBasis(c) && _pvRate ? saleRewardOf({ coins: coinsVal, rate: _pvRate }, c) : calcReward(salesAmt, c.rate);
   const refBaseReward = calcReward(coinToYen(coinsVal), c.rate);   // 紹介料（パターンB）は報酬方式に関係なくコイン×7円基準
   const src = calcSrcTax(reward);
   const transfer = reward - src;
@@ -6054,7 +6068,8 @@ function updateSalePreview() {
 
   document.getElementById('p-sales').textContent = yen(salesAmt);
   const _pvLbl = document.getElementById('p-sales-label');
-  if (_pvLbl) _pvLbl.textContent = !isFxBasis(c) ? '売上金額（コイン×7）'
+  if (_pvLbl) _pvLbl.textContent = isUsdBasis(c) ? (_pvRate ? `円換算（コイン×0.05×${_pvRate}）※報酬はこの日で確定` : '売上金額（コイン×7）※レート未入力のため仮')
+    : !isFxBasis(c) ? '売上金額（コイン×7）'
     : _pvRate ? `換金額の推計（コイン×0.05×${_pvRate}・${FX_FEE_NOTE}）※換金後に確定` : '売上金額（コイン×7）※レート未入力のため仮';
   document.getElementById('p-reward').textContent = yen(reward);
   document.getElementById('p-src').textContent = yen(src);
@@ -7072,7 +7087,7 @@ function renderSales() {
   const getSaleVals = s => {
     const c = getCaster(s.casterId);
     const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
-    const rw = c ? calcReward(sa, c.rate) : 0;
+    const rw = c ? saleRewardOf(s, c) : 0;   // 【v46】方式ごとの報酬
     const src = calcSrcTax(rw);
     const rcParts = refOfSale(salesRefAlloc, s.id);
     const rc = rcParts.total;
@@ -7130,7 +7145,7 @@ function renderSales() {
     let hasRate = false;
     g.sales.forEach(s => {
       const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
-      const rw = c ? calcReward(sa, c.rate) : 0;
+      const rw = c ? saleRewardOf(s, c) : 0;   // 【v46】方式ごとの報酬
       const src = calcSrcTax(rw);
       const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
       const office = calcOfficeSales(s.coins, s.rate, rw, rc.total);
@@ -7165,7 +7180,7 @@ function renderSales() {
         }
       </td>
       <td class="num"><span class="coin-badge" style="${fw}">${coins(sumCoins)}</span></td>
-      <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}${isFxBasis(c) ? `<div>${(() => { const est = g.sales.find(x => saleBasisStatus(x, c) !== 'fx-confirmed'); return fxSaleTagHtml(est || g.sales[0], c); })()}</div>` : ''}</td>
+      <td class="num" style="color:var(--red);${fw}">${yen(sumReward)}${(isFxBasis(c) || isUsdBasis(c)) ? `<div>${(() => { const est = g.sales.find(x => saleBasisStatus(x, c) !== 'fx-confirmed'); return fxSaleTagHtml(est || g.sales[0], c); })()}</div>` : ''}</td>
       <td class="num" style="color:var(--yellow);${fw}">${yen(sumSrc)}</td>
       <td class="num" style="color:var(--green);${fw}">${yen(sumTransfer)}</td>
       <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
@@ -7190,7 +7205,7 @@ function renderSales() {
     if (isMulti) {
       g.sales.forEach((s, idx) => {
         const sa = saleBaseYen(s, c);   // 【v46】換金額ベースの配信者は換金額（推計）
-        const reward = c ? calcReward(sa, c.rate) : 0;
+        const reward = c ? saleRewardOf(s, c) : 0;   // 【v46】方式ごとの報酬
         const src = calcSrcTax(reward);
         const rc = refOfSale(salesRefAlloc, s.id); // 【v37】日次方式で按分した額
         const r1=rc.r1, r2=rc.r2, rcTotal=rc.total;
@@ -7208,7 +7223,7 @@ function renderSales() {
           </td>
           <td><span class="badge badge-blue">${c?.rate||0}%</span></td>
           <td class="num"><span class="coin-badge" style="${isRefund?'background:rgba(248,113,113,0.15);color:var(--red)':''}">${coins(s.coins)}</span></td>
-          <td class="num" style="color:var(--red)">${yen(reward)}${isFxBasis(c) ? `<div>${fxSaleTagHtml(s, c)}</div>` : ''}</td>
+          <td class="num" style="color:var(--red)">${yen(reward)}${(isFxBasis(c) || isUsdBasis(c)) ? `<div>${fxSaleTagHtml(s, c)}</div>` : ''}</td>
           <td class="num" style="color:var(--yellow)">${yen(src)}</td>
           <td class="num" style="color:var(--green)">${yen(reward-src)}</td>
           <td>${ref?`<span class="badge badge-orange">${escapeHtml(ref.name)}</span>`:'-'}</td>
